@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # One image for api / worker / scheduler / migrate / seed / ml-stub (different commands).
+# Build context: repository root (needs backend/ and the shared contracts/):
+#   docker build -f backend/Dockerfile .
 
 FROM python:3.12-slim-bookworm AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -13,11 +15,11 @@ WORKDIR /app
 FROM base AS builder
 ARG UV_VERSION=0.13.5
 RUN pip install --no-cache-dir uv==${UV_VERSION}
-COPY pyproject.toml uv.lock README.md ./
+COPY backend/pyproject.toml backend/uv.lock backend/README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
-COPY app ./app
-COPY ml_stub ./ml_stub
+COPY backend/app ./app
+COPY backend/ml_stub ./ml_stub
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
@@ -28,14 +30,14 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 10001 appuser
 COPY --from=builder /app/.venv /app/.venv
-COPY app ./app
-COPY ml_stub ./ml_stub
-COPY migrations ./migrations
-COPY alembic.ini pyproject.toml README.md ./
-COPY scripts ./scripts
+COPY backend/app ./app
+COPY backend/ml_stub ./ml_stub
+COPY backend/migrations ./migrations
+COPY backend/alembic.ini backend/pyproject.toml backend/README.md ./
+COPY backend/scripts ./scripts
+COPY backend/data/synthetic ./data/synthetic
+COPY backend/data/reference ./data/reference
 COPY contracts ./contracts
-COPY data/synthetic ./data/synthetic
-COPY data/reference ./data/reference
 USER appuser
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
@@ -45,8 +47,8 @@ FROM runtime AS test
 USER root
 ARG UV_VERSION=0.13.5
 RUN pip install --no-cache-dir uv==${UV_VERSION}
-COPY uv.lock ./
+COPY backend/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen
-COPY tests ./tests
+COPY backend/tests ./tests
 USER appuser
 CMD ["pytest", "tests/e2e", "-m", "e2e", "-q"]

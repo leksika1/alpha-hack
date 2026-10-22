@@ -9,7 +9,8 @@ import sys
 import tomllib
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1]  # backend/
+REPO_ROOT = ROOT.parent
 
 
 # Packages whose metadata lacks a license field or that are not installable on the dev OS (checked by hand).
@@ -49,7 +50,7 @@ def main() -> None:
         origin = "PyPI" if "registry" in source else next(iter(source), "?")
         rows.append(f"| {pkg['name']} | {pkg.get('version', '?')} | {_license(pkg['name'])} | {origin} |")
     manual = (ROOT / "scripts" / "notices_manual.md").read_text(encoding="utf-8")
-    out = ROOT / "THIRD_PARTY_NOTICES.md"
+    out = REPO_ROOT / "THIRD_PARTY_NOTICES.md"
     out.write_text(
         "# THIRD_PARTY_NOTICES\n\n"
         "Файл генерируется `make notices` (scripts/gen_notices.py). "
@@ -58,7 +59,7 @@ def main() -> None:
         "| Пакет | Версия | Лицензия | Источник |\n|---|---|---|---|\n" + "\n".join(rows) + "\n\n" + manual,
         encoding="utf-8",
     )
-    print(f"written {out.relative_to(ROOT)}: {len(rows)} packages", file=sys.stderr)
+    print(f"written {out.relative_to(REPO_ROOT)}: {len(rows)} packages", file=sys.stderr)
 
 
 if __name__ == "__main__":

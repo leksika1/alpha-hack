@@ -4,7 +4,8 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1]  # backend/
+REPO_ROOT = ROOT.parent
 sys.path.insert(0, str(ROOT))
 
 from app.main import create_app  # noqa: E402
@@ -12,9 +13,9 @@ from app.main import create_app  # noqa: E402
 
 def main() -> None:
     spec = create_app().openapi()
-    out = ROOT / "docs" / "openapi.json"
+    out = REPO_ROOT / "docs" / "openapi.json"
     out.write_text(json.dumps(spec, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"written {out.relative_to(ROOT)} ({len(spec.get('paths', {}))} paths)")
+    print(f"written {out.relative_to(REPO_ROOT)} ({len(spec.get('paths', {}))} paths)")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,8 @@
 
 ## Структура
 
+Код бэкенда — в `backend/` (пути ниже — относительно неё); `contracts/`, `docs/` — в корне.
+
 ```
 app/
   api/            # FastAPI: роутеры /api/v1, /internal/tools, /internal/llm; зависимости; problem+json

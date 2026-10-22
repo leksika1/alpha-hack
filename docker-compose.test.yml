@@ -44,6 +44,7 @@ services:
     profiles: ["test"]
     build:
       context: .
+      dockerfile: backend/Dockerfile
       target: test
     image: alfa-future-backend-test:${IMAGE_TAG:-local}
     environment:

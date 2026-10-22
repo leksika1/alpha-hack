@@ -2,8 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
+
+defaults:
+  run:
+    working-directory: backend
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -50,4 +54,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: E2E (docker compose, profile test; prints logs on failure)
+        working-directory: .
         run: make e2e
