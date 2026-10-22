@@ -1,0 +1,6 @@
+{
+  "request_id": "gen_U_258131_9d1e_ceo_v1",
+  "status": "skipped",
+  "skip_reason": "not_relevant",
+  "usage": { "llm_calls": 1, "tokens_in": 2140, "tokens_out": 96, "latency_ms": 2310 }
+}

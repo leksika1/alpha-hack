@@ -1,0 +1,140 @@
+{
+  "schema_version": "1.0.0",
+  "insight_id": null,
+  "company_id": "U_110108",
+  "event_id": "0b6f2c0e-3d7a-4c8e-9a51-6f1d2e3a4b01",
+  "role_variant": "cfo",
+  "trace_id": "run_7f3a9c2e",
+  "language": "ru",
+  "title": "Пауза ЦБ на 14%: кредит и лизинг компании не подешевеют до конца года",
+  "summary": "Банк России сохранил ключевую ставку 14% и ужесточил риторику. Для компании с кредитом и лизингом это означает, что стоимость заёмного финансирования останется высокой как минимум до декабря; рефинансирование по более низким ставкам стоит отложить в планах.",
+  "polarity": "risk",
+  "urgent": true,
+  "event": {
+    "title": "Банк России сохранил ключевую ставку на уровне 14% годовых",
+    "summary": "11 сентября 2026 г. совет директоров Банка России сохранил ключевую ставку 14% — первая пауза после серии снижений с июня 2025 г. Регулятор отметил ускорение устойчивой инфляции и повышенные инфляционные ожидания.",
+    "event_type": "monetary_policy",
+    "occurred_at": "2026-09-11T10:30:00Z",
+    "participants": [
+      { "name": "Банк России", "type": "regulator", "company_id": null }
+    ],
+    "key_facts": [
+      { "text": "Ключевая ставка сохранена на уровне 14,0% годовых.", "source_refs": ["s1", "s2"] },
+      { "text": "Это первая пауза после десяти последовательных снижений, начавшихся в июне 2025 г.", "source_refs": ["s1"] }
+    ]
+  },
+  "why_it_matters": [
+    {
+      "text": "У компании действующий кредит и лизинг в Альфа-Банке — процентные платежи напрямую зависят от уровня ключевой ставки.",
+      "feature_refs": ["products.loan", "products.leasing", "sensitivities.rate_sensitive"],
+      "statement_refs": ["st3"]
+    },
+    {
+      "text": "Компания ведёт ВЭД с Китаем: жёсткая ДКП поддерживает рубль, что снижает стоимость импортных закупок.",
+      "feature_refs": ["fts_countries", "sensitivities.fx_sensitive"],
+      "statement_refs": ["st5"]
+    }
+  ],
+  "consequences": {
+    "risks": [
+      {
+        "text": "Процентная нагрузка по кредиту и лизингу не снизится в ближайшие 1–2 квартала; планы рефинансирования под более низкую ставку могут не реализоваться.",
+        "horizon": "quarters",
+        "drivers": ["решение ЦБ 23 октября", "динамика устойчивой инфляции", "параметры бюджета"],
+        "statement_refs": ["st3", "st4"]
+      }
+    ],
+    "opportunities": [
+      {
+        "text": "Высокие ставки по депозитам сохраняются — свободную ликвидность выгодно размещать на короткие сроки.",
+        "horizon": "months",
+        "drivers": ["ставки по депозитам", "потребность в оборотном капитале"],
+        "statement_refs": ["st6"]
+      }
+    ],
+    "scenarios": [
+      {
+        "name": "Ставка 14% до конца 2026 г.",
+        "logic": "Базовый сценарий банка: пауза сохраняется на заседаниях 23 октября и в декабре из-за инфляционных рисков.",
+        "plausibility": "high",
+        "signals": ["инфляционные ожидания выше 13%", "жёсткая риторика ЦБ"],
+        "statement_refs": ["st4"]
+      },
+      {
+        "name": "Возобновление снижения в декабре",
+        "logic": "Если устойчивая инфляция замедлится, а бюджет окажется нейтральным, ЦБ может вернуться к снижению на 50 б.п.",
+        "plausibility": "low",
+        "signals": ["замедление базовой инфляции ниже 4%", "профицит бюджета"],
+        "statement_refs": ["st7"]
+      }
+    ]
+  },
+  "impact": {
+    "level": "high",
+    "score": 62,
+    "scale_version": 1,
+    "rationale": "Прямая подверженность (кредит + лизинг) × умеренная сила события (сохранение, а не повышение ставки) × прямое влияние на стоимость долга.",
+    "quantitative": [
+      {
+        "metric": "interest_cost_delta_per_100m",
+        "value": 500000,
+        "unit": "₽/год на 100 млн ₽ плавающего долга",
+        "basis": "Разница между ожидавшимся рынком снижением на 0,5 п.п. и фактическим сохранением ставки: 0,5% × 100 млн ₽. Сумма долга компании банку неизвестна, поэтому оценка нормирована на 100 млн ₽.",
+        "period": "12 мес.",
+        "feature_refs": ["products.loan"]
+      }
+    ]
+  },
+  "actions": [
+    { "type": "contact_manager", "text": "Обсудить с менеджером фиксацию ставки или график рефинансирования кредита.", "product_id": "loan_working_capital", "source_ref": null },
+    { "type": "analyze", "text": "Пересчитать бюджет процентных расходов на 4К26 при ставке 14%.", "product_id": null, "source_ref": null },
+    { "type": "read_source", "text": "Прочитать комментарий Центра макроэкономического анализа Альфа-Банка.", "product_id": null, "source_ref": "s2" }
+  ],
+  "bank_view": {
+    "coverage": "direct",
+    "positions": [
+      {
+        "text": "Аналитики Альфа-Банка ожидают сохранения ставки 14% до конца 2026 г. (ранее ждали 13,5%); прогноз на конец 2027 г. — 12%.",
+        "quote": "теперь мы ожидаем ее сохранения на текущем значении 14,0% до конца года",
+        "analytics_chunk_id": "8a1d2b3c-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+        "document_id": "5c6d7e8f-9a0b-4c1d-8e2f-3a4b5c6d7e8f",
+        "page": 1,
+        "source_ref": "s2"
+      }
+    ],
+    "model_disagrees_with_bank": false,
+    "disagreement_note": null
+  },
+  "statements": [
+    { "id": "st1", "text": "Банк России 11.09.2026 сохранил ключевую ставку 14,0%.", "kind": "fact", "confidence": 0.99, "source_refs": ["s1", "s2"], "feature_refs": [] },
+    { "id": "st2", "text": "У компании есть кредитный продукт и лизинг в Альфа-Банке.", "kind": "fact", "confidence": 1.0, "source_refs": ["s3"], "feature_refs": ["products.loan", "products.leasing"] },
+    { "id": "st3", "text": "Процентная нагрузка компании в ближайшие кварталы не снизится.", "kind": "model_inference", "confidence": 0.8, "source_refs": ["s2", "s3"], "feature_refs": ["sensitivities.rate_sensitive"] },
+    { "id": "st4", "text": "Альфа-Банк ожидает сохранения ставки 14% до конца 2026 г.", "kind": "bank_analytics", "confidence": 0.9, "source_refs": ["s2"], "feature_refs": [] },
+    { "id": "st5", "text": "Жёсткая ДКП поддерживает курс рубля, что удешевляет импорт из Китая.", "kind": "model_inference", "confidence": 0.6, "source_refs": ["s2"], "feature_refs": ["fts_countries"] },
+    { "id": "st6", "text": "Компании выгодно размещать свободную ликвидность на депозитах при высоких ставках.", "kind": "model_inference", "confidence": 0.7, "source_refs": [], "feature_refs": ["products.deposit"] },
+    { "id": "st7", "text": "При замедлении базовой инфляции ЦБ может возобновить снижение в декабре.", "kind": "hypothesis", "confidence": 0.3, "source_refs": ["s2"], "feature_refs": [] }
+  ],
+  "relevance": {
+    "score": 0.81,
+    "breakdown": { "rate": 0.35, "bank_analytics": 0.15, "fx_country": 0.08, "industry": 0.05, "recency": 0.18 },
+    "matched_features": ["products.loan", "products.leasing", "fts_countries"],
+    "scorer": "baseline@1"
+  },
+  "sources": [
+    { "id": "s1", "type": "news", "ref_id": "c2a4e6f8-1b3d-4f5a-9c7e-0d2f4a6b8c0e", "url": "https://www.cbr.ru/press/pr/?file=11092026_133000key.htm", "title": "Банк России сохранил ключевую ставку на уровне 14,00% годовых", "publisher": "Банк России", "published_at": "2026-09-11T10:30:00Z", "page": null },
+    { "id": "s2", "type": "bank_analytics", "ref_id": "8a1d2b3c-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "url": null, "title": "Ключевая ставка ЦБ РФ: ставка без изменения на 14,0%, риторика стала жестче", "publisher": "Альфа-Банк, Центр макроэкономического анализа", "published_at": "2026-09-11T00:00:00Z", "page": 1 },
+    { "id": "s3", "type": "company_data", "ref_id": "products", "url": null, "title": "Продукты компании в Альфа-Банке", "publisher": null, "published_at": null, "page": null }
+  ],
+  "disclaimers": [
+    { "code": "not_investment_advice", "text": "Материал носит информационный характер и не является инвестиционной рекомендацией." },
+    { "code": "model_generated", "text": "Выводы с пометкой «вывод модели» сформированы AI на основе доступных данных и не являются официальной позицией Альфа-Банка." },
+    { "code": "hypothesis_present", "text": "Содержит гипотезы, требующие проверки." }
+  ],
+  "models_used": [
+    { "name": "rules@1", "purpose": "scoring" },
+    { "name": "Qwen3.6 35B A3B", "purpose": "generation" },
+    { "name": "intfloat/multilingual-e5-small", "purpose": "embedding" }
+  ],
+  "generated_at": "2026-09-11T11:05:00Z",
+  "expires_at": "2026-10-23T12:00:00Z"
+}

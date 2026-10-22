@@ -1,0 +1,57 @@
+# E2E overlay: `make e2e` runs
+#   docker compose -p alfa-e2e -f docker-compose.yml -f docker-compose.test.yml --profile test up ...
+# Synthetic data, fixture news, ml-stub, fake embeddings/OCR; no host ports (isolated from the demo stack).
+
+x-test-env: &test-env
+  APP_ENV: test
+  DATA_DIR: data/synthetic
+  NEWS_FIXTURES_ENABLED: "true"
+  INSIGHT_GENERATOR: stub
+  EMBEDDING_PROVIDER: fake
+  OCR_PROVIDER: fake
+  LLM_BASE_URL: ""
+  LLM_API_KEY: ""
+
+services:
+  postgres:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  minio:
+    ports: !reset []
+  migrate:
+    environment: *test-env
+    volumes: !reset []
+  seed:
+    environment: *test-env
+    volumes: !reset []
+  api:
+    ports: !reset []
+    environment: *test-env
+    volumes: !reset []
+  worker:
+    environment: *test-env
+    volumes: !reset []
+  scheduler:
+    environment: *test-env
+    volumes: !reset []
+  ml-stub:
+    ports: !reset []
+    environment: *test-env
+    volumes: !reset []
+
+  e2e-runner:
+    profiles: ["test"]
+    build:
+      context: .
+      target: test
+    image: alfa-future-backend-test:${IMAGE_TAG:-local}
+    environment:
+      E2E_BASE_URL: http://api:8000
+      E2E_ML_STUB_URL: http://ml-stub:8100
+    depends_on:
+      api: { condition: service_healthy }
+      ml-stub: { condition: service_healthy }
+      worker: { condition: service_started }
+    command: ["pytest", "tests/e2e", "-m", "e2e", "-q", "-p", "no:cacheprovider"]
+    restart: "no"
