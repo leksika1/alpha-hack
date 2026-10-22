@@ -7,9 +7,17 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import get_settings
+from app.repositories.models import Base
 
 config = context.config
-target_metadata = None  # ORM metadata is attached in phase 1 (app/repositories/models.py)
+target_metadata = Base.metadata
+MANAGED_SCHEMAS = {"staging", "core"}
+
+
+def _include_name(name: str | None, type_: str, parent_names: object) -> bool:
+    if type_ == "schema":
+        return name in MANAGED_SCHEMAS
+    return True
 
 
 def _url() -> str:
@@ -17,13 +25,25 @@ def _url() -> str:
 
 
 def run_migrations_offline() -> None:
-    context.configure(url=_url(), target_metadata=target_metadata, literal_binds=True)
+    context.configure(
+        url=_url(),
+        target_metadata=target_metadata,
+        literal_binds=True,
+        include_schemas=True,
+        include_name=_include_name,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def _do_run(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        include_schemas=True,
+        include_name=_include_name,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

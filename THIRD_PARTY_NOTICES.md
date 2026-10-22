@@ -109,7 +109,7 @@
 | `python` (slim) | 3.12-slim-bookworm | PSF-2.0 | базовый образ приложения |
 | `pgvector/pgvector` | 0.8.0-pg16 | PostgreSQL License | PostgreSQL 16 + pgvector |
 | `redis` | 7.4-alpine | RSALv2/SSPLv1 (Redis 7.4) | брокер очередей, pub/sub, кэш |
-| `minio/minio`, `minio/mc` | RELEASE.2025-04-22 / 2025-04-16 | AGPL-3.0 | S3-совместимое хранилище (локально) |
+| `pgsty/minio` (сборка MinIO от Pigsty, включает `mc`) | RELEASE.2026-08-04T00-00-00Z | AGPL-3.0 | S3-совместимое хранилище и создание бакетов (ADR-004) |
 | `tesseract-ocr`, `tesseract-ocr-rus` (Debian) | 5.x | Apache-2.0 | OCR аналитики банка (ADR-005) |
 
 ## Модели

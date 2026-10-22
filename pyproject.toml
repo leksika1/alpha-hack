@@ -64,6 +64,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "PTH"]
 "scripts/**" = ["S603", "S607"]
+# SQLAlchemy declarative idiom: __table_args__ / type_annotation_map are class-level containers
+"app/repositories/models.py" = ["RUF012"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "openai".msg = "LLM calls must go through the LLM Gateway (app/services/llm_gateway.py)"

@@ -35,6 +35,7 @@ COPY alembic.ini pyproject.toml README.md ./
 COPY scripts ./scripts
 COPY contracts ./contracts
 COPY data/synthetic ./data/synthetic
+COPY data/reference ./data/reference
 USER appuser
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
