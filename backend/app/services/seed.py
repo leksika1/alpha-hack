@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import Settings
+from app.integrations.news.http import PoliteFetcher
 from app.services.demo_selection import select_demo_companies
 from app.services.matching import MatchStats, match
-from app.services.news_store import StoreResult, load_fixture_news
+from app.services.news_ingest import poll, sync_sources
+from app.services.news_store import FIXTURE_SOURCE_ID, StoreResult, load_fixture_news
 from app.services.users import DemoAccess, DemoUser, upsert_user
 
 # Demo-only accounts, documented in README for the jury (case: "передать учётные данные", FAQ #63).
@@ -68,8 +70,15 @@ def demo_users(company_ids: list[str]) -> list[DemoUser]:
 
 
 async def seed_demo(
-    conn: Any, settings: Settings, data_dir: Path, reference_dir: Path, base_dir: Path
+    conn: Any,
+    settings: Settings,
+    data_dir: Path,
+    reference_dir: Path,
+    base_dir: Path,
+    store: Any | None = None,
 ) -> dict[str, Any]:
+    """`store` (S3) given: fixture news go through the collection pipeline (raw -> S3 -> parse -> store);
+    otherwise they are stored directly (unit/integration setups without S3)."""
     products = await seed_products(conn, reference_dir / "bank_products.json")
     company_ids = await demo_company_ids(conn, data_dir)
     for user in demo_users(company_ids):
@@ -79,7 +88,19 @@ async def seed_demo(
         fixture = Path(settings.fixture_news_path)
         if not fixture.is_absolute():
             fixture = base_dir / fixture
-        news = await load_fixture_news(conn, fixture)
+        if store is not None:
+            await sync_sources(
+                conn, base_dir / settings.news_sources_path, settings.news_live_sources_enabled, fixture
+            )
+            async with PoliteFetcher(settings.news_user_agent) as fetcher:
+                polled = await poll(conn, store, fetcher, source_ids=[FIXTURE_SOURCE_ID])
+            news = StoreResult(
+                inserted=sum(s.n_new for s in polled.sources),
+                event_ids=polled.event_ids,
+                new_event_ids=polled.new_event_ids,
+            )
+        else:
+            news = await load_fixture_news(conn, fixture)
     stats: MatchStats = await match(
         conn, company_ids, min_score=settings.match_min_score, max_per_company=settings.match_max_per_company
     )

@@ -1,23 +1,26 @@
-"""Store normalized news, tag them and attach them to events.
+"""Store normalized news, tag them and attach them to events (SPEC FR-N3..N5).
 
-Phase 2 scope: exact dedup (canonical URL + text hash) and grouping by an explicit cluster key
-(fixtures, or a source-provided story id). Near-duplicate clustering by embeddings comes in phase 3
-behind the same entry point ``store_news``.
+Dedup: canonical URL -> normalized-text hash -> near-duplicate (text similarity >= NEAR_DUPLICATE against
+news of the last CLUSTER_WINDOW). Clustering: an explicit cluster key (fixtures / source story id) or the most
+similar recent event (``app.domain.clustering``, ADR-021); otherwise a new event.
 """
 
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from app.domain.clustering import NewsSignature, best_event, is_near_duplicate, signature, tag_values
 from app.domain.tagging import NewsTags, normalize_text, strip_injection, tag_news
 
 FIXTURE_SOURCE_ID = "fixture"
 TRACKING_PARAMS = re.compile(r"^(utm_|yclid|gclid|fbclid|from$|ref$)")
+CLUSTER_WINDOW = timedelta(hours=72)
+RECENT_LIMIT = 5000
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,12 +35,14 @@ class NewsDraft:
     cluster_key: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass
 class StoreResult:
-    inserted: int
-    duplicates: int
-    event_ids: list[str]
-    new_event_ids: list[str]
+    inserted: int = 0
+    duplicates: int = 0
+    near_duplicates: int = 0
+    event_ids: list[str] = field(default_factory=list)
+    new_event_ids: list[str] = field(default_factory=list)
+    urgent_event_ids: list[str] = field(default_factory=list)
 
 
 def canonical_url(url: str) -> str:
@@ -60,6 +65,18 @@ def _summary(draft: NewsDraft) -> str:
     return first[:500]
 
 
+def _event_tags(row: Any) -> dict[str, object]:
+    extra = json.loads(row["tags"]) if row["tags"] else {}
+    return {
+        "industry_tags": list(row["industry_tags"]),
+        "countries": list(row["countries"]),
+        "commodities": list(row["commodities"]),
+        "regions": list(row["regions"]),
+        "currencies": extra.get("currencies", []),
+        "numbers": extra.get("numbers", []),
+    }
+
+
 async def ensure_source(
     conn: Any, source_id: str, name: str, kind: str, url: str | None, is_fixture: bool
 ) -> None:
@@ -75,70 +92,125 @@ async def ensure_source(
     )
 
 
-async def _attach_event(conn: Any, draft: NewsDraft, tags: NewsTags, news_id: Any) -> tuple[str, bool]:
-    existing = None
-    if draft.cluster_key:
-        existing = await conn.fetchrow("SELECT * FROM core.events WHERE cluster_key = $1", draft.cluster_key)
-    if existing is None:
-        row = await conn.fetchrow(
-            """INSERT INTO core.events (cluster_key, title, summary, event_type, direction, urgent,
-                   urgency_reasons,
-                   tags, industry_tags, countries, commodities, regions, first_seen_at, last_seen_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $13)
-               RETURNING id""",
-            draft.cluster_key,
-            draft.title,
-            _summary(draft),
-            tags.event_type,
-            tags.direction,
-            tags.urgent,
-            tags.urgency_reasons,
-            json.dumps({"currencies": tags.currencies, "numbers": tags.numbers}, ensure_ascii=False),
-            tags.industry_tags,
-            tags.countries,
-            tags.commodities,
-            tags.regions,
-            draft.published_at,
+class _Window:
+    """Recent news and events kept in memory for one batch (dedup and clustering candidates).
+    Comparisons are limited to +-CLUSTER_WINDOW around each item's own publication time."""
+
+    def __init__(self) -> None:
+        self.news: list[tuple[datetime, NewsSignature]] = []
+        self.events: dict[str, tuple[datetime, datetime, NewsSignature]] = {}
+
+    async def load(self, conn: Any, since: datetime, until: datetime) -> None:
+        news = await conn.fetch(
+            """SELECT title, summary, event_type, tags, published_at FROM core.news_items
+               WHERE published_at BETWEEN $1 AND $2 ORDER BY published_at DESC LIMIT $3""",
+            since,
+            until,
+            RECENT_LIMIT,
         )
-        event_id, created = row["id"], True
-    else:
-        event_id, created = existing["id"], False
-        old_tags = json.loads(existing["tags"])
-        merged = {
-            "currencies": sorted(set(old_tags.get("currencies", [])) | set(tags.currencies)),
-            "numbers": old_tags.get("numbers") or tags.numbers,
-        }
-        await conn.execute(
-            """UPDATE core.events SET
-                   urgent = urgent OR $2,
-                   urgency_reasons = ARRAY(SELECT DISTINCT unnest(urgency_reasons || $3::text[])),
-                   industry_tags = ARRAY(SELECT DISTINCT unnest(industry_tags || $4::text[])),
-                   countries = ARRAY(SELECT DISTINCT unnest(countries || $5::text[])),
-                   commodities = ARRAY(SELECT DISTINCT unnest(commodities || $6::text[])),
-                   regions = ARRAY(SELECT DISTINCT unnest(regions || $7::text[])),
-                   tags = $8::jsonb,
-                   first_seen_at = least(first_seen_at, $9), last_seen_at = greatest(last_seen_at, $9),
-                   n_news = n_news + 1
-               WHERE id = $1""",
-            event_id,
-            tags.urgent,
-            tags.urgency_reasons,
-            tags.industry_tags,
-            tags.countries,
-            tags.commodities,
-            tags.regions,
-            json.dumps(merged, ensure_ascii=False),
-            draft.published_at,
+        for n in news:
+            t = json.loads(n["tags"])
+            sig = signature(
+                n["title"], n["summary"] or "", n["event_type"] or "other", str(t.get("direction", "none")),
+                tag_values(t),
+            )  # fmt: skip
+            self.news.append((n["published_at"], sig))
+        events = await conn.fetch(
+            """SELECT * FROM core.events WHERE last_seen_at >= $1 AND first_seen_at <= $2
+               ORDER BY last_seen_at DESC LIMIT $3""",
+            since,
+            until,
+            RECENT_LIMIT,
         )
-    await conn.execute("INSERT INTO core.event_news (event_id, news_id) VALUES ($1, $2)", event_id, news_id)
-    return str(event_id), created
+        for e in events:
+            sig = signature(
+                e["title"], e["summary"] or "", e["event_type"], e["direction"], tag_values(_event_tags(e))
+            )
+            self.events[str(e["id"])] = (e["first_seen_at"], e["last_seen_at"], sig)
+
+    def news_near(self, at: datetime) -> list[NewsSignature]:
+        return [sig for published, sig in self.news if abs(published - at) <= CLUSTER_WINDOW]
+
+    def events_near(self, at: datetime) -> list[tuple[str, NewsSignature]]:
+        return [
+            (event_id, sig)
+            for event_id, (first, last, sig) in self.events.items()
+            if first - CLUSTER_WINDOW <= at <= last + CLUSTER_WINDOW
+        ]
+
+    def add_news(self, at: datetime, sig: NewsSignature) -> None:
+        self.news.append((at, sig))
+
+    def touch_event(self, event_id: str, at: datetime, sig: NewsSignature) -> None:
+        first, last, old = self.events.get(event_id, (at, at, sig))
+        self.events[event_id] = (min(first, at), max(last, at), old)
 
 
-async def store_news(conn: Any, source_id: str, drafts: list[NewsDraft]) -> StoreResult:
-    inserted = duplicates = 0
-    event_ids: list[str] = []
-    new_events: list[str] = []
+async def _create_event(conn: Any, draft: NewsDraft, tags: NewsTags) -> str:
+    event_id = await conn.fetchval(
+        """INSERT INTO core.events (cluster_key, title, summary, event_type, direction, urgent,
+               urgency_reasons,
+               tags, industry_tags, countries, commodities, regions, first_seen_at, last_seen_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $13)
+           RETURNING id""",
+        draft.cluster_key,
+        draft.title,
+        _summary(draft),
+        tags.event_type,
+        tags.direction,
+        tags.urgent,
+        tags.urgency_reasons,
+        json.dumps({"currencies": tags.currencies, "numbers": tags.numbers}, ensure_ascii=False),
+        tags.industry_tags,
+        tags.countries,
+        tags.commodities,
+        tags.regions,
+        draft.published_at,
+    )
+    return str(event_id)
+
+
+async def _join_event(conn: Any, event_id: str, draft: NewsDraft, tags: NewsTags) -> None:
+    existing = await conn.fetchrow("SELECT tags FROM core.events WHERE id = $1::uuid", event_id)
+    old_tags = json.loads(existing["tags"]) if existing else {}
+    merged = {
+        "currencies": sorted(set(old_tags.get("currencies", [])) | set(tags.currencies)),
+        "numbers": old_tags.get("numbers") or tags.numbers,
+    }
+    await conn.execute(
+        """UPDATE core.events SET
+               urgent = urgent OR $2,
+               urgency_reasons = ARRAY(SELECT DISTINCT unnest(urgency_reasons || $3::text[])),
+               industry_tags = ARRAY(SELECT DISTINCT unnest(industry_tags || $4::text[])),
+               countries = ARRAY(SELECT DISTINCT unnest(countries || $5::text[])),
+               commodities = ARRAY(SELECT DISTINCT unnest(commodities || $6::text[])),
+               regions = ARRAY(SELECT DISTINCT unnest(regions || $7::text[])),
+               tags = $8::jsonb,
+               first_seen_at = least(first_seen_at, $9), last_seen_at = greatest(last_seen_at, $9),
+               n_news = n_news + 1
+           WHERE id = $1::uuid""",
+        event_id,
+        tags.urgent,
+        tags.urgency_reasons,
+        tags.industry_tags,
+        tags.countries,
+        tags.commodities,
+        tags.regions,
+        json.dumps(merged, ensure_ascii=False),
+        draft.published_at,
+    )
+
+
+async def store_news(
+    conn: Any, source_id: str, drafts: list[NewsDraft], raw_id: Any | None = None
+) -> StoreResult:
+    result = StoreResult()
+    if not drafts:
+        return result
+    window = _Window()
     async with conn.transaction():
+        published = [d.published_at for d in drafts]
+        await window.load(conn, min(published) - CLUSTER_WINDOW, max(published) + CLUSTER_WINDOW)
         for d in drafts:
             canon = canonical_url(d.url)
             digest = text_hash(d.title, d.body)
@@ -148,21 +220,26 @@ async def store_news(conn: Any, source_id: str, drafts: list[NewsDraft]) -> Stor
                 digest,
             )
             if dup:
-                duplicates += 1
+                result.duplicates += 1
                 continue
             tags = tag_news(d.title, d.body)
+            summary = _summary(d)
+            sig = signature(d.title, summary, tags.event_type, tags.direction, tag_values(tags.as_dict()))
+            if any(is_near_duplicate(sig, other) for other in window.news_near(d.published_at)):
+                result.near_duplicates += 1
+                continue
             news_id = await conn.fetchval(
                 """INSERT INTO core.news_items (source_id, external_id, url, canonical_url, title, summary,
                        body,
-                       publisher, published_at, text_hash, event_type, tags, flags)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13)
+                       publisher, published_at, text_hash, event_type, tags, flags, raw_id)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14)
                    RETURNING id""",
                 source_id,
                 d.external_id,
                 d.url,
                 canon,
                 d.title,
-                _summary(d),
+                summary,
                 d.body,
                 d.publisher,
                 d.published_at,
@@ -170,22 +247,37 @@ async def store_news(conn: Any, source_id: str, drafts: list[NewsDraft]) -> Stor
                 tags.event_type,
                 json.dumps(tags.as_dict(), ensure_ascii=False),
                 tags.flags,
+                raw_id,
             )
-            event_id, created = await _attach_event(conn, d, tags, news_id)
-            inserted += 1
-            if event_id not in event_ids:
-                event_ids.append(event_id)
-            if created:
-                new_events.append(event_id)
-    return StoreResult(
-        inserted=inserted, duplicates=duplicates, event_ids=event_ids, new_event_ids=new_events
-    )
+            event_id: str | None = None
+            if d.cluster_key:
+                found = await conn.fetchval(
+                    "SELECT id FROM core.events WHERE cluster_key = $1", d.cluster_key
+                )
+                event_id = str(found) if found else None
+            if event_id is None and not d.cluster_key:
+                event_id, _ = best_event(sig, window.events_near(d.published_at))
+            if event_id is None:
+                event_id = await _create_event(conn, d, tags)
+                result.new_event_ids.append(event_id)
+                window.touch_event(event_id, d.published_at, sig)
+            else:
+                await _join_event(conn, event_id, d, tags)
+                window.touch_event(event_id, d.published_at, sig)
+            await conn.execute(
+                "INSERT INTO core.event_news (event_id, news_id) VALUES ($1::uuid, $2)", event_id, news_id
+            )
+            window.add_news(d.published_at, sig)
+            result.inserted += 1
+            if event_id not in result.event_ids:
+                result.event_ids.append(event_id)
+            if tags.urgent and event_id not in result.urgent_event_ids:
+                result.urgent_event_ids.append(event_id)
+    return result
 
 
-def read_fixture(path: Path, now: datetime | None = None) -> list[NewsDraft]:
+def fixture_drafts(data: dict[str, Any], now: datetime) -> list[NewsDraft]:
     """Fixture news are dated relative to `now` so the demo feed stays fresh."""
-    now = now or datetime.now(UTC)
-    data = json.loads(path.read_text(encoding="utf-8"))
     publisher = data.get("publisher", "Демо-лента (синтетические новости)")
     return [
         NewsDraft(
@@ -201,6 +293,12 @@ def read_fixture(path: Path, now: datetime | None = None) -> list[NewsDraft]:
     ]
 
 
+def read_fixture(path: Path, now: datetime | None = None) -> list[NewsDraft]:
+    return fixture_drafts(json.loads(path.read_text(encoding="utf-8")), now or datetime.now(UTC))
+
+
 async def load_fixture_news(conn: Any, path: Path, now: datetime | None = None) -> StoreResult:
-    await ensure_source(conn, FIXTURE_SOURCE_ID, "Демо-лента (синтетические новости)", "fixture", None, True)
+    await ensure_source(
+        conn, FIXTURE_SOURCE_ID, "Демо-лента (синтетические новости)", "fixture", str(path), True
+    )
     return await store_news(conn, FIXTURE_SOURCE_ID, read_fixture(path, now))

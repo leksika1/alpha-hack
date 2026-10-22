@@ -41,8 +41,8 @@ synthetic: ## Regenerate data/synthetic (deterministic)
 ingest-companies: ## Load companies CSV (DATA_DIR) -> staging -> core -> graph -> context
 	$(APP_EXEC) python scripts/ingest.py companies
 
-ingest-news: ## Poll news sources once
-	$(APP_EXEC) python scripts/ingest.py news
+ingest-news: ## Poll news sources once (live RSS + fixtures), queue generation for new matches
+	$(APP_EXEC) python scripts/ingest.py news --enqueue
 
 ingest-analytics: ## Load bank analytics PDFs (OCR -> chunks -> embeddings)
 	$(APP_EXEC) python scripts/ingest.py analytics

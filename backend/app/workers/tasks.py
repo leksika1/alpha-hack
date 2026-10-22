@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.core.pg import pg_connection
 from app.integrations.generators import get_generator
 from app.services.generation import generate_pending
+from app.services.news_run import run_news_collection
 from app.workers.broker import broker, log
 
 READY_TIMEOUT_S = 180
@@ -51,3 +52,20 @@ async def generate_pending_task(company_ids: list[str] | None = None) -> dict[st
 
 async def enqueue_generation(company_ids: list[str]) -> None:
     await generate_pending_task.kiq(company_ids=company_ids)
+
+
+@broker.task(
+    task_name="news.poll",
+    schedule=[{"cron": f"*/{max(1, min(59, get_settings().news_poll_interval_min))} * * * *"}],
+)
+async def poll_news_task(source_ids: list[str] | None = None) -> dict[str, object]:
+    """Scheduled news collection; new relevant events go straight to generation (urgent ones first,
+    see generate_pending ordering)."""
+    settings = get_settings()
+    async with pg_connection() as conn:
+        result = await run_news_collection(conn, settings, source_ids=source_ids)
+    if result.companies_to_generate:
+        await enqueue_generation(result.companies_to_generate)
+    summary = result.as_dict()
+    log.info("news_poll_done", **{k: v for k, v in summary.items() if k != "sources"})
+    return summary

@@ -138,3 +138,13 @@ erDiagram
 Денормализованные колонки (`industry_tags`, `counterparty_tags` — отрасли контрагентов с долей ≥ 5%,
 `fts_countries`, `commodities`, `products`, флаги) с GIN-индексами — инвертированный индекс для матчинга
 событий с компаниями (фаза 5).
+
+## Новости и события (фазы 2–3)
+
+| Таблица | Ключ | Содержание |
+|---|---|---|
+| `core.sources` | `id` | каталог источников: вид (`rss`, `fixture`), URL, приоритет, `fallback_for`, темы; здоровье — `health_status`, `consecutive_failures`, `last_error`, `last_latency_ms`, `etag`/`last_modified` |
+| `core.news_raw` | `id` | один опрос источника: исход (`ok`, `not_modified`, `unchanged`, `http_error`, `network_error`, `robots_disallowed`, `parse_error`), статус, ключ тела в S3 и SHA-256, задержка, число записей, новых и дублей |
+| `core.news_items` | `id`, uq `canonical_url` | нормализованная новость: заголовок, лид (без строк с prompt injection), текст, дата, хэш текста, теги тегера, флаги (`suspected_prompt_injection`), `raw_id` |
+| `core.events` | `id`, uq `cluster_key` | событие (кластер новостей): тип, направление, срочность и её причины, объединённые теги (GIN), первое и последнее упоминание, число новостей |
+| `core.event_news` | (`event_id`, `news_id`) | состав события |

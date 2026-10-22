@@ -1,0 +1,21 @@
+{
+  "_comment": "Каталог источников новостей (ADR-012). Только публичные бесплатные RSS, проверены 2026-10-22: HTTP 200, валидная лента, robots.txt разрешает. Нерабочие и запрещённые — в docs/SOURCES.md. fallback_for: резервный источник опрашивается, когда основной в статусе down.",
+  "sources": [
+    {"id": "cbr_press", "name": "Банк России — пресс-релизы", "kind": "rss", "url": "https://www.cbr.ru/rss/RssPress", "priority": 10, "topics": ["regulator", "monetary_policy"]},
+    {"id": "cbr_events", "name": "Банк России — события", "kind": "rss", "url": "https://www.cbr.ru/rss/eventrss", "priority": 15, "fallback_for": "cbr_press", "topics": ["regulator"]},
+    {"id": "interfax", "name": "Интерфакс", "kind": "rss", "url": "https://www.interfax.ru/rss.asp", "priority": 20, "topics": ["general", "business"]},
+    {"id": "finmarket", "name": "Финмаркет (группа Интерфакс)", "kind": "rss", "url": "https://www.finmarket.ru/rss/mainnews.asp", "priority": 30, "fallback_for": "interfax", "topics": ["markets", "business"]},
+    {"id": "rbc", "name": "РБК — главные новости", "kind": "rss", "url": "https://rssexport.rbc.ru/rbcnews/news/30/full.rss", "priority": 20, "topics": ["general", "business"]},
+    {"id": "vedomosti_economics", "name": "Ведомости — экономика", "kind": "rss", "url": "https://www.vedomosti.ru/rss/rubric/economics", "priority": 20, "topics": ["economics"]},
+    {"id": "vedomosti_news", "name": "Ведомости — лента", "kind": "rss", "url": "https://www.vedomosti.ru/rss/news", "priority": 40, "fallback_for": "vedomosti_economics", "topics": ["general"]},
+    {"id": "prime", "name": "Прайм", "kind": "rss", "url": "https://1prime.ru/export/rss2/index.xml", "priority": 25, "topics": ["markets", "economics"]},
+    {"id": "ria", "name": "РИА Новости — лента", "kind": "rss", "url": "https://ria.ru/export/rss2/archive/index.xml", "priority": 50, "fallback_for": "prime", "topics": ["general"]},
+    {"id": "gazeta_business", "name": "Газета.ru — бизнес", "kind": "rss", "url": "https://www.gazeta.ru/export/rss/business.xml", "priority": 40, "topics": ["business"]},
+    {"id": "rg", "name": "Российская газета", "kind": "rss", "url": "https://rg.ru/xml/index.xml", "priority": 40, "topics": ["general", "regulation"]},
+    {"id": "bfm", "name": "BFM.ru", "kind": "rss", "url": "https://www.bfm.ru/news.rss", "priority": 40, "topics": ["business", "markets"]},
+    {"id": "forbes", "name": "Forbes Россия", "kind": "rss", "url": "https://www.forbes.ru/newrss.xml", "priority": 50, "topics": ["business"]},
+    {"id": "retail_ru", "name": "Retail.ru — новости ритейла", "kind": "rss", "url": "https://www.retail.ru/rss/news/", "priority": 30, "topics": ["retail"]},
+    {"id": "new_retail", "name": "New Retail", "kind": "rss", "url": "https://new-retail.ru/rss/", "priority": 45, "fallback_for": "retail_ru", "topics": ["retail"]},
+    {"id": "zerno", "name": "Zerno.ru — зерновой рынок", "kind": "rss", "url": "https://www.zerno.ru/rss.xml", "priority": 30, "topics": ["agriculture"]}
+  ]
+}
