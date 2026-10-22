@@ -67,6 +67,7 @@
 | pydantic-core | 2.50.1 | MIT | PyPI |
 | pydantic-settings | 2.16.1 | MIT | PyPI |
 | pygments | 2.21.0 | BSD-2-Clause | PyPI |
+| pyjwt | 2.15.1 | MIT | PyPI |
 | pytest | 9.1.1 | MIT | PyPI |
 | pytest-asyncio | 1.4.0 | Apache-2.0 | PyPI |
 | python-dateutil | 2.9.0.post0 | Apache Software License, BSD License | PyPI |

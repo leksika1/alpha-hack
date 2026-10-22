@@ -1,7 +1,10 @@
 # Гайд для фронтенда
 
-Статус: **черновик фазы 0**. Перечень эндпоинтов зафиксирован в `docs/SPEC.md` §10; схемы появятся в `docs/openapi.json`
-по мере реализации (фаза 2 — сквозной скелет). Swagger: `http://localhost:8000/docs`.
+Статус: **фаза 2 — реализовано и покрыто тестами**: auth, `/me`, смена роли, компании (профиль, анкета, граф), лента,
+`/feed/summary`, инсайт, trace, state, feedback, source-click, actions (мок-CRM), продукты, новости.
+Схемы — `docs/openapi.json`, Swagger — `http://localhost:8000/docs`. Ещё не реализованы (фаза 6): `GET /digest`,
+`POST /ask` и `POST /insights/{id}/ask` (SSE), `GET /notifications/stream`, admin-эндпоинты.
+Демо-учётки — корневой README.
 
 ## Базовые правила
 

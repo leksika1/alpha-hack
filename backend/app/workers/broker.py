@@ -1,4 +1,6 @@
-"""Taskiq broker (Redis Streams, at-least-once delivery) and scheduler (ADR-003).
+"""Taskiq broker (Redis list queue) and scheduler (ADR-003).
+
+A list queue keeps messages enqueued before a worker starts (e.g. the seed's pre-generation request).
 
 Run:
     taskiq worker app.workers.broker:broker app.workers.tasks
@@ -7,14 +9,14 @@ Run:
 
 from taskiq import TaskiqEvents, TaskiqScheduler, TaskiqState
 from taskiq.schedule_sources import LabelScheduleSource
-from taskiq_redis import RedisAsyncResultBackend, RedisStreamBroker
+from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 
 _settings = get_settings()
 
-broker = RedisStreamBroker(url=_settings.redis_url, queue_name="alfa-tasks").with_result_backend(
+broker = ListQueueBroker(url=_settings.redis_url, queue_name="alfa-tasks").with_result_backend(
     RedisAsyncResultBackend(redis_url=_settings.redis_url, result_ex_time=24 * 3600)
 )
 

@@ -8,3 +8,8 @@
 - [news] Near-duplicate через MinHash вместо эмбеддингов для очень больших потоков — фаза 3.
 - [ops] Бэкапы Postgres/MinIO по расписанию (pg_dump + mc mirror) — RUNBOOK.
 - [ops] Деплой на бесплатный внешний сервер (рекомендация кейса, стр. 8).
+- [ml-stub] Флаг `ML_STUB_USE_LLM` (один дешёвый вызов LLM через Gateway) не реализован — нужен LLM Gateway (фаза 5).
+- [api] Rate limit публичных и внутренних эндпоинтов (Redis token bucket) — фаза 5 (безопасность).
+- [api] `GET /me/requests` — статусы заявок в мок-CRM для пользователя (сейчас статус возвращается при создании).
+- [security] В `APP_ENV=prod` запрещать запуск с dev-секретами (`JWT_SECRET`, `SERVICE_TOKEN`, `ML_SERVICE_TOKEN`).
+- [matching] Матчинг по всей базе через инвертированный индекс (GIN-массивы `company_context`) — фаза 5; сейчас — компании с пользователями.

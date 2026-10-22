@@ -22,6 +22,9 @@ REF = ROOT / "data" / "reference"
 @pytest.fixture(scope="module")
 async def loaded(infra: dict[str, str]) -> dict[str, Any]:
     async with pg_connection(infra["DATABASE_URL"]) as conn:
+        # precondition: no user-provided facts (other modules may have filled the questionnaire)
+        if await conn.fetchval("SELECT to_regclass('core.company_context') IS NOT NULL"):
+            await conn.execute("UPDATE core.company_context SET user_provided = '{}'::jsonb")
         result = await ingest_companies(conn, SYNTH, REF)
     return {"url": infra["DATABASE_URL"], "result": result}
 

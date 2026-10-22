@@ -11,9 +11,10 @@ x-app-env: &app-env
   S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
   S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
   S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
-  JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-change-me}
+  JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-change-me-in-env-0123456789}
   SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-only-service-token}
   ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml-stub:8100}
+  INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:8000}
   ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:-dev-only-ml-token}
   INSIGHT_GENERATOR: ${INSIGHT_GENERATOR:-stub}
   EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-fake}

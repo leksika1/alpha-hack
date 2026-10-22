@@ -41,6 +41,27 @@ Swagger — http://localhost:8000/docs, консоль MinIO — http://localhos
 Данные организаторов (не входят в репозиторий) кладутся в `data/raw/` (см. [`docs/DATA.md`](docs/DATA.md));
 без них система работает на синтетике `backend/data/synthetic/`.
 
+## Демо-учётки (только для демо)
+
+| Логин | Пароль | Доступ |
+|---|---|---|
+| `demo` | `demo12345` | 3 компании: металлоторговля (CEO), продуктовая розница (CFO), грузоперевозки (собственник) |
+| `demo2` | `demo12345` | агрохолдинг (CEO), девелопер (казначей) |
+| `admin` | `admin12345` | администратор сервиса (admin-эндпоинты — фаза 6) |
+
+На данных организаторов демо-компании выбираются автоматически (CLIENT с кредитом, ВЭД, группой, много контрагентов).
+
+## Быстрая проверка (curl)
+
+```bash
+TOKEN=$(curl -s -X POST localhost:8000/api/v1/auth/login -H 'Content-Type: application/json' -d '{"login":"demo","password":"demo12345"}' | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+curl -s localhost:8000/api/v1/feed/summary -H "Authorization: Bearer $TOKEN"
+curl -s "localhost:8000/api/v1/feed?company_id=U_700001" -H "Authorization: Bearer $TOKEN"
+```
+
+Дальше: `GET /api/v1/insights/{id}` (инсайт), `GET /api/v1/insights/{id}/trace` (на чём основан вывод),
+`POST /api/v1/insights/{id}/actions` (`{"type":"callback"}` → мок-CRM). Swagger: http://localhost:8000/docs.
+
 ## Команды
 
 | make | без make |

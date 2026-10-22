@@ -40,13 +40,18 @@ class Settings(BaseSettings):
     s3_bucket_snapshots: str = "snapshots"
 
     # Auth
-    jwt_secret: SecretStr = SecretStr("change-me-in-env")
+    jwt_secret: SecretStr = SecretStr("dev-only-jwt-secret-change-me-in-env-0123456789")
     jwt_access_ttl_min: int = 30
     jwt_refresh_ttl_days: int = 7
     service_token: SecretStr = SecretStr("change-me-service-token")
 
+    # Base URL under which ML reaches this backend (/internal/tools, /internal/llm)
+    internal_api_url: str = "http://localhost:8000"
+
     # ML / providers
     ml_service_url: str = "http://localhost:8100"
+    ml_request_timeout_s: float = 60.0
+    ml_max_retries: int = 2
     ml_service_token: SecretStr = SecretStr("change-me-ml-token")
     insight_generator: Literal["stub", "remote", "fake"] = "stub"
     embedding_provider: Literal["fake", "local", "remote"] = "fake"
@@ -70,6 +75,13 @@ class Settings(BaseSettings):
     news_fixtures_enabled: bool = False
     news_poll_interval_min: int = 15
     news_user_agent: str = "AlfaFutureBot/0.1 (+hackathon prototype; contact: see README)"
+    fixture_news_path: str = "data/synthetic/news/fixture_news.json"
+
+    # Matching / generation
+    match_min_score: float = 0.2
+    match_max_per_company: int = 50
+    insight_ttl_days: int = 14
+    tool_calls_per_run: int = 120
 
     # Rate limits
     rate_limit_public_per_min: int = 120
