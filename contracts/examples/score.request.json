@@ -1,0 +1,11 @@
+{
+  "request_id": "score_batch_20261022_1",
+  "items": [
+    {
+      "company_id": "U_110108",
+      "event_id": "0b6f2c0e-3d7a-4c8e-9a51-6f1d2e3a4b01",
+      "role": "cfo",
+      "baseline": { "score": 0.81, "breakdown": { "rate": 0.35, "recency": 0.18 }, "matched_features": ["products.loan"], "urgent": true }
+    }
+  ]
+}

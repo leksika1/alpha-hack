@@ -1,0 +1,15 @@
+{
+  "step_type": "plan",
+  "name": "plan_insight",
+  "parent_step_id": null,
+  "input_preview": "company=U_110108 event=0b6f2c0e role=cfo",
+  "output_preview": "1) get_company_context 2) get_event 3) search_bank_analytics: ключевая ставка прогноз 4) generate 5) self_check",
+  "data": { "steps": ["get_company_context", "get_event", "search_bank_analytics", "generate", "self_check"] },
+  "model": "qwen3.6-35b-a3b",
+  "tokens_in": 1830,
+  "tokens_out": 120,
+  "latency_ms": 1420,
+  "status": "ok",
+  "error": null,
+  "attempt": 1
+}

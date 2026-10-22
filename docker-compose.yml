@@ -1,0 +1,158 @@
+# Single reproducible way to run everything: `make up` (== docker compose up -d --build).
+# Profiles: services without a profile = demo stack ("default"); `test` adds the e2e runner
+# (see docker-compose.test.yml, used by `make e2e`).
+
+x-app-env: &app-env
+  APP_ENV: ${APP_ENV:-dev}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-alfa}:${POSTGRES_PASSWORD:-alfa}@postgres:5432/${POSTGRES_DB:-alfa}
+  REDIS_URL: redis://redis:6379/0
+  S3_ENDPOINT_URL: http://minio:9000
+  S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
+  S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+  S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+  JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-change-me}
+  SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-only-service-token}
+  ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml-stub:8100}
+  ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:-dev-only-ml-token}
+  INSIGHT_GENERATOR: ${INSIGHT_GENERATOR:-stub}
+  EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-fake}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
+  EMBEDDING_DIM: ${EMBEDDING_DIM:-384}
+  OCR_PROVIDER: ${OCR_PROVIDER:-tesseract}
+  SCORER_PROVIDER: ${SCORER_PROVIDER:-baseline}
+  LLM_BASE_URL: ${LLM_BASE_URL:-}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  LLM_DAILY_BUDGET_RUB: ${LLM_DAILY_BUDGET_RUB:-450}
+  DATA_DIR: ${DATA_DIR:-data/synthetic}
+  NEWS_FIXTURES_ENABLED: ${NEWS_FIXTURES_ENABLED:-true}
+
+x-app: &app
+  build:
+    context: .
+    target: runtime
+  image: alfa-future-backend:${IMAGE_TAG:-local}
+  environment: *app-env
+  volumes:
+    - ./data/raw:/app/data/raw:ro
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-alfa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alfa}
+      POSTGRES_DB: ${POSTGRES_DB:-alfa}
+    ports: ["${POSTGRES_PORT:-5432}:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alfa} -d ${POSTGRES_DB:-alfa}"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["${REDIS_PORT:-6379}:6379"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z  # community build of MinIO (ADR-004)
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports: ["${MINIO_PORT:-9000}:9000", "${MINIO_CONSOLE_PORT:-9001}:9001"]
+    volumes: [miniodata:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  minio-init:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z  # ships the mc client
+    depends_on:
+      minio: { condition: service_healthy }
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
+        mc mb --ignore-existing local/analytics local/news-raw local/snapshots &&
+        echo "buckets ready"
+    restart: "no"
+
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  seed:
+    <<: *app
+    command: ["python", "scripts/seed.py"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      minio-init: { condition: service_completed_successfully }
+    restart: "no"
+
+  api:
+    <<: *app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    ports: ["${API_PORT:-8000}:8000"]
+    depends_on:
+      seed: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  worker:
+    <<: *app
+    command: ["taskiq", "worker", "app.workers.broker:broker", "app.workers.tasks", "--workers", "2"]
+    depends_on:
+      seed: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  scheduler:
+    <<: *app
+    command: ["taskiq", "scheduler", "app.workers.broker:scheduler", "app.workers.tasks"]
+    depends_on:
+      redis: { condition: service_healthy }
+      worker: { condition: service_started }
+
+  ml-stub:
+    <<: *app
+    command: ["uvicorn", "ml_stub.main:app", "--host", "0.0.0.0", "--port", "8100"]
+    ports: ["${ML_STUB_PORT:-8100}:8100"]
+    environment:
+      <<: *app-env
+      TOOLS_BASE_URL: http://api:8000/internal/tools
+      LLM_GATEWAY_URL: http://api:8000/internal/llm
+      ML_STUB_USE_LLM: ${ML_STUB_USE_LLM:-false}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8100/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

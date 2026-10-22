@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.13.5"
+
+jobs:
+  lint-type-unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install 3.12
+      - run: uv sync --frozen
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Typecheck
+        run: uv run mypy
+      - name: Unit tests
+        run: uv run pytest -m "not integration and not e2e and not live" -q
+
+  integration:
+    runs-on: ubuntu-24.04
+    needs: lint-type-unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install 3.12
+      - run: uv sync --frozen
+      - name: Integration tests (testcontainers)
+        run: uv run pytest -m integration -q
+
+  e2e:
+    runs-on: ubuntu-24.04
+    needs: lint-type-unit
+    steps:
+      - uses: actions/checkout@v4
+      - name: E2E (docker compose, profile test; prints logs on failure)
+        run: make e2e

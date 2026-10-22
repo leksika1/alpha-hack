@@ -1,0 +1,44 @@
+# --- Сырые данные организаторов: НЕ коммитить ---
+data/raw/
+data/cache/
+data/out/
+
+# --- Секреты ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.python-version.local
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+
+# --- Модели и кэши эмбеддингов ---
+.cache/
+models_cache/
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Claude Code локальные настройки ---
+.claude/settings.local.json
+
+# --- Материалы организаторов (кейс, FAQ) — не распространяем ---
+materials/
