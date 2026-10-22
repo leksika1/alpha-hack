@@ -1,17 +1,11 @@
 import json
 from dataclasses import replace
 from decimal import Decimal
-from pathlib import Path
 
 from app.domain.company_context import CompanyFacts, Counterparty, DirectionStats, build_context
+from app.domain.contracts import CONTRACTS_DIR
 
-EXAMPLE = (
-    Path(__file__).resolve().parents[2]
-    / "contracts"
-    / "examples"
-    / "tools"
-    / "get_company_context.response.json"
-)
+EXAMPLE = CONTRACTS_DIR / "examples" / "tools" / "get_company_context.response.json"
 
 
 def facts(**kw: object) -> CompanyFacts:

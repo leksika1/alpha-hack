@@ -4,7 +4,8 @@ SHELL := /bin/bash
 
 COMPOSE      := docker compose
 COMPOSE_E2E  := docker compose -p alfa-e2e -f docker-compose.yml -f docker-compose.test.yml --profile test
-RUN          := uv run
+BACKEND      := backend
+RUN          := cd $(BACKEND) && uv run
 APP_EXEC     := $(COMPOSE) exec api
 
 .PHONY: help up down logs ps migrate seed synthetic ingest-companies ingest-news ingest-analytics \
@@ -13,8 +14,8 @@ APP_EXEC     := $(COMPOSE) exec api
 help: ## Show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install Python deps from uv.lock (local dev)
-	uv sync --frozen
+install: ## Install backend Python deps from uv.lock (local dev)
+	cd $(BACKEND) && uv sync --frozen
 
 up: ## Build and start the demo stack
 	$(COMPOSE) up -d --build
@@ -48,11 +49,11 @@ ingest-analytics: ## Load bank analytics PDFs (OCR -> chunks -> embeddings)
 
 format: ## Auto-format
 	$(RUN) ruff format .
-	$(RUN) ruff check --fix .
+	cd $(BACKEND) && uv run ruff check --fix .
 
 lint: ## ruff lint + format check
 	$(RUN) ruff check .
-	$(RUN) ruff format --check .
+	cd $(BACKEND) && uv run ruff format --check .
 
 typecheck: ## mypy (strict for app/domain, app/services)
 	$(RUN) mypy

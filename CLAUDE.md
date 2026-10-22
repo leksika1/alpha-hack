@@ -13,7 +13,9 @@
 обучение/выбор моделей, NER, генерация текста инсайтов). Для ML делаем контракты, `ml_stub`
 и интерфейсы `EmbeddingProvider` / `RelevanceScorer` / `InsightGenerator` (`fake` / `baseline` / `remote`).
 
-- Каталоги `frontend/` и `ml/` (если появятся) **не трогать**.
+- Репозиторий разделён: **`backend/`** — наша зона; `ml/` — команда ML; `frontend/` — команда фронтенда
+  (их **не трогать**, кроме README-указателей). Общие: `contracts/`, `docs/`, `docker-compose*.yml`, `Makefile`, CI.
+- Пути к коду в документации (`app/...`, `scripts/...`, `tests/...`) — относительно `backend/`.
 - `contracts/` меняются **только** через ADR в `docs/DECISIONS.md` + `contracts/CHANGELOG.md` + bump `schema_version`.
 - Пограничная задача (например, классификация новостей) → baseline на правилах за интерфейсом + ADR «ML может заменить».
 
@@ -65,7 +67,7 @@
 ## 8. Конвенции (кратко; подробно — `docs/agent/CONVENTIONS.md`)
 
 - Код и идентификаторы — английский; документация — русский.
-- Структура: `app/{api,domain,services,repositories,workers,integrations,core}`; `ml_stub/` — отдельный сервис.
+- Структура: `backend/app/{api,domain,services,repositories,workers,integrations,core}`; `backend/ml_stub/` — отдельный сервис.
 - `app/domain` не зависит от FastAPI/SQLAlchemy. mypy strict для `app/domain` и `app/services`.
 - Конфиги — `pydantic-settings` (`app/core/config.py`), секреты только из env.
 - Время в БД — UTC (`timestamptz`); деньги — `numeric(20,2)`; ошибки API — RFC 7807 `application/problem+json`.
@@ -87,7 +89,7 @@
 | `make openapi` | выгрузить `docs/openapi.json` |
 | `make notices` | сгенерировать `THIRD_PARTY_NOTICES.md` из `uv.lock` |
 
-Без `make` (Windows): эквивалентные команды — в `Makefile`, запускать через `uv run ...`.
+Без `make` (Windows): эквивалентные команды — в `Makefile`; Python-команды запускать из `backend/` через `uv run ...`.
 
 ## 10. Самопроверка перед завершением фазы
 

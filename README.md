@@ -4,8 +4,19 @@
 персонализированные инсайты для ЛПР среднего и крупного бизнеса — что произошло, почему это важно именно этой компании,
 какие риски и возможности, что делать, как это оценивает банк и на чём основан вывод.
 
-> **Статус:** фаза 0 (основа) — каркас, контракты, спецификация. Прогресс — [`docs/PROGRESS.md`](docs/PROGRESS.md).
+> **Статус:** фазы 0–1 готовы (основа, данные компаний), идёт фаза 2 (API и сквозной сценарий). Прогресс — [`docs/PROGRESS.md`](docs/PROGRESS.md).
 > Полный сценарий проверки для жюри появится к фазе 8.
+
+## Структура репозитория
+
+| Папка | Чья зона | Что внутри |
+|---|---|---|
+| `backend/` | бэкенд | API, данные компаний, новости, аналитика, инфраструктура агента, `ml_stub`, тесты |
+| `ml/` | команда ML | ML-сервис по `contracts/ml-service.openapi.yaml` |
+| `frontend/` | команда фронтенда | интерфейс «Альфа-Бизнес» по `docs/openapi.json` |
+| `contracts/` | общая | контракты между командами (JSON Schema, OpenAPI, примеры) |
+| `docs/` | общая | спецификация, архитектура, данные, ADR |
+| `data/raw/` | — | данные организаторов (не коммитятся) |
 
 ## Архитектура (кратко)
 
@@ -28,17 +39,17 @@ make up
 Swagger — http://localhost:8000/docs, консоль MinIO — http://localhost:9001.
 
 Данные организаторов (не входят в репозиторий) кладутся в `data/raw/` (см. [`docs/DATA.md`](docs/DATA.md));
-без них система работает на синтетике `data/synthetic/`.
+без них система работает на синтетике `backend/data/synthetic/`.
 
 ## Команды
 
 | make | без make |
 |---|---|
 | `make up` / `make down` | `docker compose up -d --build` / `docker compose down` |
-| `make check` | `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest -m "not integration and not e2e and not live" && uv run pytest -m integration` |
+| `make check` | `cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest -m "not integration and not e2e and not live" && uv run pytest -m integration` |
 | `make e2e` | `docker compose -p alfa-e2e -f docker-compose.yml -f docker-compose.test.yml --profile test up --build --abort-on-container-exit --exit-code-from e2e-runner e2e-runner` |
-| `make openapi` | `uv run python scripts/export_openapi.py` |
-| `make notices` | `uv run python scripts/gen_notices.py` |
+| `make openapi` | `cd backend && uv run python scripts/export_openapi.py` |
+| `make notices` | `cd backend && uv run python scripts/gen_notices.py` |
 
 Все цели — `make help`. Переменные окружения — [`.env.example`](.env.example) (каждая описана).
 
