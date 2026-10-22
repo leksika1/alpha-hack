@@ -29,6 +29,8 @@
 | colorama | 0.4.6 | BSD License | PyPI |
 | docker | 7.2.0 | Apache-2.0 | PyPI |
 | fastapi | 0.159.1 | MIT | PyPI |
+| feedparser | 6.0.14 | BSD-2-Clause | PyPI |
+| feedparser-sgmllib | 2.1.0 | PSF-2.0 | PyPI |
 | frozenlist | 1.8.0 | Apache-2.0 | PyPI |
 | greenlet | 3.5.6 | MIT AND PSF-2.0 | PyPI |
 | h11 | 0.16.0 | MIT License | PyPI |

@@ -13,3 +13,10 @@
 - [api] `GET /me/requests` — статусы заявок в мок-CRM для пользователя (сейчас статус возвращается при создании).
 - [security] В `APP_ENV=prod` запрещать запуск с dev-секретами (`JWT_SECRET`, `SERVICE_TOKEN`, `ML_SERVICE_TOKEN`).
 - [matching] Матчинг по всей базе через инвертированный индекс (GIN-массивы `company_context`) — фаза 5; сейчас — компании с пользователями.
+- [news] Отраслевые RSS для металлургии, логистики, нефтегаза (кандидаты из docs/SOURCES.md недоступны) — фаза 3.
+- [news] ТАСС: включить после явного разрешения (robots.txt отвечает 403) — docs/SOURCES.md.
+- [news] Коннекторы `json_api` и `html` (сейчас не нужны: все рабочие источники — RSS) — app/integrations/news/connectors.py.
+- [news] Near-duplicate и склейка по эмбеддингам поверх ADR-021 — фаза 4.
+- [news] Метрики сбора в Prometheus из воркера (сейчас — `core.news_raw`/`core.sources`; витрина — `/admin/sources/health`, фаза 6).
+- [market] RSS курсов ЦБ (`cbr.ru/rss/RssCurrency`) — источник для `get_market_data` (ключевая ставка, курсы).
+- [news] Срочность «событие у контрагента» — по упоминанию компаний (в обезличенных данных нет наименований).

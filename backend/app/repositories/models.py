@@ -397,9 +397,49 @@ class Source(Base):
     fallback_for: Mapped[str | None] = mapped_column(String(64))
     enabled: Mapped[bool] = mapped_column(Boolean, server_default="true")
     is_fixture: Mapped[bool] = mapped_column(Boolean, server_default="false")
-    health_status: Mapped[str] = mapped_column(String(16), server_default="unknown")
+    health_status: Mapped[str] = mapped_column(
+        String(16), server_default="unknown"
+    )  # healthy | degraded | down
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     config: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    topics: Mapped[list[str]] = mapped_column(server_default="{}")
+    consecutive_failures: Mapped[int] = mapped_column(Integer, server_default="0")
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    last_latency_ms: Mapped[int | None] = mapped_column(Integer)
+    etag: Mapped[str | None] = mapped_column(Text)
+    last_modified: Mapped[str | None] = mapped_column(Text)
+
+
+class NewsRaw(Base):
+    """One fetch of a source: raw response body stored in S3 (news-raw bucket), metadata and outcome here.
+    Re-processing reads the body back from S3 without re-downloading (SPEC FR-N2)."""
+
+    __tablename__ = "news_raw"
+    __table_args__ = (
+        Index("ix_news_raw_source_id_fetched_at", "source_id", "fetched_at"),
+        {"schema": "core"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
+    )
+    source_id: Mapped[str] = mapped_column(ForeignKey("core.sources.id"))
+    fetched_at: Mapped[datetime] = _now()
+    status_code: Mapped[int | None] = mapped_column(Integer)
+    outcome: Mapped[str] = mapped_column(
+        String(24)
+    )  # ok | not_modified | http_error | network_error | robots_disallowed | parse_error
+    s3_key: Mapped[str | None] = mapped_column(Text)
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    content_type: Mapped[str | None] = mapped_column(Text)
+    bytes: Mapped[int | None] = mapped_column(Integer)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    n_items: Mapped[int] = mapped_column(Integer, server_default="0")
+    n_new: Mapped[int] = mapped_column(Integer, server_default="0")
+    n_duplicates: Mapped[int] = mapped_column(Integer, server_default="0")
+    error: Mapped[str | None] = mapped_column(Text)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class NewsItem(Base):
@@ -424,7 +464,9 @@ class NewsItem(Base):
     event_type: Mapped[str | None] = mapped_column(String(32))
     tags: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
     flags: Mapped[list[str]] = mapped_column(server_default="{}")
-    raw_key: Mapped[str | None] = mapped_column(Text)
+    raw_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("core.news_raw.id", ondelete="SET NULL"), index=True
+    )
 
 
 class Event(Base):

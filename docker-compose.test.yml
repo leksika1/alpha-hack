@@ -6,6 +6,7 @@ x-test-env: &test-env
   APP_ENV: test
   DATA_DIR: data/synthetic
   NEWS_FIXTURES_ENABLED: "true"
+  NEWS_LIVE_SOURCES_ENABLED: "false"
   INSIGHT_GENERATOR: stub
   EMBEDDING_PROVIDER: fake
   OCR_PROVIDER: fake

@@ -76,6 +76,11 @@ class Settings(BaseSettings):
     news_poll_interval_min: int = 15
     news_user_agent: str = "AlfaFutureBot/0.1 (+hackathon prototype; contact: see README)"
     fixture_news_path: str = "data/synthetic/news/fixture_news.json"
+    news_sources_path: str = "data/reference/news_sources.json"
+    news_live_sources_enabled: bool = True  # false in e2e/offline: only the fixture source is polled
+    news_fetch_concurrency: int = 4
+    news_min_interval_s: float = 2.0  # per host
+    news_failures_to_down: int = 3
 
     # Matching / generation
     match_min_score: float = 0.2

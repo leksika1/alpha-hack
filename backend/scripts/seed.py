@@ -20,6 +20,7 @@ from app.core.logging import configure_logging, get_logger  # noqa: E402
 from app.core.pg import pg_connection  # noqa: E402
 from app.core.s3 import all_buckets, ensure_buckets, get_s3_client  # noqa: E402
 from app.services.ingest_companies import COMPANIES_FILE, ingest_companies  # noqa: E402
+from app.services.news_ingest import S3ObjectStore  # noqa: E402
 from app.services.seed import seed_demo  # noqa: E402
 
 log = get_logger("seed")
@@ -40,7 +41,8 @@ async def _seed(data_dir: Path, enqueue: bool) -> None:
         else:
             log.warning("seed_companies_no_data", data_dir=str(data_dir))
             return
-        summary = await seed_demo(conn, settings, data_dir, REFERENCE_DIR, ROOT)
+        store = S3ObjectStore(get_s3_client(), settings.s3_bucket_news_raw)
+        summary = await seed_demo(conn, settings, data_dir, REFERENCE_DIR, ROOT, store)
     log.info("seed_demo_done", **summary)
     print(json.dumps(summary, ensure_ascii=False))
     if enqueue and summary["demo_companies"]:

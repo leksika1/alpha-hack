@@ -23,6 +23,7 @@ dependencies = [
     "jsonschema>=4.23",
     "pyyaml>=6.0.2",
     "pyjwt>=2.9",
+    "feedparser>=6.0.11",
 ]
 
 [dependency-groups]
