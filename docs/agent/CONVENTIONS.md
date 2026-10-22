@@ -49,4 +49,4 @@ tests/{unit,integration,e2e,fixtures}
 
 ## Git
 
-- Conventional Commits. Маленькие коммиты. Ветка по умолчанию `main`; теги `vX.Y.Z`.
+- Conventional Commits. Маленькие коммиты. Разработка — в ветке `dev`; `main` — стабильные состояния (merge `dev → main` по решению человека); теги `vX.Y.Z` на `main`.
