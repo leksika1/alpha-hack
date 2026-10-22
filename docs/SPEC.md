@@ -62,7 +62,7 @@
 
 | № | Критерий | Как закрываем | Где в коде | Тест | Статус |
 |---|---|---|---|---|---|
-| 01 | Определяет бизнес-контекст и отбирает значимые события с учётом признаков | `company_context` (отрасль, контрагенты с долями и отраслями, ВЭД, продукты → чувствительности, масштаб группы, регион) + rule-based матчинг и `RelevanceScorer` с breakdown | `app/services/company_context.py`, `app/domain/scoring.py`, `app/services/matching.py` | unit `test_scoring.py`; e2e №2 (разные ленты у компаний разных отраслей) | ☐ |
+| 01 | Определяет бизнес-контекст и отбирает значимые события с учётом признаков | `company_context` (отрасль, контрагенты с долями и отраслями, ВЭД, продукты → чувствительности, масштаб группы, регион) + rule-based матчинг и `RelevanceScorer` с breakdown | `app/domain/company_context.py` ☑, `app/services/company_context.py` ☑, `app/domain/scoring.py`, `app/services/matching.py` | unit `test_scoring.py`; e2e №2 (разные ленты у компаний разных отраслей) | ☐ |
 | 02 | Содержательная интерпретация, несколько факторов, не пересказ | контракт требует `why_it_matters[].feature_refs`, `consequences`, `scenarios`; валидатор отклоняет инсайт без ссылок на признаки компании и без последствий | `contracts/insight.schema.json`, `app/domain/insight_validator.py` | unit `test_insight_validator.py` | ☐ |
 | 03 | Аналитика банка в интерпретации; видно, что позиция банка, а что AI | `bank_view[]` со ссылками на `analytics_chunk_id` + страница; `statements[].kind`; `model_disagrees_with_bank` | `app/services/analytics_search.py`, контракт | e2e №4, №6 | ☐ |
 | 04 | Отбор, объединение, суммаризация; связь с первоисточниками; минимум фактологических ошибок | дедуп + кластеризация в события; `sources[]`, `source_refs` у fact/bank_analytics обязательны; переход к первоисточнику (URL / presigned PDF#page) | `app/services/news_pipeline.py`, `app/domain/insight_validator.py` | unit `test_dedup.py`; e2e №6 | ☐ |
@@ -83,7 +83,7 @@
 | О2 | Аналитика банка — заметная часть ценности | `search_bank_analytics` в Tools API; `bank_view` в контракте; буст скоринга, если есть релевантная аналитика | `app/domain/scoring.py` | e2e №6 | ☐ |
 | О3 | Особенности конкретной компании, а не отраслевые тренды | признаки уровня компании: контрагенты, ВЭД-страны, продукты, группа, данные пользователя | `company_context` | e2e №2, №10 | ☐ |
 | О4 | Только LLM из белого списка; бюджет ~500 ₽/день | LLM Gateway: allowlist (403), учёт токенов/₽, жёсткий стоп, кэш | `app/api/internal/llm.py`, `app/services/llm_gateway.py` | unit `test_llm_gateway.py`; e2e №11 | ☐ |
-| О5 | Неполные, неоднозначные, зашумлённые данные | staging → core с отчётом качества; NULL + `data_completeness`; «неизвестный контрагент»; OCR с оценкой уверенности | `app/services/ingest_companies.py` | unit `test_cleaning.py` | ☐ |
+| О5 | Неполные, неоднозначные, зашумлённые данные | staging → core с отчётом качества; NULL + `data_completeness`; «неизвестный контрагент»; OCR с оценкой уверенности | `app/services/ingest_companies.py` | unit `test_cleaning.py`, integration `test_ingest_companies.py` | ◐ |
 | О6 | Безопасность AI: права, чувствительные данные, журналирование, ограничение действий | JWT + scoping компании; Tools API read-only в scope `run_id`; аудит инструментов и LLM; маскирование PII; rate limit; агент не выполняет CTA | `app/core/security.py`, `docs/SECURITY.md` | e2e №11 | ☐ |
 
 ### 3.3 Требования к сдаче (кейс, стр. 8)

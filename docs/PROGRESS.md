@@ -6,10 +6,10 @@
 
 ## Текущее состояние
 
-- **Текущая фаза:** 0 — Основа
-- **Текущая задача:** ожидание согласования контрактов (продолжаем, если нет ответа)
+- **Текущая фаза:** 2 — Ядро API и сквозной скелет
+- **Текущая задача:** —
 - **Блокеры:** нет жёстких. Открытые вопросы — см. «Открытые вопросы».
-- **Следующий шаг:** Фаза 1 — миграции и ingest компаний.
+- **Следующий шаг:** Фаза 2 — auth, демо-учётки, API компаний и профиля.
 
 ## Фаза 0 — Основа
 
@@ -28,14 +28,15 @@
 
 ## Фаза 1 — Данные компаний
 
-- [ ] Alembic: схемы `staging`, `core`; таблицы companies, company_groups, okved_dict, company_fts_countries, company_products, persons, person_company_links, payments_agg, company_edges, company_context, data_quality_report
-- [ ] Ingest CSV → staging через `COPY` (батчами), валидация → core, отчёт качества (дубли, заглушки, пропуски, висячие ссылки)
-- [ ] Справочник ОКВЭД (секции, теги отраслей, чувствительности) — `data/reference/okved.csv`
-- [ ] Граф: same_group, payment_out/in (без самопереводов), shared_person; гипотезы (флаг hypothesis + confidence + evidence)
-- [ ] `company_context`: признаки + источник признака + `data_completeness`; HHI, топ-N контрагентов, флаги чувствительности
-- [ ] Синтетический генератор `make synthetic` (компании, группы, платежи, физлица в формате CSV)
-- [ ] Скрипт выбора демо-компаний (3–5 CLIENT разных отраслей)
-- [ ] Тесты: unit (очистка, признаки), integration (ingest на Postgres)
+- [x] Alembic 0002: `staging.*_raw`, core: companies, company_groups, okved_dict, company_fts_countries, company_products, persons, person_company_links, payments_agg, company_edges, company_context, ingest_runs, data_quality_report (тест на отсутствие дрейфа ORM ↔ миграции)
+- [x] Ingest CSV → staging через `COPY`, очистка → core, отчёт качества (дубли, заглушки, пропуски, рассогласование ФТС, висячие ссылки, самопереводы)
+- [x] Справочник ОКВЭД (`data/reference/okved_classes.csv` + `okved_overrides.csv`): секции, отраслевые теги, сырьё, флаги
+- [x] Граф: payment, shared_person, гипотезы key_supplier / key_customer / affiliated_outside_group (confidence + evidence), ADR-015
+- [x] `company_context`: признаки с источником, `data_completeness`, HHI, топ-10 контрагентов, доли отраслей, чувствительности; пересчёт одной компании
+- [x] Синтетический генератор `make synthetic` (детерминированный, воспроизводит особенности реальных данных) + `data/synthetic/`
+- [x] Выбор демо-компаний (`scripts/select_demo_companies.py`), seed грузит компании при пустой БД
+- [x] Тесты: unit (ОКВЭД, очистка, контекст, синтетика), integration (ingest на Postgres, идемпотентность, правки пользователя, схема)
+- [x] Прогон на реальных данных: 85 513 компаний, 1,38 млн платежей, 439 тыс. рёбер — 151 с
 
 ## Фаза 2 — Ядро API и сквозной скелет (главный рубеж)
 
@@ -98,5 +99,7 @@
 6. `materials/` добавлен в `.gitignore` (материалы организаторов). Коммитить их в репозиторий?
 
 ## Журнал
+
+- 2026-10-22 — Фаза 1: данные компаний (ingest, граф, контекст, синтетика, демо-выбор). make check + e2e зелёные. Ветка `dev`.
 
 - 2026-10-22 — Фаза 0: профилирование данных (PDF — сканы → OCR), правила, SPEC, контракты v1.0.0, каркас, compose, CI. make check + e2e зелёные.
