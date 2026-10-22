@@ -1,12 +1,14 @@
 """Idempotent seed step run by the `seed` service after migrations (make seed).
 
 1. S3 buckets.
-2. Companies: if core.companies is empty, ingest DATA_DIR (organizers' data in data/raw or the
-   committed synthetic dataset). Re-ingest explicitly with `make ingest-companies`.
-Later phases add demo users and pre-generated insights (docs/PROGRESS.md, phase 2).
+2. Companies: if core.companies is empty, ingest DATA_DIR (organizers' data or the committed synthetic set).
+3. Demo: bank products, demo users and access, fixture news (NEWS_FIXTURES_ENABLED), matching.
+4. Queue pre-generation of insights for demo companies (the worker runs it once ml-stub and the API are up),
+   so the first useful insight is visible right after login.
 """
 
 import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -18,31 +20,50 @@ from app.core.logging import configure_logging, get_logger  # noqa: E402
 from app.core.pg import pg_connection  # noqa: E402
 from app.core.s3 import all_buckets, ensure_buckets, get_s3_client  # noqa: E402
 from app.services.ingest_companies import COMPANIES_FILE, ingest_companies  # noqa: E402
+from app.services.seed import seed_demo  # noqa: E402
 
 log = get_logger("seed")
+REFERENCE_DIR = ROOT / "data" / "reference"
 
 
-async def _seed_companies(data_dir: Path) -> None:
+async def _seed(data_dir: Path, enqueue: bool) -> None:
+    settings = get_settings()
     async with pg_connection() as conn:
         existing = await conn.fetchval("SELECT count(*) FROM core.companies")
         if existing:
             log.info("seed_companies_skip", existing=existing)
-            return
-        if not (data_dir / COMPANIES_FILE).exists():
+        elif (data_dir / COMPANIES_FILE).exists():
+            result = await ingest_companies(conn, data_dir, REFERENCE_DIR)
+            log.info(
+                "seed_companies_loaded", run_id=str(result.run_id), valid=result.stats["companies_valid"]
+            )
+        else:
             log.warning("seed_companies_no_data", data_dir=str(data_dir))
             return
-        result = await ingest_companies(conn, data_dir, ROOT / "data" / "reference")
-        log.info("seed_companies_loaded", run_id=str(result.run_id), valid=result.stats["companies_valid"])
+        summary = await seed_demo(conn, settings, data_dir, REFERENCE_DIR, ROOT)
+    log.info("seed_demo_done", **summary)
+    print(json.dumps(summary, ensure_ascii=False))
+    if enqueue and summary["demo_companies"]:
+        from app.workers.broker import broker
+        from app.workers.tasks import enqueue_generation
+
+        await broker.startup()
+        try:
+            await enqueue_generation(summary["demo_companies"])
+            log.info("seed_generation_queued", companies=summary["demo_companies"])
+        finally:
+            await broker.shutdown()
 
 
 def main() -> None:
     settings = get_settings()
     configure_logging(settings.log_level, settings.log_json)
-    buckets = all_buckets(settings)
-    ensure_buckets(get_s3_client(), buckets)
-    log.info("seed_buckets_ready", buckets=buckets)
+    ensure_buckets(get_s3_client(), all_buckets(settings))
+    log.info("seed_buckets_ready")
     data_dir = Path(settings.data_dir)
-    asyncio.run(_seed_companies(data_dir if data_dir.is_absolute() else ROOT / data_dir))
+    asyncio.run(
+        _seed(data_dir if data_dir.is_absolute() else ROOT / data_dir, enqueue="--no-queue" not in sys.argv)
+    )
 
 
 if __name__ == "__main__":

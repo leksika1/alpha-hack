@@ -338,3 +338,370 @@ class CompanyContext(Base):
     fx_sensitive: Mapped[bool] = mapped_column(Boolean, server_default="false")
     completeness_score: Mapped[float] = mapped_column(Float, server_default="0")
     computed_at: Mapped[datetime] = _now()
+
+
+# ---------------------------------------------------------------- core: users and access (phase 2)
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = {"schema": "core"}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
+    )
+    login: Mapped[str] = mapped_column(String(64), unique=True)
+    password_hash: Mapped[str] = mapped_column(Text)
+    display_name: Mapped[str] = mapped_column(Text)
+    platform_role: Mapped[str] = mapped_column(String(16), server_default="user")  # user | admin
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default="true")
+    created_at: Mapped[datetime] = _now()
+
+
+class UserCompanyAccess(Base):
+    __tablename__ = "user_company_access"
+    __table_args__ = {"schema": "core"}
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("core.users.id", ondelete="CASCADE"), primary_key=True
+    )
+    company_id: Mapped[str] = mapped_column(ForeignKey("core.companies.id"), primary_key=True, index=True)
+    role: Mapped[str] = mapped_column(String(32))  # owner | ceo | cfo | chief_accountant | treasurer | other
+    is_default: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    updated_at: Mapped[datetime] = _now()
+
+
+class UserPreferences(Base):
+    __tablename__ = "user_preferences"
+    __table_args__ = {"schema": "core"}
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("core.users.id", ondelete="CASCADE"), primary_key=True
+    )
+    prefs: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    updated_at: Mapped[datetime] = _now()
+
+
+# ---------------------------------------------------------------- core: news and events
+
+
+class Source(Base):
+    __tablename__ = "sources"
+    __table_args__ = {"schema": "core"}
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(16))  # rss | json_api | html | fixture
+    url: Mapped[str | None] = mapped_column(Text)
+    priority: Mapped[int] = mapped_column(Integer, server_default="100")
+    fallback_for: Mapped[str | None] = mapped_column(String(64))
+    enabled: Mapped[bool] = mapped_column(Boolean, server_default="true")
+    is_fixture: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    health_status: Mapped[str] = mapped_column(String(16), server_default="unknown")
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    config: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+
+
+class NewsItem(Base):
+    __tablename__ = "news_items"
+    __table_args__ = {"schema": "core"}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
+    )
+    source_id: Mapped[str] = mapped_column(ForeignKey("core.sources.id"), index=True)
+    external_id: Mapped[str | None] = mapped_column(Text)
+    url: Mapped[str] = mapped_column(Text)
+    canonical_url: Mapped[str] = mapped_column(Text, unique=True)
+    title: Mapped[str] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text)
+    body: Mapped[str | None] = mapped_column(Text)
+    publisher: Mapped[str | None] = mapped_column(Text)
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    fetched_at: Mapped[datetime] = _now()
+    lang: Mapped[str] = mapped_column(String(8), server_default="ru")
+    text_hash: Mapped[str] = mapped_column(String(64), index=True)
+    event_type: Mapped[str | None] = mapped_column(String(32))
+    tags: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    flags: Mapped[list[str]] = mapped_column(server_default="{}")
+    raw_key: Mapped[str | None] = mapped_column(Text)
+
+
+class Event(Base):
+    __tablename__ = "events"
+    __table_args__ = (
+        Index("ix_events_industry_tags", "industry_tags", postgresql_using="gin"),
+        Index("ix_events_countries", "countries", postgresql_using="gin"),
+        Index("ix_events_commodities", "commodities", postgresql_using="gin"),
+        {"schema": "core"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
+    )
+    cluster_key: Mapped[str | None] = mapped_column(Text, unique=True)
+    title: Mapped[str] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text)
+    event_type: Mapped[str] = mapped_column(String(32), index=True)
+    direction: Mapped[str] = mapped_column(String(8), server_default="none")  # up | down | hold | none
+    urgent: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    urgency_reasons: Mapped[list[str]] = mapped_column(server_default="{}")
+    tags: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    industry_tags: Mapped[list[str]] = mapped_column(server_default="{}")
+    countries: Mapped[list[str]] = mapped_column(server_default="{}")
+    commodities: Mapped[list[str]] = mapped_column(server_default="{}")
+    regions: Mapped[list[str]] = mapped_column(server_default="{}")
+    company_ids: Mapped[list[str]] = mapped_column(server_default="{}")
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    n_news: Mapped[int] = mapped_column(Integer, server_default="1")
+
+
+class EventNews(Base):
+    __tablename__ = "event_news"
+    __table_args__ = {"schema": "core"}
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("core.events.id", ondelete="CASCADE"), primary_key=True
+    )
+    news_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("core.news_items.id", ondelete="CASCADE"), primary_key=True, unique=True
+    )
+
+
+# ---------------------------------------------------------------- core: matching, agent, insights
+
+
+class CandidateMatch(Base):
+    __tablename__ = "candidate_matches"
+    __table_args__ = (UniqueConstraint("company_id", "event_id", "role"), {"schema": "core"})
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    company_id: Mapped[str] = mapped_column(ForeignKey("core.companies.id", ondelete="CASCADE"), index=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("core.events.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(32))
+    score: Mapped[float] = mapped_column(Float)
+    score_breakdown: Mapped[dict[str, Any]] = mapped_column()
+    matched_features: Mapped[list[str]] = mapped_column(server_default="{}")
+    urgent: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    context_version: Mapped[int] = mapped_column(Integer, server_default="1")
+    status: Mapped[str] = mapped_column(String(16), server_default="pending", index=True)
+    status_reason: Mapped[str | None] = mapped_column(Text)
+    scorer: Mapped[str] = mapped_column(String(32), server_default="baseline@1")
+    updated_at: Mapped[datetime] = _now()
+
+
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+    __table_args__ = {"schema": "core"}
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))  # insight | chat
+    request_id: Mapped[str] = mapped_column(Text, index=True)
+    company_id: Mapped[str] = mapped_column(String(32), index=True)
+    event_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    role: Mapped[str | None] = mapped_column(String(32))
+    generator: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16), server_default="running")
+    outcome: Mapped[str | None] = mapped_column(String(32))
+    error: Mapped[str | None] = mapped_column(Text)
+    usage: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    started_at: Mapped[datetime] = _now()
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AgentStep(Base):
+    __tablename__ = "agent_steps"
+    __table_args__ = {"schema": "core"}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
+    )
+    run_id: Mapped[str] = mapped_column(ForeignKey("core.agent_runs.id", ondelete="CASCADE"), index=True)
+    seq: Mapped[int] = mapped_column(Integer)
+    step_type: Mapped[str] = mapped_column(String(16))
+    name: Mapped[str] = mapped_column(String(120))
+    parent_step_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    input_preview: Mapped[str | None] = mapped_column(Text)
+    output_preview: Mapped[str | None] = mapped_column(Text)
+    data: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    model: Mapped[str | None] = mapped_column(Text)
+    tokens_in: Mapped[int | None] = mapped_column(Integer)
+    tokens_out: Mapped[int | None] = mapped_column(Integer)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16))
+    error: Mapped[str | None] = mapped_column(Text)
+    attempt: Mapped[int] = mapped_column(Integer, server_default="1")
+    created_at: Mapped[datetime] = _now()
+
+
+class ToolAuditLog(Base):
+    __tablename__ = "tool_audit_log"
+    __table_args__ = {"schema": "core"}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    tool: Mapped[str] = mapped_column(String(64))
+    company_id: Mapped[str | None] = mapped_column(String(32))
+    args: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    result_preview: Mapped[str | None] = mapped_column(Text)
+    status_code: Mapped[int] = mapped_column(Integer)
+    latency_ms: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = _now()
+
+
+class Insight(Base):
+    __tablename__ = "insights"
+    __table_args__ = (
+        UniqueConstraint("company_id", "event_id", "role_variant"),
+        Index("ix_insights_company_id_relevance_score", "company_id", "relevance_score"),
+        {"schema": "core"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
+    )
+    company_id: Mapped[str] = mapped_column(ForeignKey("core.companies.id", ondelete="CASCADE"))
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("core.events.id", ondelete="CASCADE"), index=True)
+    role_variant: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(Text)
+    summary: Mapped[str] = mapped_column(Text)
+    polarity: Mapped[str] = mapped_column(String(16))
+    urgent: Mapped[bool] = mapped_column(Boolean)
+    impact_level: Mapped[str] = mapped_column(String(16))
+    impact_score: Mapped[int] = mapped_column(Integer)
+    relevance_score: Mapped[float] = mapped_column(Float)
+    schema_version: Mapped[str] = mapped_column(String(16))
+    trace_id: Mapped[str] = mapped_column(String(64))
+    payload: Mapped[dict[str, Any]] = mapped_column()
+    created_at: Mapped[datetime] = _now()
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class InsightStatement(Base):
+    __tablename__ = "insight_statements"
+    __table_args__ = {"schema": "core"}
+
+    insight_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("core.insights.id", ondelete="CASCADE"), primary_key=True
+    )
+    statement_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    text: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Float)
+    source_refs: Mapped[list[str]] = mapped_column(server_default="{}")
+
+
+class InsightSource(Base):
+    __tablename__ = "insight_sources"
+    __table_args__ = {"schema": "core"}
+
+    insight_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("core.insights.id", ondelete="CASCADE"), primary_key=True
+    )
+    source_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    source_type: Mapped[str] = mapped_column(String(32), index=True)
+    ref_id: Mapped[str | None] = mapped_column(Text)
+    url: Mapped[str | None] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(Text)
+    page: Mapped[int | None] = mapped_column(Integer)
+
+
+class InsightRejected(Base):
+    __tablename__ = "insights_rejected"
+    __table_args__ = {"schema": "core"}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[str | None] = mapped_column(String(64))
+    company_id: Mapped[str] = mapped_column(String(32), index=True)
+    event_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    role: Mapped[str | None] = mapped_column(String(32))
+    reasons: Mapped[dict[str, Any]] = mapped_column()
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = _now()
+
+
+# ---------------------------------------------------------------- core: user interaction
+
+
+class UserInsightState(Base):
+    """Per user x company x event: hiding survives role switches between insight variants."""
+
+    __tablename__ = "user_insight_state"
+    __table_args__ = {"schema": "core"}
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("core.users.id", ondelete="CASCADE"), primary_key=True
+    )
+    company_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    last_insight_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    saved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = _now()
+
+
+class Feedback(Base):
+    __tablename__ = "feedback"
+    __table_args__ = {"schema": "core"}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("core.users.id", ondelete="CASCADE"), index=True)
+    insight_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("core.insights.id", ondelete="CASCADE"), index=True
+    )
+    company_id: Mapped[str] = mapped_column(String(32))
+    event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    role: Mapped[str] = mapped_column(String(32))
+    useful: Mapped[bool] = mapped_column(Boolean)
+    reason: Mapped[str | None] = mapped_column(String(32))
+    comment: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _now()
+
+
+class UserAction(Base):
+    __tablename__ = "user_actions"
+    __table_args__ = {"schema": "core"}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("core.users.id", ondelete="CASCADE"), index=True)
+    company_id: Mapped[str] = mapped_column(String(32))
+    insight_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
+    action_type: Mapped[str] = mapped_column(String(32), index=True)  # source_click | cta | role_switch | ...
+    payload: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = _now()
+
+
+class BankProduct(Base):
+    __tablename__ = "bank_products"
+    __table_args__ = {"schema": "core"}
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text)
+    tags: Mapped[list[str]] = mapped_column(server_default="{}")
+    url: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(Text)
+
+
+class CrmRequest(Base):
+    """Mock CRM: requests are only recorded (the bank already has CRM integrations, FAQ #51)."""
+
+    __tablename__ = "crm_requests"
+    __table_args__ = {"schema": "core"}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("core.users.id", ondelete="CASCADE"), index=True)
+    company_id: Mapped[str] = mapped_column(String(32), index=True)
+    insight_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    request_type: Mapped[str] = mapped_column(String(32))  # contact_manager | callback | application
+    product_id: Mapped[str | None] = mapped_column(ForeignKey("core.bank_products.id"))
+    comment: Mapped[str | None] = mapped_column(Text)
+    preferred_time: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), server_default="new")
+    external_ref: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = _now()

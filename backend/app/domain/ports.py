@@ -54,6 +54,7 @@ class GenerationRequest:
     run_id: str
     candidate: ScoreResult | None = None
     allow_llm: bool = True
+    tools: dict[str, Any] | None = None  # contracts/ml-service.openapi.yaml#/components/schemas/ToolsAccess
 
 
 @dataclass(frozen=True, slots=True)
