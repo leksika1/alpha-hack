@@ -2,8 +2,8 @@
 
 * fake   — deterministic signed feature hashing of word stems (tests, offline e2e): lexically similar
            texts get similar vectors, so vector search behaves sensibly without a model;
-* local  — fastembed (ONNX, no torch), default `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
-           (384, Apache-2.0); downloaded on first use and cached in FASTEMBED_CACHE_PATH;
+* local  — fastembed (ONNX, no torch) with the model set in EMBEDDING_MODEL (chosen by the ML team);
+           downloaded on first use and cached in FASTEMBED_CACHE_PATH;
 * remote — OpenAI-compatible `/embeddings` endpoint (e.g. a TEI server of the ML team).
 """
 
@@ -148,11 +148,15 @@ Embedder = FakeEmbedding | LocalEmbedding | RemoteEmbedding
 
 
 @lru_cache
-def _cached(provider: str, model: str, dim: int, url: str | None, api_key: str | None) -> Embedder:
+def _cached(provider: str, model: str | None, dim: int, url: str | None, api_key: str | None) -> Embedder:
     if dim != EMBEDDING_DIM:
         raise ValueError(f"EMBEDDING_DIM={dim} but the schema stores vector({EMBEDDING_DIM}); see ADR-006")
     if provider == "fake":
         return FakeEmbedding(dim)
+    if not model:
+        raise ValueError(
+            f"EMBEDDING_MODEL is required for EMBEDDING_PROVIDER={provider} (chosen by the ML team)"
+        )
     if provider == "local":
         return LocalEmbedding(model, dim)
     if provider == "remote":

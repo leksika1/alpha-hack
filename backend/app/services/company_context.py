@@ -200,7 +200,8 @@ def facts_from_row(r: Any) -> CompanyFacts:
 _CTX_COLUMNS = [
     "company_id", "features", "completeness", "scoring_features", "client_type", "okved_section", "region",
     "segment",
-    "industry_tags", "counterparty_tags", "fts_countries", "commodities", "products", "rate_sensitive",
+    "industry_tags", "counterparty_tags", "counterparty_tags_any", "fts_countries", "commodities", "products",
+    "rate_sensitive",
     "fx_sensitive", "completeness_score",
 ]  # fmt: skip
 
@@ -225,6 +226,7 @@ async def rebuild_contexts(conn: Any, company_ids: list[str] | None) -> dict[str
             "CREATE TEMP TABLE tmp_ctx (company_id text, features text, completeness text,"
             " scoring_features text, client_type text,"
             " okved_section text, region text, segment text, industry_tags text[], counterparty_tags text[],"
+            " counterparty_tags_any text[],"
             " fts_countries text[], commodities text[], products text[], rate_sensitive bool,"
             " fx_sensitive bool,"
             " completeness_score float8) ON COMMIT DROP"
@@ -243,7 +245,8 @@ async def rebuild_contexts(conn: Any, company_ids: list[str] | None) -> dict[str
                         json.dumps(res.completeness, ensure_ascii=False),
                         json.dumps(scoring_features(res.features), ensure_ascii=False),
                         ix["client_type"], ix["okved_section"], ix["region"], ix["segment"],
-                        ix["industry_tags"], ix["counterparty_tags"], ix["fts_countries"], ix["commodities"],
+                        ix["industry_tags"], ix["counterparty_tags"], ix["counterparty_tags_any"],
+                        ix["fts_countries"], ix["commodities"],
                         ix["products"], ix["rate_sensitive"], ix["fx_sensitive"], ix["completeness_score"],
                     )
                 )  # fmt: skip

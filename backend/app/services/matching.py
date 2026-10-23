@@ -171,7 +171,7 @@ SELECT c.company_id FROM core.company_context c
 WHERE c.client_type = ANY($9::text[]) AND (
        c.company_id = ANY($1::text[])
     OR c.industry_tags && $2::text[]
-    OR c.counterparty_tags && $2::text[]
+    OR c.counterparty_tags_any && $2::text[]
     OR c.fts_countries && $3::text[]
     OR c.commodities && $4::text[]
     OR c.region = ANY($5::text[])

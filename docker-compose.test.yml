@@ -13,7 +13,6 @@ x-test-env: &test-env
   LLM_BASE_URL: ""
   LLM_API_KEY: ""
   LLM_PROVIDER: fake                 # deterministic answers through the real gateway path
-  ML_STUB_USE_LLM: "true"
 
 services:
   postgres:

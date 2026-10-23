@@ -145,7 +145,7 @@
 
 | Модель | Назначение | Лицензия / условия | Статус |
 |---|---|---|---|
-| `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (по умолчанию для `EMBEDDING_PROVIDER=local`, ONNX через fastembed, 384) | эмбеддинги аналитики банка | Apache-2.0 | используется с фазы 4; скачивается при первом запуске из Hugging Face |
+| модель эмбеддингов для `EMBEDDING_PROVIDER=local/remote` | эмбеддинги аналитики банка | по выбору ML-команды | бэкенд модель не поставляет; по умолчанию `fake` |
 | Gemma 4 26B A4B, GLM-5.3-Flash, Qwen3.6 35B A3B, DeepSeek-V4.1-Flash, Qwen3-VL-30B-A3B-Instruct, Kimi-K2.6 | генеративные LLM — только через LLM Gateway | условия провайдера организаторов кейса | белый список (кейс, прил. 3) |
 
 ## Датасеты

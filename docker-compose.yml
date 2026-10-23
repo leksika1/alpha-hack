@@ -17,9 +17,9 @@ x-app-env: &app-env
   INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:8000}
   ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:-dev-only-ml-token}
   INSIGHT_GENERATOR: ${INSIGHT_GENERATOR:-stub}
-  EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local}
+  EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-fake}
   FASTEMBED_CACHE_PATH: /home/appuser/.cache/fastembed
-  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
   EMBEDDING_DIM: ${EMBEDDING_DIM:-384}
   EMBEDDING_REMOTE_URL: ${EMBEDDING_REMOTE_URL:-}
   EMBEDDING_REMOTE_KEY: ${EMBEDDING_REMOTE_KEY:-}
@@ -162,8 +162,6 @@ services:
       <<: *app-env
       TOOLS_BASE_URL: http://api:8000/internal/tools
       LLM_GATEWAY_URL: http://api:8000/internal/llm
-      ML_STUB_USE_LLM: ${ML_STUB_USE_LLM:-false}
-      ML_STUB_LLM_MODEL: ${ML_STUB_LLM_MODEL:-glm-5.3-flash}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8100/health"]
       interval: 5s

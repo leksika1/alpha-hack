@@ -277,6 +277,9 @@ def build_context(c: CompanyFacts) -> ContextResult:
             if s >= COUNTERPARTY_TAG_MIN_SHARE
         }
     )
+    # every industry the scorer can see in counterparties (any share > 0): the matching pre-filter must not
+    # miss a company the scorer would rate (ADR-029)
+    cp_tags_any = sorted({t for d in (c.incoming, c.outgoing) for t, s in d.industry_shares.items() if s > 0})
     index = {
         "client_type": c.client_type,
         "okved_section": c.okved_section,
@@ -284,6 +287,7 @@ def build_context(c: CompanyFacts) -> ContextResult:
         "segment": segment,
         "industry_tags": list(c.industry_tags),
         "counterparty_tags": cp_tags,
+        "counterparty_tags_any": cp_tags_any,
         "fts_countries": list(c.fts_countries),
         "commodities": commodities,
         "products": list(c.products),

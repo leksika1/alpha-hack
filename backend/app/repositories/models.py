@@ -316,6 +316,7 @@ class CompanyContext(Base):
     __tablename__ = "company_context"
     __table_args__ = (
         Index("ix_company_context_industry_tags", "industry_tags", postgresql_using="gin"),
+        Index("ix_company_context_counterparty_tags_any", "counterparty_tags_any", postgresql_using="gin"),
         Index("ix_company_context_fts_countries", "fts_countries", postgresql_using="gin"),
         Index("ix_company_context_commodities", "commodities", postgresql_using="gin"),
         Index("ix_company_context_products", "products", postgresql_using="gin"),
@@ -338,6 +339,7 @@ class CompanyContext(Base):
     segment: Mapped[str | None] = mapped_column(String(16))
     industry_tags: Mapped[list[str]] = mapped_column(server_default="{}")
     counterparty_tags: Mapped[list[str]] = mapped_column(server_default="{}")
+    counterparty_tags_any: Mapped[list[str]] = mapped_column(server_default="{}")  # any share > 0
     fts_countries: Mapped[list[str]] = mapped_column(server_default="{}")
     commodities: Mapped[list[str]] = mapped_column(server_default="{}")
     products: Mapped[list[str]] = mapped_column(server_default="{}")
