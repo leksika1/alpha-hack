@@ -13,10 +13,10 @@ x-app-env: &app-env
   S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
   JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-change-me-in-env-0123456789}
   SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-only-service-token}
-  ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml-stub:8100}
+  ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml:8200}        # ML service (ml/); ml-stub: http://ml-stub:8100
   INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:8000}
   ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:-dev-only-ml-token}
-  INSIGHT_GENERATOR: ${INSIGHT_GENERATOR:-stub}
+  INSIGHT_GENERATOR: ${INSIGHT_GENERATOR:-remote}
   EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-fake}
   FASTEMBED_CACHE_PATH: /home/appuser/.cache/fastembed
   EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
@@ -146,6 +146,7 @@ services:
     depends_on:
       seed: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
+      ml: { condition: service_healthy, required: false }
 
   scheduler:
     <<: *app
@@ -167,6 +168,32 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+
+  ml:
+    # ML service of the ML team (ml/): insight agent with planner/critic, chat, ml-ranker@1.
+    # Works without an LLM key (rules@1 analyst); with LLM_* set in the backend it uses the gateway.
+    build:
+      context: .
+      dockerfile: ml/Dockerfile
+    image: alfa-future-ml:${IMAGE_TAG:-local}
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:-dev-only-ml-token}
+      ML_LLM_ENABLED: ${ML_LLM_ENABLED:-true}
+      ML_LLM_PLANNER: ${ML_LLM_PLANNER:-true}
+      ML_LLM_CRITIC: ${ML_LLM_CRITIC:-true}
+      ML_MODEL_PLANNER: ${ML_MODEL_PLANNER:-gemma-4-26b-a4b}
+      ML_MODEL_ANALYST: ${ML_MODEL_ANALYST:-qwen3.6-35b-a3b}
+      ML_MODEL_CRITIC: ${ML_MODEL_CRITIC:-glm-5.3-flash}
+      ML_MODEL_CHAT: ${ML_MODEL_CHAT:-qwen3.6-35b-a3b}
+      ML_MAX_ITERATIONS: ${ML_MAX_ITERATIONS:-2}
+    ports: ["${ML_PORT:-8200}:8200"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8200/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
 
 volumes:
   pgdata:
