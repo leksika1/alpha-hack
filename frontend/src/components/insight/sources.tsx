@@ -6,7 +6,7 @@ import { Button } from '@alfalab/core-components/button';
 import { get } from '../../api/client';
 import { useSourceClick } from '../../api/hooks';
 import type { Source } from '../../api/types';
-import { formatDate, SOURCE_TYPES, sourceLabel } from '../../lib/format';
+import { absoluteUrl, formatDate, SOURCE_TYPES, sourceLabel } from '../../lib/format';
 import { useToast } from '../Toasts';
 import { Note } from '../ui';
 import { cn } from '../../lib/cn';
@@ -50,10 +50,11 @@ export function SourcesProvider({ insightId, sources, children }: { insightId: s
           win?.close();
           setNewsPath(res.url.replace('/api/v1', ''));
         } else if (res.url) {
+          const href = absoluteUrl(res.url);
           if (win) {
             win.opener = null;
-            win.location.href = res.url;
-          } else window.open(res.url, '_blank', 'noopener');
+            win.location.href = href;
+          } else window.open(href, '_blank', 'noopener');
         } else win?.close();
         if (res.note && !res.url?.startsWith('/api/v1/news/')) toast.show({ title: res.title, body: res.note, ttl: 6000 });
       },

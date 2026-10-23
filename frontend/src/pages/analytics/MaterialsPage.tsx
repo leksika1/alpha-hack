@@ -4,7 +4,7 @@ import { get } from '../../api/client';
 import { useAnalyticsDocuments } from '../../api/hooks';
 import { CardSkeleton, EmptyState, ErrorBox, Pill } from '../../components/ui';
 import { useToast } from '../../components/Toasts';
-import { formatDate, formatPercent } from '../../lib/format';
+import { absoluteUrl, formatDate, formatPercent } from '../../lib/format';
 import { DocumentPdfMIcon } from '@alfalab/icons-glyph/DocumentPdfMIcon';
 
 const EXTRACTION: Record<string, string> = { text_layer: 'текстовый слой', ocr: 'распознано OCR', vlm: 'распознано VLM' };
@@ -19,7 +19,7 @@ export function MaterialsPage() {
       const res = await get<{ url: string }>(`/analytics/documents/${id}/download`);
       if (win) {
         win.opener = null;
-        win.location.href = res.url;
+        win.location.href = absoluteUrl(res.url);
       }
     } catch (e) {
       win?.close();
