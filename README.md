@@ -29,6 +29,7 @@ docker compose up -d --build        # или: make up
 
 | Что | Где |
 |---|---|
+| Интерфейс «Альфа-Бизнес» с разделом «Аналитика» | http://localhost:3000 (сценарий — [`frontend/README.md`](frontend/README.md)) |
 | Swagger | http://localhost:8000/docs |
 | Готовность | http://localhost:8000/ready |
 | Консоль MinIO | http://localhost:9001 (`minioadmin` / `minioadmin`) |
