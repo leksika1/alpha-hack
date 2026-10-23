@@ -1,6 +1,7 @@
 """Bank analytics on Postgres+pgvector and MinIO: PDF -> S3 -> pages (text layer / OCR) -> chunks ->
 embeddings + tsvector -> hybrid search with page citations -> presigned link to the page."""
 
+import asyncio
 import io
 import shutil
 import subprocess
@@ -115,10 +116,94 @@ async def test_reingest_is_idempotent_and_force_rebuilds(env: dict[str, Any]) ->
     after = await conn.fetch(
         "SELECT id FROM core.analytics_chunks WHERE document_id = $1::uuid", again.document_id
     )
-    assert len(after) == len(before) and {r["id"] for r in after}.isdisjoint({r["id"] for r in before})
+    assert {r["id"] for r in after} == {r["id"] for r in before}, "published citations must stay valid"
     assert await conn.fetchval("SELECT count(*) FROM core.analytics_documents WHERE sha256 = "
                                "(SELECT sha256 FROM core.analytics_documents WHERE id = $1::uuid)",
                                again.document_id) == 1  # fmt: skip
+
+
+async def test_failed_force_keeps_the_last_ready_index(env: dict[str, Any]) -> None:
+    conn, store = env["conn"], env["store"]
+    data = (SYNTH / "demo_steel_market.pdf").read_bytes()
+    doc = await conn.fetchrow(
+        "SELECT * FROM core.analytics_documents WHERE file_name='demo_steel_market.pdf'"
+    )
+    before = await conn.fetch(
+        "SELECT * FROM core.analytics_chunks WHERE document_id=$1 ORDER BY id", doc["id"]
+    )
+
+    class UnavailableEmbedding(FakeEmbedding):
+        async def embed_documents(self, texts: Any) -> list[list[float]]:
+            raise RuntimeError("embedding service unavailable")
+
+    result = await ingest_pdf(
+        conn, store, FakeOcr(), UnavailableEmbedding(), data, "renamed.pdf", "synthetic", force=True
+    )
+    assert result.status == "failed"
+    after = await conn.fetchrow("SELECT * FROM core.analytics_documents WHERE id=$1", doc["id"])
+    assert after["status"] == "ready" and after["embedding_model"] == doc["embedding_model"]
+    assert after["file_name"] == doc["file_name"] and after["error"]
+    assert (
+        await conn.fetch("SELECT * FROM core.analytics_chunks WHERE document_id=$1 ORDER BY id", doc["id"])
+        == before
+    )
+    hits = await hybrid_search(conn, env["embedder"], "цены на прокат", document_ids=[str(doc["id"])])
+    assert hits
+
+
+async def test_concurrent_imports_converge_to_one_index(env: dict[str, Any], infra: dict[str, str]) -> None:
+    data = (SYNTH / "demo_key_rate_outlook.pdf").read_bytes() + b"\n% concurrent-import-test\n"
+
+    async def load() -> Any:
+        async with pg_connection(infra["DATABASE_URL"]) as conn:
+            return await ingest_pdf(
+                conn, env["store"], FakeOcr(), env["embedder"], data, "concurrent.pdf", "synthetic"
+            )
+
+    first, second = await asyncio.gather(load(), load())
+    assert sorted([first.status, second.status]) == ["ready", "skipped"]
+    assert first.document_id == second.document_id
+    await env["conn"].execute("DELETE FROM core.analytics_documents WHERE id=$1::uuid", first.document_id)
+
+
+async def test_empty_scan_is_failed_instead_of_published(env: dict[str, Any]) -> None:
+    pdf = FPDF()
+    pdf.add_page()
+    result = await ingest_pdf(
+        env["conn"], env["store"], FakeOcr(), env["embedder"], bytes(pdf.output()), "empty.pdf", "upload"
+    )
+    assert result.status == "failed" and "no indexable text" in str(result.error)
+    assert (
+        await env["conn"].fetchval(
+            "SELECT status FROM core.analytics_documents WHERE id=$1::uuid", result.document_id
+        )
+        == "failed"
+    )
+    await env["conn"].execute("DELETE FROM core.analytics_documents WHERE id=$1::uuid", result.document_id)
+
+
+async def test_reembed_rolls_back_partial_document_on_failure(env: dict[str, Any], monkeypatch: Any) -> None:
+    from app.services import analytics_ingest
+
+    monkeypatch.setattr(analytics_ingest, "EMBED_BATCH", 1)
+    conn = env["conn"]
+    before = await conn.fetch("SELECT id,embedding FROM core.analytics_chunks ORDER BY id")
+    models = await conn.fetch("SELECT id,embedding_model FROM core.analytics_documents ORDER BY id")
+
+    class FailsAfterOneBatch(FakeEmbedding):
+        name = "incomplete-model"
+        calls = 0
+
+        async def embed_documents(self, texts: Any) -> list[list[float]]:
+            self.calls += 1
+            if self.calls == 2:
+                raise RuntimeError("second batch failed")
+            return await super().embed_documents(["different text"] * len(texts))
+
+    with pytest.raises(RuntimeError, match="second batch failed"):
+        await reembed(conn, FailsAfterOneBatch())
+    assert await conn.fetch("SELECT id,embedding FROM core.analytics_chunks ORDER BY id") == before
+    assert await conn.fetch("SELECT id,embedding_model FROM core.analytics_documents ORDER BY id") == models
 
 
 async def test_hybrid_search_cites_pages_and_matches_contract(env: dict[str, Any]) -> None:
