@@ -1,9 +1,17 @@
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from app.domain.impact import impact_score, level_for_score, magnitude
-from app.domain.scoring import CompanyProfile, EventProfile, component_values, score_candidate
+from app.domain.scoring import (
+    CompanyProfile,
+    EventProfile,
+    compact_profile,
+    component_values,
+    profile_from_stored,
+    score_candidate,
+)
 
 NOW = datetime(2026, 10, 22, 12, tzinfo=UTC)
 
@@ -154,3 +162,18 @@ def test_magnitude_rules() -> None:
     assert magnitude("monetary_policy", "up", False, None) == 0.9
     assert magnitude("commodities", "up", False, 12.0) > magnitude("commodities", "up", False, None)
     assert magnitude("other", "none", True, None) == 0.8
+
+
+def test_compact_profile_round_trips_through_json() -> None:
+    profile = company(
+        counterparty_shares={
+            "construction": (0.3, "counterparties.industry_share_in.construction"),
+            "construction_materials": (0.012, "counterparties.industry_share_out.construction_materials"),
+        },
+        user_commodities=frozenset({"медь"}),
+        user_currencies=frozenset({"CNY"}),
+        region=None,
+    )
+    stored = json.loads(json.dumps(compact_profile(profile)))
+    assert stored["v"] == 1 and profile_from_stored("U_1", stored) == profile
+    assert len(json.dumps(stored)) < 600

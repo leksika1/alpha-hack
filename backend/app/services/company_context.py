@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.domain.company_context import CompanyFacts, Counterparty, DirectionStats, build_context
-from app.domain.scoring import scoring_features
+from app.domain.scoring import compact_profile, profile_from_context
 
 BATCH = 5000
 
@@ -243,7 +243,7 @@ async def rebuild_contexts(conn: Any, company_ids: list[str] | None) -> dict[str
                         r["id"],
                         json.dumps(res.features, ensure_ascii=False),
                         json.dumps(res.completeness, ensure_ascii=False),
-                        json.dumps(scoring_features(res.features), ensure_ascii=False),
+                        json.dumps(compact_profile(profile_from_context(r["id"], res.features))),
                         ix["client_type"], ix["okved_section"], ix["region"], ix["segment"],
                         ix["industry_tags"], ix["counterparty_tags"], ix["counterparty_tags_any"],
                         ix["fts_countries"], ix["commodities"],

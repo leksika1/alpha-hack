@@ -18,7 +18,7 @@ from app.domain.scoring import (
     MAX_WEIGHT,
     CompanyProfile,
     EventProfile,
-    profile_from_context,
+    profile_from_stored,
     score_candidate,
 )
 from app.domain.tagging import GENERIC_TAGS
@@ -52,7 +52,7 @@ def event_profile(row: Any) -> EventProfile:
 
 
 async def load_profiles(conn: Any, company_ids: list[str]) -> dict[str, tuple[CompanyProfile, int]]:
-    # compact scorer view; contexts built before migration 0006 have none yet -> full features
+    # compact scorer profile (ADR-029); contexts built before migration 0006 have none -> full features
     rows = await conn.fetch(
         """SELECT company_id, context_version,
                   CASE WHEN scoring_features = '{}'::jsonb THEN features ELSE scoring_features END AS features
@@ -61,7 +61,7 @@ async def load_profiles(conn: Any, company_ids: list[str]) -> dict[str, tuple[Co
     )
     return {
         r["company_id"]: (
-            profile_from_context(r["company_id"], json.loads(r["features"])),
+            profile_from_stored(r["company_id"], json.loads(r["features"])),
             r["context_version"],
         )
         for r in rows

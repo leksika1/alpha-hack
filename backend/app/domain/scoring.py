@@ -97,44 +97,6 @@ def _feature_value(features: dict[str, Any], path: str, default: Any = None) -> 
     return feat.get("value", default) if isinstance(feat, dict) else default
 
 
-# Feature paths read by profile_from_context: matching loads only these (and only their values).
-PROFILE_FEATURE_KEYS = (
-    "industry_tags",
-    "fts_countries",
-    "region",
-    "sensitivities.commodity_exposure",
-    "sensitivities.rate_sensitive",
-    "sensitivities.rate_sensitive_industry",
-    "sensitivities.fx_sensitive",
-    "sensitivities.consumer_demand_dependent",
-    "counterparties.top_in",
-    "counterparties.top_out",
-    "user_provided.raw_materials",
-    "user_provided.currencies",
-)
-TOP_COUNTERPARTY_KEYS = ("counterparties.top_in", "counterparties.top_out")
-PROFILE_FEATURE_PREFIXES = (
-    "counterparties.industry_share_in.",
-    "counterparties.industry_share_out.",
-    "products.",
-)
-
-
-def scoring_features(features: dict[str, Any]) -> dict[str, Any]:
-    """Compact scorer view of a context, stored as company_context.scoring_features (~0.5 KB instead of
-    ~8 KB): profile_from_context(scoring_features(f)) == profile_from_context(f)."""
-    out: dict[str, Any] = {}
-    for k, v in features.items():
-        if k in PROFILE_FEATURE_KEYS or k.startswith(PROFILE_FEATURE_PREFIXES):
-            value = v.get("value") if isinstance(v, dict) else None
-            if k in TOP_COUNTERPARTY_KEYS and isinstance(value, list):  # only what the scorer reads
-                value = [
-                    {"counterparty_id": cp.get("counterparty_id"), "known": cp.get("known")} for cp in value
-                ]
-            out[k] = {"value": value}
-    return out
-
-
 def profile_from_context(company_id: str, features: dict[str, Any]) -> CompanyProfile:
     """Build the scorer's view of a company from ``company_context.features``."""
     shares: dict[str, tuple[float, str]] = {}
@@ -276,6 +238,63 @@ def score_candidate(
         features.extend(f for f in comp[name].features if f not in features)
     return ScoreResult(
         score=round(score, 4), breakdown=breakdown, matched_features=features, scorer=SCORER_NAME
+    )
+
+
+COMPACT_VERSION = 1
+
+
+def compact_profile(profile: CompanyProfile) -> dict[str, Any]:
+    """The scorer's view stored in company_context.scoring_features (~1 KB, no feature metadata): matching
+    rebuilds it without parsing the full context. profile_from_stored(compact_profile(p)) == p."""
+    return {
+        "v": COMPACT_VERSION,
+        "it": sorted(profile.industry_tags),
+        # tag -> [share, direction]; the feature path is counterparties.industry_share_<direction>.<tag>
+        "cs": {
+            tag: [share, path.split(".")[1].removeprefix("industry_share_")]
+            for tag, (share, path) in sorted(profile.counterparty_shares.items())
+        },
+        "tc": sorted(profile.top_counterparties),
+        "fc": sorted(profile.fts_countries),
+        "co": sorted(profile.commodities),
+        "um": sorted(profile.user_commodities),
+        "uc": sorted(profile.user_currencies),
+        "pr": sorted(profile.products),
+        "rg": profile.region,
+        "fl": [
+            profile.rate_sensitive,
+            profile.rate_sensitive_industry,
+            profile.fx_sensitive,
+            profile.consumer_demand,
+        ],
+    }
+
+
+def profile_from_stored(company_id: str, stored: dict[str, Any]) -> CompanyProfile:
+    """company_context.scoring_features: the compact profile, or (older rows) a features dict."""
+    if stored.get("v") != COMPACT_VERSION:
+        return profile_from_context(company_id, stored)
+    shares = {
+        tag: (float(share), f"counterparties.industry_share_{direction}.{tag}")
+        for tag, (share, direction) in stored["cs"].items()
+    }
+    rate, rate_industry, fx, demand = stored["fl"]
+    return CompanyProfile(
+        company_id=company_id,
+        industry_tags=frozenset(stored["it"]),
+        counterparty_shares=shares,
+        top_counterparties=frozenset(stored["tc"]),
+        fts_countries=frozenset(stored["fc"]),
+        commodities=frozenset(stored["co"]),
+        user_commodities=frozenset(stored["um"]),
+        user_currencies=frozenset(stored["uc"]),
+        products=frozenset(stored["pr"]),
+        region=stored["rg"],
+        rate_sensitive=bool(rate),
+        rate_sensitive_industry=bool(rate_industry),
+        fx_sensitive=bool(fx),
+        consumer_demand=bool(demand),
     )
 
 
