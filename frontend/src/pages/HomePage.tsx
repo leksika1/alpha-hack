@@ -1,4 +1,5 @@
 // Главная «Альфа-Бизнеса» (имитация): остатки, дела в работе и встроенный блок аналитики.
+import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { DocumentMIcon } from '@alfalab/icons-glyph/DocumentMIcon';
 import { DocumentAddMIcon } from '@alfalab/icons-glyph/DocumentAddMIcon';
@@ -10,6 +11,8 @@ import { useSession } from '../auth/session';
 import { useToast } from '../components/Toasts';
 import { useRequests } from '../api/hooks';
 import { REQUEST_STATUS, ACTION_TYPES, formatDate } from '../lib/format';
+import { Pill } from '../components/ui';
+import { cn } from '../lib/cn';
 
 const TASKS: [string, number, boolean][] = [
   ['Подписать и отправить', 1, true],
@@ -20,6 +23,29 @@ const TASKS: [string, number, boolean][] = [
   ['Принять предложение', 3, false],
 ];
 
+function QuickButton({ onClick, muted = false, children }: { onClick: () => void; muted?: boolean; children: ReactNode }) {
+  return (
+    <button
+      className={cn('inline-flex items-center gap-2.5 rounded-[14px] px-5 py-3 font-medium [&_svg]:size-5', muted ? 'bg-muted-2' : 'bg-white shadow-card')}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function HeroTile({ icon, title, sub, onClick }: { icon: ReactNode; title: string; sub: string; onClick: () => void }) {
+  return (
+    <button className="flex items-center gap-3 text-left text-white" onClick={onClick}>
+      <span className="inline-flex size-10 items-center justify-center rounded-xl bg-white/10">{icon}</span>
+      <span>
+        {title}
+        <small className="block text-xs text-white/55">{sub}</small>
+      </span>
+    </button>
+  );
+}
+
 export function HomePage() {
   const { isAdmin, companies } = useSession();
   const toast = useToast();
@@ -29,60 +55,44 @@ export function HomePage() {
   const stub = (title: string) => toast.show({ title, body: 'Действие интернет-банка не входит в демо-прототип.', ttl: 3000 });
 
   return (
-    <div className="home">
-      <div className="quick-actions">
-        <button className="quick-btn" onClick={() => stub('Скачать выписку')}>
+    <div>
+      <div className="mt-1 mb-5 flex flex-wrap gap-2.5">
+        <QuickButton onClick={() => stub('Скачать выписку')}>
           <DocumentMIcon /> Скачать выписку
-        </button>
-        <button className="quick-btn" onClick={() => stub('Импорт платежей')}>
+        </QuickButton>
+        <QuickButton onClick={() => stub('Импорт платежей')}>
           <DocumentAddMIcon /> Импорт платежей
-        </button>
-        <button className="quick-btn" onClick={() => stub('Создать платёж')}>
+        </QuickButton>
+        <QuickButton onClick={() => stub('Создать платёж')}>
           <PlusMIcon /> Создать платёж
-        </button>
-        <button className="quick-btn quick-btn--muted" onClick={() => stub('Ещё')}>
+        </QuickButton>
+        <QuickButton muted onClick={() => stub('Ещё')}>
           Ещё
-        </button>
+        </QuickButton>
       </div>
 
-      <section className="hero">
-        <div className="hero__balance">
-          <div className="hero__caption">{companies.length > 1 ? `В ${companies.length} компаниях` : 'На счетах'}</div>
-          <div className="hero__amount">2 524 550 000,00 RUB</div>
-          <div className="hero__sub">↳ 10 800 570 344,95 RUB с овердрафтом</div>
-          <div className="hero__fx">
+      <section className="grid gap-3 rounded-3xl bg-[radial-gradient(700px_400px_at_70%_120%,rgba(239,49,36,0.55),transparent_60%),linear-gradient(120deg,#0b0b0d,#1b1416)] p-3 text-white md:grid-cols-[1.6fr_1fr]">
+        <div className="rounded-[18px] bg-white/6 p-5">
+          <div className="text-sm text-white/60">{companies.length > 1 ? `В ${companies.length} компаниях` : 'На счетах'}</div>
+          <div className="my-1 text-[34px] font-bold tracking-[-0.01em]">2 524 550 000,00 RUB</div>
+          <div className="text-white/60">↳ 10 800 570 344,95 RUB с овердрафтом</div>
+          <div className="mt-3 mb-5 flex items-center gap-2.5 font-medium">
             <span>4 000,00 CNY</span>
-            <span className="dot">·</span>
+            <span className="text-white/40">·</span>
             <span>40 000,00 KZT</span>
-            <span className="hero__more">+5</span>
+            <span className="rounded-lg bg-white/12 px-1.5 py-0.5 text-xs">+5</span>
           </div>
-          <div className="hero__tiles">
-            <button className="hero__tile" onClick={() => stub('Счета')}>
-              <span className="hero__tile-icon">
-                <ReceiptMIcon />
-              </span>
-              <span>
-                Счета
-                <small>2 в рублях, 2 в валюте</small>
-              </span>
-            </button>
-            <button className="hero__tile" onClick={() => stub('Бизнес-карты')}>
-              <span className="hero__tile-icon">
-                <CardMIcon />
-              </span>
-              <span>
-                Бизнес-карты
-                <small>Реквизиты и операции</small>
-              </span>
-            </button>
+          <div className="flex gap-6 border-t border-white/10 pt-4">
+            <HeroTile icon={<ReceiptMIcon />} title="Счета" sub="2 в рублях, 2 в валюте" onClick={() => stub('Счета')} />
+            <HeroTile icon={<CardMIcon />} title="Бизнес-карты" sub="Реквизиты и операции" onClick={() => stub('Бизнес-карты')} />
           </div>
         </div>
-        <div className="hero__tasks">
-          <div className="hero__tasks-title">Дела в работе</div>
+        <div className="rounded-[18px] bg-white/6 p-5">
+          <div className="mb-2 font-bold">Дела в работе</div>
           {TASKS.map(([label, n, red]) => (
-            <button key={label} className="hero__task" onClick={() => stub(label)}>
+            <button key={label} className="flex w-full justify-between py-[7px] text-white/92" onClick={() => stub(label)}>
               <span>{label}</span>
-              <span className={`hero__task-count ${red ? 'is-red' : ''}`}>{n}</span>
+              <span className={cn('inline-flex h-5 min-w-5 items-center justify-center rounded-[10px] text-xs', red ? 'bg-accent' : 'bg-white/12')}>{n}</span>
             </button>
           ))}
         </div>
@@ -90,38 +100,36 @@ export function HomePage() {
 
       <AnalyticsWidget />
 
-      <div className="home__tabs">
-        <span className="is-active">Сводка</span>
+      <div className="mt-7 mb-4 flex gap-6 text-[22px] font-bold text-ink-3">
+        <span className="text-ink">Сводка</span>
         <span>Остатки по компаниям</span>
-        <span>Мультибанк</span>
+        <span className="hidden md:inline">Мультибанк</span>
       </div>
-      <div className="home__grid">
-        <section className="card card--pad">
-          <div className="card__head">
-            <h3>Заявки из аналитики</h3>
-            <span className="muted">{requests.data?.length ?? 0}</span>
+      <div className="grid gap-4 md:grid-cols-[1.3fr_1fr]">
+        <section className="card p-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-[17px]">Заявки из аналитики</h3>
+            <span className="text-ink-2">{requests.data?.length ?? 0}</span>
           </div>
-          {!requests.data?.length && <p className="muted">Здесь появятся обращения к менеджеру, звонки и заявки, оформленные из инсайтов.</p>}
+          {!requests.data?.length && <p className="text-ink-2">Здесь появятся обращения к менеджеру, звонки и заявки, оформленные из инсайтов.</p>}
           {requests.data?.slice(0, 3).map((r) => (
-            <div key={r.request_id} className="mini-row">
+            <div key={r.request_id} className="flex items-center justify-between border-t border-line py-2.5">
               <div>
-                <div className="mini-row__title">{ACTION_TYPES[r.request_type] ?? r.request_type}</div>
-                <div className="mini-row__sub">
+                <div className="font-semibold">{ACTION_TYPES[r.request_type] ?? r.request_type}</div>
+                <div className="text-xs text-ink-2">
                   {formatDate(r.created_at)} · {r.external_ref}
                 </div>
               </div>
-              <span className={`pill pill--${REQUEST_STATUS[r.status]?.color ?? 'grey'}`}>{REQUEST_STATUS[r.status]?.label ?? r.status}</span>
+              <Pill tone={REQUEST_STATUS[r.status]?.color ?? 'grey'}>{REQUEST_STATUS[r.status]?.label ?? r.status}</Pill>
             </div>
           ))}
         </section>
-        <section className="card card--pad">
-          <div className="card__head">
-            <h3>Конвертация</h3>
-          </div>
-          <div className="fx-table">
-            <span className="muted">Валюта</span>
-            <span className="muted">Продать</span>
-            <span className="muted">Купить</span>
+        <section className="card p-6">
+          <h3 className="mb-3 text-[17px]">Конвертация</h3>
+          <div className="grid grid-cols-[1.4fr_1fr_1fr] gap-3">
+            <span className="text-ink-2">Валюта</span>
+            <span className="text-ink-2">Продать</span>
+            <span className="text-ink-2">Купить</span>
             <span>CNY/RUB</span>
             <span>9,97</span>
             <span>11,07</span>

@@ -1,12 +1,13 @@
 // Панель администратора: north star и метрики этапов CJM, бюджет LLM, источники, ручная новость через общий конвейер.
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@alfalab/core-components/button';
 import { get } from '../api/client';
 import { useManualNews } from '../api/hooks';
 import type { ManualNewsOut } from '../api/types';
-import { CardSkeleton, ErrorBox } from '../components/ui';
+import { CardSkeleton, ErrorBox, H3, Note } from '../components/ui';
 import { formatPercent, formatRelative } from '../lib/format';
+import { cn } from '../lib/cn';
 
 type Metric = { metric?: string; value?: number | null; [k: string]: unknown };
 interface Metrics {
@@ -46,7 +47,11 @@ const STAGES: Record<string, string> = {
   '08_return': '08 Оценить и вернуться',
 };
 
+const HEALTH_DOT: Record<string, string> = { healthy: 'bg-pos-dot', degraded: 'bg-att-dot', down: 'bg-accent' };
+
 const fmt = (v: number | null | undefined) => (v == null ? '—' : formatPercent(v));
+
+const KV = ({ children }: { children: ReactNode }) => <div className="mb-3 flex flex-wrap gap-x-5 gap-y-2 text-sm">{children}</div>;
 
 export function AdminPage() {
   const metrics = useQuery({ queryKey: ['admin-metrics'], queryFn: () => get<Metrics>('/admin/metrics?days=7'), refetchInterval: 30_000 });
@@ -54,33 +59,33 @@ export function AdminPage() {
   const sources = useQuery({ queryKey: ['admin-sources'], queryFn: () => get<SourceHealth[]>('/admin/sources/health') });
 
   return (
-    <div className="admin">
-      <h1 className="page-title">Метрики сервиса «Альфа-Аналитика»</h1>
+    <div>
+      <h1 className="mt-2 mb-5 text-[28px]">Метрики сервиса «Альфа-Аналитика»</h1>
       {metrics.isLoading && <CardSkeleton rows={4} />}
       {metrics.isError && <ErrorBox error={metrics.error} onRetry={() => metrics.refetch()} />}
       {metrics.data && (
         <>
-          <section className="card card--pad north">
-            <div className="north__label">North star · 7 дней</div>
-            <div className="north__value">{fmt(metrics.data.north_star.value)}</div>
-            <div className="north__text">{metrics.data.north_star.metric}</div>
-            <div className="muted small">
+          <section className="rounded-card bg-night p-6 text-white">
+            <div className="text-xs font-bold tracking-[0.06em] text-lime uppercase">North star · 7 дней</div>
+            <div className="text-[44px] font-bold">{fmt(metrics.data.north_star.value)}</div>
+            <div className="mb-1.5 text-base">{metrics.data.north_star.metric}</div>
+            <div className="text-[13px] text-white/60">
               Сессий: {metrics.data.sessions} · пользователей: {metrics.data.users} · медиана до первого полезного инсайта:{' '}
               {metrics.data.speed.median_s_to_first_useful != null ? `${metrics.data.speed.median_s_to_first_useful} с` : '—'}
             </div>
           </section>
-          <div className="cjm-grid">
+          <div className="my-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
             {Object.entries(metrics.data.cjm).map(([k, m]) => (
-              <div key={k} className="card card--pad cjm-card">
-                <div className="cjm-card__stage">{STAGES[k] ?? k}</div>
-                <div className="cjm-card__value">{fmt(m.value as number | null)}</div>
-                <div className="muted small">{m.metric}</div>
+              <div key={k} className="card p-6">
+                <div className="text-[13px] font-bold">{STAGES[k] ?? k}</div>
+                <div className="my-1 text-[28px] font-bold">{fmt(m.value as number | null)}</div>
+                <div className="text-[13px] text-ink-2">{m.metric}</div>
               </div>
             ))}
           </div>
-          <section className="card card--pad">
-            <h3 className="h3">Генерация инсайтов</h3>
-            <div className="kv">
+          <section className="card p-6">
+            <H3>Генерация инсайтов</H3>
+            <KV>
               {Object.entries(metrics.data.generation)
                 .filter(([, v]) => typeof v !== 'object')
                 .map(([k, v]) => (
@@ -88,9 +93,9 @@ export function AdminPage() {
                     {k}: <b>{k.endsWith('share') ? fmt(v as number) : String(v)}</b>
                   </span>
                 ))}
-            </div>
-            <h3 className="h3">Качество</h3>
-            <div className="kv">
+            </KV>
+            <H3>Качество</H3>
+            <KV>
               <span>
                 Доля полезных: <b>{fmt(metrics.data.quality.useful_share)}</b>
               </span>
@@ -103,17 +108,17 @@ export function AdminPage() {
               <span>
                 Отзывов: <b>{metrics.data.quality.feedback ?? 0}</b>
               </span>
-            </div>
+            </KV>
           </section>
         </>
       )}
 
-      <div className="admin__cols">
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
         <ManualNews onDone={() => metrics.refetch()} />
-        <section className="card card--pad">
-          <h3 className="h3">Бюджет LLM на сегодня</h3>
+        <section className="card p-6">
+          <H3>Бюджет LLM на сегодня</H3>
           {llm.data && (
-            <div className="kv">
+            <KV>
               <span>
                 Лимит: <b>{String(llm.data.budget.limit_rub)} ₽</b>
               </span>
@@ -121,21 +126,24 @@ export function AdminPage() {
                 Потрачено: <b>{String(llm.data.budget.spent_rub)} ₽</b>
               </span>
               <span>
-                Токены: <b>{String(llm.data.budget.tokens_in)} / {String(llm.data.budget.tokens_out)}</b>
+                Токены:{' '}
+                <b>
+                  {String(llm.data.budget.tokens_in)} / {String(llm.data.budget.tokens_out)}
+                </b>
               </span>
               <span>{llm.data.budget.exhausted ? 'Бюджет исчерпан — генерация без LLM' : 'Бюджет доступен'}</span>
-            </div>
+            </KV>
           )}
-          <h3 className="h3">Источники новостей</h3>
-          <div className="sources-health">
+          <H3>Источники новостей</H3>
+          <div>
             {sources.data?.map((s) => (
-              <div key={s.id} className="sources-health__row">
-                <span className={`dot-status dot-status--${s.health_status}`} />
-                <span className="sources-health__name">
+              <div key={s.id} className="grid grid-cols-[12px_1fr_auto] items-center gap-2.5 border-b border-line py-1.5 text-sm">
+                <span className={cn('size-2.5 rounded-full', HEALTH_DOT[s.health_status] ?? 'bg-ink-3')} />
+                <span>
                   {s.name}
-                  {s.fallback_for && <span className="muted small"> · резерв для {s.fallback_for}</span>}
+                  {s.fallback_for && <span className="text-[13px] text-ink-2"> · резерв для {s.fallback_for}</span>}
                 </span>
-                <span className="muted small">
+                <span className="text-[13px] text-ink-2">
                   {s.items_24h} за 24 ч{s.last_success_at ? ` · ${formatRelative(s.last_success_at)}` : ''}
                 </span>
               </div>
@@ -144,6 +152,15 @@ export function AdminPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="mb-2.5 flex flex-col gap-1.5 text-[13px] text-ink-2">
+      <span>{label}</span>
+      {children}
+    </label>
   );
 }
 
@@ -157,24 +174,21 @@ function ManualNews({ onDone }: { onDone: () => void }) {
   const [result, setResult] = useState<ManualNewsOut | null>(null);
 
   return (
-    <section className="card card--pad">
-      <h3 className="h3">Ручная новость через общий конвейер</h3>
-      <p className="muted small">
-        Проверка «новые свежие новости обрабатываются осмысленно»: новость проходит дедупликацию, теги, срочность, матчинг по всей базе и
-        генерацию — пользователи получат уведомление.
+    <section className="card p-6">
+      <H3>Ручная новость через общий конвейер</H3>
+      <p className="mb-3 text-[13px] text-ink-2">
+        Проверка «новые свежие новости обрабатываются осмысленно»: новость проходит дедупликацию, теги, срочность, матчинг по всей базе и генерацию —
+        пользователи получат уведомление.
       </p>
-      <label className="field">
-        <span>Заголовок</span>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} />
-      </label>
-      <label className="field">
-        <span>Текст</span>
-        <textarea rows={4} value={body} onChange={(e) => setBody(e.target.value)} />
-      </label>
-      <label className="field">
-        <span>Издатель</span>
-        <input value={publisher} onChange={(e) => setPublisher(e.target.value)} />
-      </label>
+      <Field label="Заголовок">
+        <input className="field-input" value={title} onChange={(e) => setTitle(e.target.value)} />
+      </Field>
+      <Field label="Текст">
+        <textarea className="field-input" rows={4} value={body} onChange={(e) => setBody(e.target.value)} />
+      </Field>
+      <Field label="Издатель">
+        <input className="field-input" value={publisher} onChange={(e) => setPublisher(e.target.value)} />
+      </Field>
       <Button
         view="accent"
         size={40}
@@ -190,12 +204,12 @@ function ManualNews({ onDone }: { onDone: () => void }) {
       >
         Отправить в конвейер
       </Button>
-      {send.isError && <p className="text-negative small">{send.error.message}</p>}
+      {send.isError && <p className="mt-2 text-[13px] text-neg">{send.error.message}</p>}
       {result && (
-        <div className="note note--info">
+        <Note>
           Новых: {result.new}, дублей: {result.duplicates}, событий: {result.events.length}, срочных: {result.urgent_events.length}. Компаний в очереди на
           генерацию: {result.companies_queued.length}.
-        </div>
+        </Note>
       )}
     </section>
   );

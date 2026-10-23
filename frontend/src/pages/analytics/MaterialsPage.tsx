@@ -1,7 +1,7 @@
 // Материалы аналитики банка: документ, дата, темы, метод извлечения; открытие PDF по presigned-ссылке.
 import { get } from '../../api/client';
 import { useAnalyticsDocuments } from '../../api/hooks';
-import { CardSkeleton, EmptyState, ErrorBox } from '../../components/ui';
+import { CardSkeleton, EmptyState, ErrorBox, Pill } from '../../components/ui';
 import { useToast } from '../../components/Toasts';
 import { formatDate, formatPercent } from '../../lib/format';
 import { DocumentPdfMIcon } from '@alfalab/icons-glyph/DocumentPdfMIcon';
@@ -31,25 +31,23 @@ export function MaterialsPage() {
   if (!docs.data?.length) return <EmptyState title="Материалов пока нет" />;
 
   return (
-    <div className="materials">
-      <p className="muted">
-        Аналитика Альфа-Банка, на которую опираются инсайты: каждый вывод со ссылкой на документ и страницу. Материалы с пометкой «ДЕМО» —
-        синтетика для офлайн-демонстрации, не аналитика банка.
+    <div>
+      <p className="text-ink-2">
+        Аналитика Альфа-Банка, на которую опираются инсайты: каждый вывод со ссылкой на документ и страницу. Материалы с пометкой «ДЕМО» — синтетика для
+        офлайн-демонстрации, не аналитика банка.
       </p>
-      <div className="materials__grid">
+      <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
         {docs.data.map((d) => (
-          <button key={d.document_id} className="card card--pad material" onClick={() => open(d.document_id)}>
-            <DocumentPdfMIcon className="material__icon" />
-            <div className="material__title">{d.title}</div>
-            <div className="muted small">
+          <button key={d.document_id} className="card flex flex-col gap-1.5 p-6 text-left hover:shadow-lift" onClick={() => open(d.document_id)}>
+            <DocumentPdfMIcon className="text-accent" />
+            <div className="font-bold">{d.title}</div>
+            <div className="text-[13px] text-ink-2">
               {formatDate(d.doc_date)} · {d.pages} стр. · {EXTRACTION[d.extraction] ?? d.extraction}
               {d.ocr_confidence != null && ` (${formatPercent(d.ocr_confidence)})`}
             </div>
-            <div className="material__topics">
+            <div className="flex flex-wrap gap-1">
               {d.topics.map((t) => (
-                <span key={t} className="pill pill--grey">
-                  {t}
-                </span>
+                <Pill key={t}>{t}</Pill>
               ))}
             </div>
           </button>

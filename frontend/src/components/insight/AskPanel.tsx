@@ -8,10 +8,11 @@ import { streamSse } from '../../api/sse';
 import { keys, useAnalyticsDocuments, useAskHistory, useInsightQuestions } from '../../api/hooks';
 import type { ChatFinal, QaMessage, QuestionIntent, Source, Statement } from '../../api/types';
 import { formatDate, isDemoStatement, SOURCE_TYPES } from '../../lib/format';
-import { KindBadge } from '../ui';
-import { NewsModal } from './sources';
+import { Chip, KindBadge, Note } from '../ui';
+import { NewsModal, srcRefClass } from './sources';
 import { useToast } from '../Toasts';
 import { RobotIcon } from './RobotIcon';
+import { cn } from '../../lib/cn';
 
 const INTENTS: { key: QuestionIntent; label: string }[] = [
   { key: 'clarify', label: 'Уточнить' },
@@ -62,17 +63,7 @@ function historyToTurns(messages: QaMessage[]): Turn[] {
   return turns;
 }
 
-export function AskPanel({
-  insightId,
-  companyId,
-  suggestions,
-  compact = false,
-}: {
-  insightId?: string;
-  companyId: string;
-  suggestions: string[];
-  compact?: boolean;
-}) {
+export function AskPanel({ insightId, companyId, suggestions }: { insightId?: string; companyId: string; suggestions: string[] }) {
   const qc = useQueryClient();
   const insightHistory = useInsightQuestions(insightId);
   const companyHistory = useAskHistory(insightId ? undefined : companyId);
@@ -140,46 +131,51 @@ export function AskPanel({
   };
 
   return (
-    <div className={`ask ${compact ? 'ask--compact' : ''}`}>
+    <div>
       {turns.length === 0 && (
-        <div className="ask__intro">
+        <div className="mb-3 flex items-start gap-3.5">
           <RobotIcon />
           <div>
             <b>Задайте вопрос по этому {insightId ? 'инсайту' : 'бизнесу'}</b>
-            <p className="muted">
-              Агент ответит с опорой на профиль компании, новости и материалы аналитики банка, покажет источники и разделит факты,
-              позицию банка и выводы модели.
+            <p className="text-ink-2">
+              Агент ответит с опорой на профиль компании, новости и материалы аналитики банка, покажет источники и разделит факты, позицию банка и
+              выводы модели.
             </p>
           </div>
         </div>
       )}
 
-      <div className="ask__turns">
+      <div className="mb-3 flex flex-col gap-4">
         {turns.map((t) => (
           <TurnView key={t.key} turn={t} />
         ))}
         <div ref={endRef} />
       </div>
 
-      <div className="ask__suggest">
+      <div className="mb-3 flex flex-wrap gap-2">
         {suggestions.map((s) => (
-          <button key={s} type="button" className="chip" disabled={busy} onClick={() => ask(s)}>
+          <Chip key={s} disabled={busy} onClick={() => ask(s)}>
             {s}
-          </button>
+          </Chip>
         ))}
       </div>
 
-      <form className="ask__form" onSubmit={(e) => ask(question, e)}>
-        <div className="ask__intents" role="group" aria-label="Тип вопроса">
+      <form className="rounded-tile border border-line p-2.5" onSubmit={(e) => ask(question, e)}>
+        <div className="mb-2 flex flex-wrap gap-1" role="group" aria-label="Тип вопроса">
           {INTENTS.map((i) => (
-            <button key={i.key} type="button" className={`ask__intent ${intent === i.key ? 'is-active' : ''}`} onClick={() => setIntent(i.key)}>
+            <button
+              key={i.key}
+              type="button"
+              className={cn('rounded-[10px] px-2.5 py-1 text-[13px]', intent === i.key ? 'bg-muted-2 font-semibold text-ink' : 'text-ink-2')}
+              onClick={() => setIntent(i.key)}
+            >
               {i.label}
             </button>
           ))}
         </div>
-        <div className="ask__row">
+        <div className="flex items-end gap-2">
           <textarea
-            className="ask__input"
+            className="min-h-12 flex-1 resize-none px-2 py-1.5 outline-none"
             rows={2}
             maxLength={2000}
             placeholder="Например: как это повлияет на лизинговые платежи, если ставка останется до середины 2027 года?"
@@ -204,24 +200,24 @@ export function AskPanel({
 function TurnView({ turn }: { turn: Turn }) {
   const lastStep = turn.steps[turn.steps.length - 1];
   return (
-    <div className="turn">
-      <div className="turn__q">
+    <div>
+      <div className="ml-auto flex w-fit max-w-[80%] flex-col rounded-[18px_18px_4px_18px] bg-night px-3.5 py-2.5 text-white">
         <span>{turn.question}</span>
-        {turn.createdAt && <span className="turn__time">{formatDate(turn.createdAt, true)}</span>}
+        {turn.createdAt && <span className="text-[11px] text-white/50">{formatDate(turn.createdAt, true)}</span>}
       </div>
-      <div className={`turn__a turn__a--${turn.status}`}>
-        {turn.status === 'streaming' && !turn.answer && <div className="turn__step">{STEP_LABELS[lastStep] ?? 'Анализирую…'}</div>}
-        {turn.answer && <div className="turn__text">{turn.answer}</div>}
-        {turn.status === 'streaming' && turn.answer && <span className="turn__cursor" />}
+      <div className="mt-2 max-w-[92%] rounded-[18px_18px_18px_4px] bg-muted px-4 py-3.5">
+        {turn.status === 'streaming' && !turn.answer && <div className="animate-pulse text-sm text-ink-2">{STEP_LABELS[lastStep] ?? 'Анализирую…'}</div>}
+        {turn.answer && <div className="whitespace-pre-wrap">{turn.answer}</div>}
+        {turn.status === 'streaming' && turn.answer && <span className="inline-block h-4 w-2 animate-blink bg-accent align-[-2px]" />}
         {turn.status === 'error' && (
-          <div className="note note--warning">
+          <Note tone="warning">
             {turn.error} {turn.answer && 'Черновик выше не прошёл проверку бэкендом — не используйте его как итоговый ответ.'}
-          </div>
+          </Note>
         )}
         {turn.status === 'done' && turn.statements.length > 0 && (
-          <div className="turn__statements">
+          <div className="mt-2.5 border-t border-black/6 pt-2.5">
             {turn.statements.map((s) => (
-              <div key={s.id} className="statement statement--small">
+              <div key={s.id} className="flex items-baseline gap-2.5 py-1 text-sm">
                 <KindBadge kind={s.kind} demo={isDemoStatement(s, turn.sources)} />
                 <span>{s.text}</span>
               </div>
@@ -230,7 +226,7 @@ function TurnView({ turn }: { turn: Turn }) {
         )}
         {turn.status !== 'streaming' && turn.sources.length > 0 && <ChatSources sources={turn.sources} />}
         {turn.final?.disclaimers?.map((d) => (
-          <p key={d.code} className="turn__disclaimer">
+          <p key={d.code} className="mt-2 text-xs text-ink-2">
             {d.text}
           </p>
         ))}
@@ -273,10 +269,10 @@ function ChatSources({ sources }: { sources: Source[] }) {
   };
 
   return (
-    <div className="turn__sources">
-      <span className="muted small">Источники:</span>
+    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+      <span className="text-[13px] text-ink-2">Источники:</span>
       {sources.map((s) => (
-        <button key={s.id} type="button" className={`src-ref src-ref--${s.type}`} onClick={() => open(s)} title={s.title}>
+        <button key={s.id} type="button" className={srcRefClass(s.type)} onClick={() => open(s)} title={s.title}>
           {SOURCE_TYPES[s.type] ?? s.type}: {s.title.length > 48 ? `${s.title.slice(0, 46)}…` : s.title}
           {s.page ? `, с. ${s.page}` : ''}
         </button>

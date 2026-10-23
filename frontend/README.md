@@ -58,6 +58,8 @@ npm run dev        # http://localhost:5173, /api → API_PROXY_TARGET (по ум
 ## Устройство
 
 - React 18 + TypeScript + Vite, маршрутизация — `react-router-dom`, данные — `@tanstack/react-query`.
+- Стили — Tailwind CSS v4 (`@tailwindcss/vite`): токены цветов, радиусов и теней Альфа-Бизнеса заданы в `@theme`
+  в `src/styles/index.css`, повторяющиеся блоки — утилиты `card`, `eyebrow`, `label-caps`, `field-input`.
 - Компоненты и токены дизайн-системы Альфа-Банка — `@alfalab/core-components`, иконки — `@alfalab/icons-glyph`
   ([Core DS](https://core-ds.github.io/core-components/master/)). Точное соответствие дизайн-системе не требуется
   кейсом; цель — чтобы раздел выглядел частью интернет-банка.

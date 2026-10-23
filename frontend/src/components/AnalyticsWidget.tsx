@@ -9,6 +9,16 @@ import { useSession } from '../auth/session';
 import { companyShortName, EVENT_TYPES, formatRelative, plural } from '../lib/format';
 import { ImpactMeter, PolarityStatus, UrgentStatus } from './ui';
 import { SparkIcon } from '../layout/icons';
+import { cn } from '../lib/cn';
+
+function Counter({ value, label, urgent = false }: { value: number | undefined; label: string; urgent?: boolean }) {
+  return (
+    <div className={cn('flex min-w-28 flex-col rounded-tile px-4 py-3', urgent ? 'bg-neg-bg' : 'bg-muted')}>
+      <span className={cn('text-[28px] leading-tight font-bold', urgent && 'text-accent')}>{value ?? '—'}</span>
+      <span className="text-[13px] text-ink-2">{label}</span>
+    </div>
+  );
+}
 
 export function AnalyticsWidget() {
   const { company, setCompanyId } = useSession();
@@ -34,68 +44,68 @@ export function AnalyticsWidget() {
   };
 
   return (
-    <section className="widget" aria-label="Аналитика для вашей компании">
-      <div className="widget__head">
+    <section
+      className="relative mt-4 overflow-hidden rounded-3xl border border-accent/20 bg-white p-6 shadow-card before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-linear-to-r before:from-accent before:to-[#ff8a65]"
+      aria-label="Аналитика для вашей компании"
+    >
+      <div className="mb-4 flex flex-col justify-between gap-6 md:flex-row">
         <div>
-          <div className="widget__eyebrow">
+          <div className="eyebrow">
             <SparkIcon width={16} height={16} /> Альфа-Аналитика
           </div>
-          <h2 className="widget__title">Важное для вашего бизнеса</h2>
-          <p className="widget__lead">
-            События из новостей и аналитики банка, отобранные по профилю компании: что произошло, почему это важно вам и что
-            можно сделать.
+          <h2 className="mt-1 mb-1.5 text-2xl">Важное для вашего бизнеса</h2>
+          <p className="max-w-[620px] text-ink-2">
+            События из новостей и аналитики банка, отобранные по профилю компании: что произошло, почему это важно вам и что можно сделать.
           </p>
         </div>
-        <div className="widget__counters">
-          <div className="widget__counter">
-            <span className="widget__counter-value">{companySummary?.unread ?? '—'}</span>
-            <span className="widget__counter-label">{plural(companySummary?.unread ?? 0, 'новый инсайт', 'новых инсайта', 'новых инсайтов')}</span>
-          </div>
-          <div className="widget__counter widget__counter--urgent">
-            <span className="widget__counter-value">{companySummary?.urgent ?? '—'}</span>
-            <span className="widget__counter-label">{plural(companySummary?.urgent ?? 0, 'срочный', 'срочных', 'срочных')}</span>
-          </div>
+        <div className="flex shrink-0 gap-3">
+          <Counter value={companySummary?.unread} label={plural(companySummary?.unread ?? 0, 'новый инсайт', 'новых инсайта', 'новых инсайтов')} />
+          <Counter value={companySummary?.urgent} label={plural(companySummary?.urgent ?? 0, 'срочный', 'срочных', 'срочных')} urgent />
         </div>
       </div>
 
-      <div className="widget__list">
+      <div className="grid gap-3 lg:grid-cols-3">
         {feed.isLoading &&
           [0, 1, 2].map((i) => (
-            <div className="widget__item" key={i}>
-              <Skeleton visible animate colors="inverted">
+            <div key={i} className="rounded-tile bg-muted p-4">
+              <Skeleton visible animate>
                 <div style={{ height: 76 }} />
               </Skeleton>
             </div>
           ))}
         {!feed.isLoading && items.length === 0 && (
-          <div className="widget__empty">Пока нет значимых событий для этой компании — мы сообщим, когда они появятся.</div>
+          <div className="col-span-full py-3 text-ink-2">Пока нет значимых событий для этой компании — мы сообщим, когда они появятся.</div>
         )}
         {items.map((it, i) => (
-          <button key={it.insight_id} className="widget__item" onClick={() => open(it.insight_id, i + 1)}>
-            <div className="widget__item-top">
+          <button
+            key={it.insight_id}
+            className="flex flex-col gap-2 rounded-tile bg-muted p-4 text-left transition hover:-translate-y-px hover:bg-[#eaebee]"
+            onClick={() => open(it.insight_id, i + 1)}
+          >
+            <div className="flex flex-wrap items-center gap-1.5">
               {it.urgent && <UrgentStatus />}
               <PolarityStatus polarity={it.polarity as never} />
-              <span className="widget__meta">
+              <span className="flex-1 text-xs text-ink-2">
                 {EVENT_TYPES[it.event_type] ?? it.event_type} · {formatRelative(it.published_at)}
               </span>
               <ImpactMeter level={it.impact_level as never} compact />
             </div>
-            <div className="widget__item-title">{it.title}</div>
+            <div className="text-[15px] leading-snug font-bold">{it.title}</div>
             {it.why_for_you && (
-              <div className="widget__why">
-                <span>Почему это для вас:</span> {it.why_for_you}
+              <div className="line-clamp-3 text-[13px] text-ink-2">
+                <span className="font-semibold text-ink">Почему это для вас:</span> {it.why_for_you}
               </div>
             )}
           </button>
         ))}
       </div>
 
-      <div className="widget__foot">
+      <div className="mt-4 flex flex-wrap items-center gap-5">
         <Button view="accent" size={48} rightAddons={<ArrowRightMIcon />} onClick={() => navigate('/analytics')}>
           Все инсайты компании
         </Button>
         {otherUrgent.length > 0 && (
-          <span className="widget__other">
+          <span className="text-[13px] text-ink-2">
             Срочное в других компаниях:{' '}
             {otherUrgent.map((c, i) => (
               <span key={c.company_id}>

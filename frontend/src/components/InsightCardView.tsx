@@ -7,8 +7,11 @@ import { EyeMIcon } from '@alfalab/icons-glyph/EyeMIcon';
 import { trackEvent, useInsightState } from '../api/hooks';
 import type { InsightCard } from '../api/types';
 import { EVENT_TYPES, formatRelative, plural } from '../lib/format';
-import { ImpactMeter, PolarityStatus, UrgentStatus } from './ui';
+import { Flag, ImpactMeter, PolarityStatus, UrgentStatus } from './ui';
 import { useToast } from './Toasts';
+import { cn } from '../lib/cn';
+
+const smallIconBtn = 'inline-flex size-8 items-center justify-center rounded-full text-ink-2 hover:bg-muted-2 hover:text-ink [&_svg]:size-5';
 
 export function InsightCardView({ item, position, via = 'feed' }: { item: InsightCard; position: number; via?: string }) {
   const navigate = useNavigate();
@@ -52,31 +55,34 @@ export function InsightCardView({ item, position, via = 'feed' }: { item: Insigh
   return (
     <article
       ref={ref}
-      className={`insight-card ${item.state.seen ? '' : 'is-new'} ${item.state.hidden ? 'is-hidden' : ''}`}
+      className={cn(
+        'cursor-pointer rounded-card border border-transparent bg-white px-6 py-5 shadow-card transition hover:border-line hover:shadow-lift focus-visible:outline-2 focus-visible:outline-info',
+        item.state.hidden && 'opacity-70',
+      )}
       onClick={open}
       role="link"
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && open()}
     >
-      <div className="insight-card__top">
+      <div className="flex flex-wrap items-center gap-2">
         {item.urgent && <UrgentStatus />}
         <PolarityStatus polarity={item.polarity as never} />
-        {!item.state.opened && <span className="insight-card__new">Новое</span>}
-        {item.state.updated && <span className="insight-card__updated">Обновлено</span>}
-        <span className="insight-card__meta">
+        {!item.state.opened && <Flag tone="blue">Новое</Flag>}
+        {item.state.updated && <Flag tone="orange">Обновлено</Flag>}
+        <span className="text-[13px] text-ink-2">
           {EVENT_TYPES[item.event_type] ?? item.event_type} · {formatRelative(item.published_at)}
         </span>
-        <span className="insight-card__actions" onClick={(e) => e.stopPropagation()}>
+        <span className="ml-auto flex gap-0.5" onClick={(e) => e.stopPropagation()}>
           <button
-            className="icon-btn icon-btn--sm"
+            className={smallIconBtn}
             title={item.state.saved ? 'Убрать из сохранённых' : 'Сохранить'}
             aria-label={item.state.saved ? 'Убрать из сохранённых' : 'Сохранить'}
             onClick={() => act(item.state.saved ? 'unsave' : 'save')}
           >
-            {item.state.saved ? <BookmarkMIcon className="is-saved" /> : <BookmarkLineMIcon />}
+            {item.state.saved ? <BookmarkMIcon className="text-accent" /> : <BookmarkLineMIcon />}
           </button>
           <button
-            className="icon-btn icon-btn--sm"
+            className={smallIconBtn}
             title={item.state.hidden ? 'Вернуть в ленту' : 'Скрыть — неактуально'}
             aria-label={item.state.hidden ? 'Вернуть в ленту' : 'Скрыть'}
             onClick={() => act(item.state.hidden ? 'unhide' : 'hide')}
@@ -86,26 +92,26 @@ export function InsightCardView({ item, position, via = 'feed' }: { item: Insigh
         </span>
       </div>
 
-      <h3 className="insight-card__title">{item.title}</h3>
-      <p className="insight-card__summary">{item.summary}</p>
+      <h3 className="mt-2.5 mb-1.5 text-lg leading-snug">{item.title}</h3>
+      <p className="line-clamp-2 text-ink-2">{item.summary}</p>
 
       {item.why_for_you && (
-        <div className="insight-card__why">
-          <span className="insight-card__why-label">Почему это для вас</span>
+        <div className="my-3 rounded-xl bg-muted px-3.5 py-2.5 text-sm">
+          <span className="mb-0.5 block text-xs font-bold text-accent">Почему это для вас</span>
           {item.why_for_you}
         </div>
       )}
 
-      <div className="insight-card__bottom">
+      <div className="flex flex-wrap items-center gap-4">
         <ImpactMeter level={item.impact_level as never} score={item.impact_score} />
         {!!item.priority_reasons?.length && (
-          <span className="insight-card__reasons" title="Почему инсайт выше в ленте">
+          <span className="text-[13px] text-ink-2" title="Почему инсайт выше в ленте">
             Выше в ленте: {item.priority_reasons.join(' · ')}
           </span>
         )}
-        <span className="insight-card__sources">
+        <span className="ml-auto text-[13px] text-ink-2">
           {item.sources_count} {plural(item.sources_count, 'источник', 'источника', 'источников')}
-          {item.bank_view_coverage !== 'none' && <span className="insight-card__bank">+ аналитика банка</span>}
+          {item.bank_view_coverage !== 'none' && <span className="ml-1.5 font-semibold text-accent">+ аналитика банка</span>}
         </span>
       </div>
     </article>

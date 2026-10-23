@@ -5,8 +5,9 @@ import { useFeed } from '../../api/hooks';
 import type { FeedFilter } from '../../api/types';
 import { useSession } from '../../auth/session';
 import { InsightCardView } from '../../components/InsightCardView';
-import { CardSkeleton, EmptyState, ErrorBox } from '../../components/ui';
+import { CardSkeleton, EmptyState, ErrorBox, selectClass } from '../../components/ui';
 import { ROLE_LABELS } from '../../lib/format';
+import { cn } from '../../lib/cn';
 
 const FILTERS: { key: FeedFilter; label: string }[] = [
   { key: 'all', label: 'Все' },
@@ -50,16 +51,16 @@ export function FeedPage() {
   const items = feed.data?.items ?? [];
 
   return (
-    <div className="feed">
-      <div className="feed__toolbar">
-        <div className="feed__filters" role="group" aria-label="Фильтр ленты">
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Фильтр ленты">
           {FILTERS.map((f) => (
             <Tag key={f.key} size={32} shape="rounded" view="filled" checked={filter === f.key} onClick={() => set('filter', f.key)}>
               {f.label}
             </Tag>
           ))}
         </div>
-        <select className="period-select" value={period} onChange={(e) => set('period', e.target.value)} aria-label="Период">
+        <select className={cn(selectClass, 'bg-white')} value={period} onChange={(e) => set('period', e.target.value)} aria-label="Период">
           {PERIODS.map((p) => (
             <option key={p.key} value={p.key}>
               {p.label}
@@ -69,9 +70,9 @@ export function FeedPage() {
       </div>
 
       {company && (
-        <p className="feed__hint">
-          Отсортировано по значимости для компании и роли «{ROLE_LABELS[company.role]}»: отрасль, контрагенты, страны ВЭД,
-          продукты банка и свежесть события.
+        <p className="my-3 text-[13px] text-ink-2">
+          Отсортировано по значимости для компании и роли «{ROLE_LABELS[company.role]}»: отрасль, контрагенты, страны ВЭД, продукты банка и свежесть
+          события.
         </p>
       )}
 
@@ -79,7 +80,7 @@ export function FeedPage() {
       {feed.isError && <ErrorBox error={feed.error} onRetry={() => feed.refetch()} />}
       {!feed.isLoading && !feed.isError && items.length === 0 && <EmptyState title="Пусто" text={EMPTY[filter]} />}
 
-      <div className={`feed__list ${feed.isFetching && !feed.isLoading ? 'is-refreshing' : ''}`}>
+      <div className={cn('flex flex-col gap-3 transition-opacity', feed.isFetching && !feed.isLoading && 'opacity-60')}>
         {items.map((it, i) => (
           <InsightCardView key={it.insight_id} item={it} position={i + 1} />
         ))}

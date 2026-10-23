@@ -8,6 +8,8 @@ import { CheckmarkMIcon } from '@alfalab/icons-glyph/CheckmarkMIcon';
 import { useBankProducts, useCreateAction, type ActionResult } from '../../api/hooks';
 import type { ActionIn } from '../../api/types';
 import { REQUEST_STATUS } from '../../lib/format';
+import { Chip, Note } from '../ui';
+import { cn } from '../../lib/cn';
 
 type CtaType = ActionIn['type'];
 
@@ -23,6 +25,15 @@ export interface ActionDraft {
   type: CtaType;
   productId: string | null;
   reason: string;
+}
+
+function Row({ label, value }: { label: string; value: string | undefined }) {
+  return (
+    <div className="flex justify-between border-b border-line py-2">
+      <span>{label}</span>
+      <b>{value}</b>
+    </div>
+  );
 }
 
 export function ActionModal({ insightId, draft, onClose }: { insightId: string; draft: ActionDraft | null; onClose: () => void }) {
@@ -61,71 +72,70 @@ export function ActionModal({ insightId, draft, onClose }: { insightId: string; 
       <ModalDesktop.Header hasCloser title={result ? 'Обращение отправлено' : 'Следующий шаг'} />
       <ModalDesktop.Content>
         {result ? (
-          <div className="action-done">
-            <span className="action-done__icon">
+          <div className="flex flex-col gap-2.5">
+            <span className="inline-flex size-14 items-center justify-center rounded-full bg-pos-bg text-pos">
               <CheckmarkMIcon />
             </span>
-            <p className="action-done__msg">{result.message ?? 'Обращение принято.'}</p>
-            <div className="action-done__row">
-              <span>Номер в CRM</span>
-              <b>{result.external_ref}</b>
-            </div>
-            <div className="action-done__row">
-              <span>Статус</span>
-              <b>{REQUEST_STATUS[result.status ?? 'new']?.label ?? result.status}</b>
-            </div>
-            <p className="muted small">
-              Об изменении статуса придёт уведомление. Все обращения — во вкладке <Link to="/analytics/requests" onClick={onClose}>«Мои заявки»</Link>.
+            <p className="text-[17px] font-semibold">{result.message ?? 'Обращение принято.'}</p>
+            <Row label="Номер в CRM" value={result.external_ref} />
+            <Row label="Статус" value={REQUEST_STATUS[result.status ?? 'new']?.label ?? result.status} />
+            <p className="text-[13px] text-ink-2">
+              Об изменении статуса придёт уведомление. Все обращения — во вкладке{' '}
+              <Link to="/analytics/requests" onClick={onClose}>
+                «Мои заявки»
+              </Link>
+              .
             </p>
           </div>
         ) : (
-          <div className="action-form">
+          <div className="flex flex-col gap-3.5">
             {draft?.reason && (
-              <div className="note note--info">
+              <Note>
                 <span>
                   <b>Связь с событием:</b> {draft.reason}
                 </span>
-              </div>
+              </Note>
             )}
-            <div className="action-types">
+            <div className="flex flex-col gap-2">
               {TYPES.map((t) => (
-                <button key={t.key} type="button" className={`action-type ${type === t.key ? 'is-active' : ''}`} onClick={() => setType(t.key)}>
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setType(t.key)}
+                  className={cn(
+                    'flex flex-col gap-0.5 rounded-[14px] border bg-white px-3.5 py-3 text-left',
+                    type === t.key ? 'border-night shadow-[inset_0_0_0_1px_#111]' : 'border-line',
+                  )}
+                >
                   <b>{t.title}</b>
-                  <span>{t.text}</span>
+                  <span className="text-[13px] text-ink-2">{t.text}</span>
                 </button>
               ))}
             </div>
             {product && type !== 'callback' && (
-              <div className="product-box">
-                <div className="product-box__label">Продукт банка, связанный с событием</div>
+              <div className="rounded-[14px] bg-muted px-3.5 py-3">
+                <div className="text-xs text-ink-2">Продукт банка, связанный с событием</div>
                 <b>{product.name}</b>
-                <p className="muted small">{product.description}</p>
+                <p className="text-[13px] text-ink-2">{product.description}</p>
               </div>
             )}
             {type === 'callback' && (
-              <div className="time-picker" role="group" aria-label="Удобное время">
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Удобное время">
                 {TIMES.map((t) => (
-                  <button key={t} type="button" className={`chip ${time === t ? 'is-active' : ''}`} onClick={() => setTime(t)}>
+                  <Chip key={t} active={time === t} onClick={() => setTime(t)}>
                     {t}
-                  </button>
+                  </Chip>
                 ))}
               </div>
             )}
-            <Textarea
-              label="Комментарий для банка (необязательно)"
-              block
-              minRows={3}
-              maxLength={1000}
-              value={comment}
-              onChange={(_, { value }) => setComment(value)}
-            />
-            <p className="muted small">Мы передадим менеджеру название инсайта и компанию. Финансовые данные компании в заявку не копируются.</p>
-            {create.isError && <div className="note note--warning">{create.error.message}</div>}
+            <Textarea label="Комментарий для банка (необязательно)" block minRows={3} maxLength={1000} value={comment} onChange={(_, { value }) => setComment(value)} />
+            <p className="text-[13px] text-ink-2">Мы передадим менеджеру название инсайта и компанию. Финансовые данные компании в заявку не копируются.</p>
+            {create.isError && <Note tone="warning">{create.error.message}</Note>}
           </div>
         )}
       </ModalDesktop.Content>
       <ModalDesktop.Footer>
-        <div className="modal-actions">
+        <div className="flex gap-2">
           {result ? (
             <Button view="primary" size={48} onClick={onClose}>
               Готово
