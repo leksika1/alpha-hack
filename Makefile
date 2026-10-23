@@ -3,7 +3,9 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 COMPOSE      := docker compose
-COMPOSE_E2E  := docker compose -p alfa-e2e -f docker-compose.yml -f docker-compose.test.yml --profile test
+# Part compose files default to Dokploy's shared network: e2e gets its own one
+COMPOSE_E2E  := SHARED_NETWORK_EXTERNAL=false SHARED_NETWORK=alfa-e2e-shared BACKEND_ALIAS=alfa-backend-e2e ML_ALIAS=alfa-ml-e2e \
+                docker compose -p alfa-e2e -f backend/docker-compose.yml -f backend/docker-compose.test.yml --profile test
 BACKEND      := backend
 RUN          := cd $(BACKEND) && uv run
 APP_EXEC     := $(COMPOSE) exec api
@@ -17,7 +19,7 @@ help: ## Show targets
 install: ## Install backend Python deps from uv.lock (local dev)
 	cd $(BACKEND) && uv sync --frozen
 
-up: ## Build and start the demo stack
+up: ## Build and start the whole app (root docker-compose.yml includes each part, ADR-032)
 	$(COMPOSE) up -d --build
 
 down: ## Stop the stack (keeps volumes)

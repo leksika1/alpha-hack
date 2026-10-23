@@ -1,6 +1,6 @@
 # E2E overlay: `make e2e` runs
-#   docker compose -p alfa-e2e -f docker-compose.yml -f docker-compose.test.yml --profile test up ...
-# Synthetic data, fixture news, ml-stub, fake embeddings/OCR/LLM; no host ports (isolated from the demo stack).
+#   docker compose -p alfa-e2e -f backend/docker-compose.yml -f backend/docker-compose.test.yml --profile test up ...
+# Synthetic data, fixture news, ml-stub, fake embeddings/OCR/LLM; no host ports: the override file is not used (isolated from the demo stack).
 
 x-test-env: &test-env
   APP_ENV: test
@@ -9,6 +9,7 @@ x-test-env: &test-env
   NEWS_LIVE_SOURCES_ENABLED: "true"   # only the e2e catalog above: nothing leaves the stack
   INSIGHT_GENERATOR: stub
   ML_SERVICE_URL: http://ml-stub:8100  # e2e scenarios are written against the deterministic stub
+  INTERNAL_API_URL: http://api:8000    # one project: ml-stub is not in the shared network
   EMBEDDING_PROVIDER: fake
   OCR_PROVIDER: fake
   LLM_BASE_URL: ""
@@ -19,11 +20,8 @@ x-test-env: &test-env
 
 services:
   postgres:
-    ports: !reset []
   redis:
-    ports: !reset []
   minio:
-    ports: !reset []
   migrate:
     environment: *test-env
     volumes: !reset []
@@ -31,7 +29,6 @@ services:
     environment: *test-env
     volumes: !reset []
   api:
-    ports: !reset []
     environment: *test-env
     volumes: !reset []
   worker:
@@ -40,17 +37,14 @@ services:
   scheduler:
     environment: *test-env
     volumes: !reset []
-  ml:
-    ports: !reset []
   ml-stub:
-    ports: !reset []
     environment: *test-env
     volumes: !reset []
 
   e2e-runner:
     profiles: ["test"]
     build:
-      context: .
+      context: ..
       dockerfile: backend/Dockerfile
       target: test
     image: alfa-future-backend-test:${IMAGE_TAG:-local}

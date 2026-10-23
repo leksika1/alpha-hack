@@ -8,9 +8,11 @@
 | E2E | `make e2e` | весь compose-стек в профиле `test`: seed → очередь → воркер → ml-stub → Tools API → лента; сценарии SPEC §11.2 | Docker, ~5 мин со сборкой |
 
 `make check` = lint + типы + unit + integration. CI (`.github/workflows/ci.yml`) на каждый push в `main`/`dev`
-и на PR запускает три задания: lint-type-unit, integration, e2e.
+и на PR запускает три задания: lint-type-unit, integration, e2e. Ещё задание `frontend` собирает образ фронтенда,
+а e2e проверяет compose-файлы частей в режиме Dokploy. После зелёных заданий на push в `main`/`dev` задание `deploy`
+вызывает вебхуки Dokploy (`docs/RUNBOOK.md`, «Деплой»).
 
-## Окружение e2e (`docker-compose.test.yml`)
+## Окружение e2e (`backend/docker-compose.test.yml`)
 
 - **Данные:** синтетика (`data/synthetic`), демо-лента новостей, `EMBEDDING_PROVIDER=fake`, `OCR_PROVIDER=fake`,
   `LLM_PROVIDER=fake` (детерминированные ответы через настоящий Gateway).

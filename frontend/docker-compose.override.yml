@@ -1,0 +1,5 @@
+# Local host port of the frontend. Not used in Dokploy (it deploys frontend/docker-compose.yml alone).
+
+services:
+  frontend:
+    ports: ["${FRONTEND_PORT:-3000}:80"]

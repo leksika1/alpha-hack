@@ -1,0 +1,5 @@
+# Local host port of the ML service. Not used in Dokploy (it deploys ml/docker-compose.yml alone).
+
+services:
+  ml:
+    ports: ["${ML_PORT:-8200}:8200"]
