@@ -2189,6 +2189,58 @@
           }
         }
       }
+    },
+    "/api/v1/admin/news": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Добавить новость вручную (пресс-релиз, сообщение аналитика): тот же конвейер, что у RSS — сырьё в S3, дедупликация, событие, матчинг, генерация, уведомления",
+        "operationId": "add_news_api_v1_admin_news_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualNewsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualNewsOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -3627,6 +3679,137 @@
             "password": "demo12345"
           }
         ]
+      },
+      "ManualNewsIn": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ManualNewsItem"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "ManualNewsIn"
+      },
+      "ManualNewsItem": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 5,
+            "title": "Title"
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 20000,
+            "minLength": 20,
+            "title": "Body"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "publisher": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publisher"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "body"
+        ],
+        "title": "ManualNewsItem"
+      },
+      "ManualNewsOut": {
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "title": "Outcome"
+          },
+          "items": {
+            "type": "integer",
+            "title": "Items"
+          },
+          "new": {
+            "type": "integer",
+            "title": "New"
+          },
+          "duplicates": {
+            "type": "integer",
+            "title": "Duplicates"
+          },
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "urgent_events": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Urgent Events"
+          },
+          "companies_queued": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Companies Queued"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "outcome",
+          "items",
+          "new",
+          "duplicates",
+          "events",
+          "urgent_events",
+          "companies_queued"
+        ],
+        "title": "ManualNewsOut"
       },
       "MeOut": {
         "properties": {

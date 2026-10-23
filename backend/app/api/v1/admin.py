@@ -224,3 +224,69 @@ async def set_crm_status(
         "updated_at": row["updated_at"],
         "notified": notified,
     }
+
+
+class ManualNewsItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=5, max_length=500)
+    body: str = Field(min_length=20, max_length=20_000)
+    url: str | None = Field(default=None, max_length=2000)
+    published_at: datetime | None = None
+    publisher: str | None = Field(default=None, max_length=200)
+
+
+class ManualNewsIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ManualNewsItem] = Field(min_length=1, max_length=20)
+
+
+class ManualNewsOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: str
+    items: int
+    new: int
+    duplicates: int
+    events: list[str]
+    urgent_events: list[str]
+    companies_queued: list[str]
+
+
+@router.post(
+    "/news",
+    response_model=ManualNewsOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses=ADMIN_ERRS,
+    summary="Добавить новость вручную (пресс-релиз, сообщение аналитика): тот же конвейер, что у RSS — "
+    "сырьё в S3, дедупликация, событие, матчинг, генерация, уведомления",
+)
+async def add_news(
+    body: ManualNewsIn, request: Request, admin: Admin, conn: Conn, settings: SettingsDep
+) -> ManualNewsOut:
+    import hashlib
+
+    from app.core.s3 import S3ObjectStore, get_s3_client
+    from app.services.news_ingest import ingest_manual
+    from app.services.pipeline import match_new_events
+
+    items = []
+    for item in body.items:
+        digest = hashlib.sha256(f"{item.title}\n{item.body}".encode()).hexdigest()[:16]
+        items.append({"id": f"manual-{digest}", **item.model_dump(mode="json")})
+    store = S3ObjectStore(get_s3_client(), settings.s3_bucket_news_raw)
+    result = await ingest_manual(conn, store, items)
+    run = result.sources[0]
+    companies = await match_new_events(conn, settings, result.event_ids)
+    if companies:
+        await request.app.state.enqueue(companies)
+    return ManualNewsOut(
+        outcome=run.outcome,
+        items=run.n_items,
+        new=run.n_new,
+        duplicates=run.n_duplicates,
+        events=result.event_ids,
+        urgent_events=result.urgent_event_ids,
+        companies_queued=companies,
+    )

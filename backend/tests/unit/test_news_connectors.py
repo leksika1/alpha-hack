@@ -121,3 +121,21 @@ async def test_oversized_response_is_rejected() -> None:
     async with PoliteFetcher("TestBot/1", min_interval_s=0) as f:
         res = await f.fetch("https://big.test/rss")
     assert res.outcome == "too_large" and res.body == b""
+
+
+def test_manual_connector_keeps_absolute_dates_and_strips_html() -> None:
+    items = [
+        {"id": "m1", "title": "<b>Пресс-релиз</b>", "body": "<p>Текст <script>x()</script>новости</p>",
+         "published_at": "2026-10-20T10:00:00+03:00", "publisher": "Аналитик банка"},
+        {"id": "m2", "title": "Без даты", "body": "Текст", "url": "https://bank.test/news/2"},
+    ]  # fmt: skip
+    src = SourceInfo("manual", "Ручной ввод", "manual", None)
+    first, second = connector_for("manual").parse(json.dumps({"items": items}).encode(), src, NOW)
+    assert (first.title, first.body) == ("Пресс-релиз", "Текст новости")
+    assert first.published_at == datetime(2026, 10, 20, 7, tzinfo=UTC) and first.publisher == "Аналитик банка"
+    assert first.url == "https://manual.local/news/m1" and first.external_id == "m1"
+    assert (
+        second.published_at == NOW
+        and second.url == "https://bank.test/news/2"
+        and second.publisher == "Ручной ввод"
+    )
