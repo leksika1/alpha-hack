@@ -168,6 +168,15 @@ services:
       timeout: 3s
       retries: 30
 
+  frontend:
+    build:
+      context: ./frontend
+    image: alfa-future-frontend:${IMAGE_TAG:-local}
+    ports: ["${FRONTEND_PORT:-3000}:80"]
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
+
 volumes:
   pgdata:
   models:

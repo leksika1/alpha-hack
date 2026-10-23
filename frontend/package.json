@@ -1,0 +1,30 @@
+{
+  "name": "alfa-future-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "gen:api": "openapi-typescript ../docs/openapi.json -o src/api/schema.d.ts"
+  },
+  "dependencies": {
+    "@alfalab/core-components": "50.35.1",
+    "@alfalab/core-components-config": "1.1.0",
+    "@alfalab/icons-glyph": "2.293.0",
+    "@tanstack/react-query": "5.90.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.30.1"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.24",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.7.0",
+    "openapi-typescript": "7.9.1",
+    "typescript": "5.9.3",
+    "vite": "6.3.6"
+  }
+}
