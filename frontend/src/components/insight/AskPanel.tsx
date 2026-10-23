@@ -7,7 +7,7 @@ import { get } from '../../api/client';
 import { streamSse } from '../../api/sse';
 import { keys, useAnalyticsDocuments, useAskHistory, useInsightQuestions } from '../../api/hooks';
 import type { ChatFinal, QaMessage, QuestionIntent, Source, Statement } from '../../api/types';
-import { formatDate, isDemoStatement, sourceLabel } from '../../lib/format';
+import { absoluteUrl, formatDate, isDemoStatement, sourceLabel } from '../../lib/format';
 import { Chip, KindBadge, Note } from '../ui';
 import { NewsModal, srcRefClass } from './sources';
 import { useToast } from '../Toasts';
@@ -257,7 +257,7 @@ function ChatSources({ sources }: { sources: Source[] }) {
         const res = await get<{ url: string }>(`/analytics/documents/${doc.document_id}/download${s.page ? `?page=${s.page}` : ''}`);
         if (win) {
           win.opener = null;
-          win.location.href = res.url;
+          win.location.href = absoluteUrl(res.url);
         }
       } catch (e) {
         win?.close();

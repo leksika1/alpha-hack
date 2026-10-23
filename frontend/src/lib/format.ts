@@ -369,3 +369,8 @@ export function sourceLabel(src: { type: string; title: string; publisher: strin
   }
   return src.page ? `${label}, с. ${src.page}` : label;
 }
+
+// Ссылки бэкенда на файлы бывают относительными (/api/v1/...): для нового окна делаем абсолютный адрес.
+export function absoluteUrl(url: string): string {
+  return new URL(url, window.location.origin).href;
+}
