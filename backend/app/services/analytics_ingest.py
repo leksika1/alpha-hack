@@ -11,6 +11,7 @@
 import asyncio
 import hashlib
 import json
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -101,19 +102,30 @@ async def ingest_pdf(
     force: bool = False,
 ) -> IngestOutcome:
     sha = hashlib.sha256(data).hexdigest()
+    async with conn.transaction():
+        await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "analytics:" + sha)
+        return await _ingest_locked(conn, store, ocr, embedder, data, file_name, origin, force, sha)
+
+
+async def _ingest_locked(
+    conn: Any,
+    store: ObjectStore,
+    ocr: Ocr,
+    embedder: Embedder,
+    data: bytes,
+    file_name: str,
+    origin: str,
+    force: bool,
+    sha: str,
+) -> IngestOutcome:
     existing = await conn.fetchrow("SELECT id, status FROM core.analytics_documents WHERE sha256 = $1", sha)
-    if existing and existing["status"] == "ready" and not force:
+    was_ready = existing is not None and existing["status"] == "ready"
+    if was_ready and not force:
         return IngestOutcome(str(existing["id"]), file_name, "skipped")
     s3_key = f"{sha}.pdf"
     await asyncio.to_thread(store.put, s3_key, data, "application/pdf")
     if existing:
         doc_id = existing["id"]
-        await conn.execute(
-            "UPDATE core.analytics_documents SET status = 'processing', error = NULL, file_name = $2 "
-            "WHERE id = $1",
-            doc_id,
-            file_name,
-        )
     else:
         doc_id = await conn.fetchval(
             """INSERT INTO core.analytics_documents (sha256, file_name, s3_key, title, origin)
@@ -133,6 +145,8 @@ async def ingest_pdf(
             else f"ДЕМО (синтетика): {meta.title}"
         )
         chunks = chunk_pages(texts)
+        if not chunks:
+            raise ValueError("PDF contains no indexable text")
         vectors: list[list[float]] = []
         for i in range(0, len(chunks), EMBED_BATCH):
             batch = chunks[i : i + EMBED_BATCH]
@@ -141,6 +155,11 @@ async def ingest_pdf(
             )
         confs = [p.confidence for p in pages if p.confidence is not None]
         async with conn.transaction():
+            previous = await conn.fetch(
+                "SELECT id, page, chunk_index, section, text FROM core.analytics_chunks WHERE document_id=$1",
+                doc_id,
+            )
+            old_ids = {(r["page"], r["chunk_index"], r["section"], r["text"]): r["id"] for r in previous}
             await conn.execute("DELETE FROM core.analytics_chunks WHERE document_id = $1", doc_id)
             await conn.execute("DELETE FROM core.analytics_pages WHERE document_id = $1", doc_id)
             await conn.executemany(
@@ -149,18 +168,26 @@ async def ingest_pdf(
                 [(doc_id, p.page, p.text, p.method, p.confidence, len(p.text)) for p in pages],
             )
             await conn.executemany(
-                """INSERT INTO core.analytics_chunks (document_id, page, chunk_index, section, text,
+                """INSERT INTO core.analytics_chunks (id, document_id, page, chunk_index, section, text,
                        embedding)
-                   VALUES ($1, $2, $3, $4, $5, $6::vector)""",
+                   VALUES ($1, $2, $3, $4, $5, $6, $7::vector)""",
                 [
-                    (doc_id, c.page, c.index, c.section, c.text, to_pgvector(v))
+                    (
+                        old_ids.get((c.page, c.index, c.section, c.text), uuid.uuid4()),
+                        doc_id,
+                        c.page,
+                        c.index,
+                        c.section,
+                        c.text,
+                        to_pgvector(v),
+                    )
                     for c, v in zip(chunks, vectors, strict=True)
                 ],
             )
             await conn.execute(
                 """UPDATE core.analytics_documents SET title = $2, doc_date = $3, topics = $4, pages = $5,
                        extraction = $6, ocr_confidence = $7, status = 'ready', embedding_model = $8,
-                       processed_at = now()
+                       processed_at = now(), error = NULL, file_name = $9
                    WHERE id = $1""",
                 doc_id,
                 title,
@@ -170,12 +197,14 @@ async def ingest_pdf(
                 _extraction({p.method for p in pages}),
                 round(sum(confs) / len(confs), 3) if confs else None,
                 embedder.name,
+                file_name,
             )
     except Exception as exc:
         await conn.execute(
-            "UPDATE core.analytics_documents SET status = 'failed', error = $2 WHERE id = $1",
+            "UPDATE core.analytics_documents SET status = $3, error = $2 WHERE id = $1",
             doc_id,
             f"{type(exc).__name__}: {exc}"[:1000],
+            "ready" if was_ready else "failed",
         )
         log.exception("analytics_ingest_failed", file=file_name)
         return IngestOutcome(str(doc_id), file_name, "failed", error=str(exc)[:300])
@@ -205,16 +234,36 @@ async def ingest_directory(
 
 
 async def reembed(conn: Any, embedder: Embedder) -> int:
-    """Re-index all chunks with the current embedding model (e.g. after switching EMBEDDING_PROVIDER)."""
-    rows = await conn.fetch("SELECT id, section, text FROM core.analytics_chunks ORDER BY id")
-    for i in range(0, len(rows), EMBED_BATCH):
-        batch = rows[i : i + EMBED_BATCH]
-        vectors = await embedder.embed_documents([f"{r['section'] or ''} {r['text']}".strip() for r in batch])
-        await conn.executemany(
-            "UPDATE core.analytics_chunks SET embedding = $2::vector WHERE id = $1",
-            [(r["id"], to_pgvector(v)) for r, v in zip(batch, vectors, strict=True)],
-        )
-    await conn.execute(
-        "UPDATE core.analytics_documents SET embedding_model = $1 WHERE status = 'ready'", embedder.name
+    """Replace vectors and their model label atomically per document, sharing the ingestion lock."""
+    documents = await conn.fetch(
+        "SELECT sha256 FROM core.analytics_documents WHERE status='ready' ORDER BY id"
     )
-    return len(rows)
+    count = 0
+    for document in documents:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "analytics:" + document["sha256"]
+            )
+            doc_id = await conn.fetchval(
+                "SELECT id FROM core.analytics_documents WHERE sha256=$1 AND status='ready'",
+                document["sha256"],
+            )
+            if doc_id is None:
+                continue
+            rows = await conn.fetch(
+                "SELECT id, section, text FROM core.analytics_chunks WHERE document_id=$1 ORDER BY id", doc_id
+            )
+            for i in range(0, len(rows), EMBED_BATCH):
+                batch = rows[i : i + EMBED_BATCH]
+                vectors = await embedder.embed_documents(
+                    [f"{r['section'] or ''} {r['text']}".strip() for r in batch]
+                )
+                await conn.executemany(
+                    "UPDATE core.analytics_chunks SET embedding = $2::vector WHERE id = $1",
+                    [(r["id"], to_pgvector(v)) for r, v in zip(batch, vectors, strict=True)],
+                )
+            await conn.execute(
+                "UPDATE core.analytics_documents SET embedding_model=$2 WHERE id=$1", doc_id, embedder.name
+            )
+            count += len(rows)
+    return count
