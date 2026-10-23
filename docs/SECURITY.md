@@ -35,4 +35,4 @@ Token bucket в Redis на вызывающего (хэш bearer-токена; �
 - Аудит: каждый вызов инструмента — `tool_audit_log`, каждый вызов LLM — `llm_usage`, шаги агента — `agent_steps`.
 - Сырые данные организаторов (`data/raw/`) и `.env` не коммитятся; секреты — только из env.
 - `APP_ENV=prod` с dev-значениями `JWT_SECRET`, `SERVICE_TOKEN`, `ML_SERVICE_TOKEN` не стартует.
-- Ссылки на PDF аналитики — presigned S3 на 15 минут.
+- Ссылки на PDF аналитики — через API с токеном на один документ на 15 минут (ADR-033); S3 наружу не открыт.

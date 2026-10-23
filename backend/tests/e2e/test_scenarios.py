@@ -68,7 +68,9 @@ def test_scenario_6_sources_news_and_pdf_page(client: httpx.Client, user: dict[s
     article = client.get(to_news["url"], headers=user)
     assert article.status_code == 200 and article.json()["title"]
     to_pdf = client.post(url, headers=user, json={"source_id": pdf["id"]}).json()
-    assert "#page=" in to_pdf["url"] and "X-Amz-Signature" in to_pdf["url"] and to_pdf["page"] >= 1
+    assert "#page=" in to_pdf["url"] and to_pdf["page"] >= 1
+    pdf_file = client.get(to_pdf["url"].split("#", 1)[0])  # served by the API, no Authorization header
+    assert pdf_file.status_code == 200 and pdf_file.content.startswith(b"%PDF")
 
 
 def test_scenario_10_profile_update_changes_relevance(client: httpx.Client, user: dict[str, str]) -> None:

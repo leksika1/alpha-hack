@@ -26,8 +26,8 @@
 | «На чём основано» / трассировка | `GET /insights/{id}/trace` |
 | Открыть/скрыть/сохранить/наблюдать | `POST /insights/{id}/state` (`watch` — «наблюдать», CJM 07) |
 | Полезно/бесполезно (CJM 08) | `POST /insights/{id}/feedback` → `applied[]` — показать, что сделано с отзывом; `hidden=true` при «нерелевантно» (вернуть — `unhide`) |
-| Перейти к источнику | `POST /insights/{id}/source-click` → URL новости или presigned URL PDF с `#page=N` (живёт 15 минут — запрашивать по клику, не кэшировать); `note` — показать подсказку |
-| Материалы аналитики | `GET /analytics/documents` (название, дата, темы, страницы, метод извлечения), `GET /analytics/documents/{id}/download?page=N` → presigned URL |
+| Перейти к источнику | `POST /insights/{id}/source-click` → URL новости или относительная ссылка на PDF с `#page=N` (отдаёт API, живёт 15 минут — запрашивать по клику, не кэшировать); `note` — показать подсказку |
+| Материалы аналитики | `GET /analytics/documents` (название, дата, темы, страницы, метод извлечения), `GET /analytics/documents/{id}/download?page=N` → ссылка на PDF (открывать как есть, без заголовка Authorization) |
 | CTA (менеджер, звонок, заявка) | `POST /insights/{id}/actions`; статус — `GET /me/requests` и уведомление `request_update` |
 | Вопрос к аналитике (CJM 06) | `POST /insights/{id}/ask`, `POST /ask` — SSE (см. ниже); история — `GET /insights/{id}/questions`, `GET /ask/history?company_id` |
 | Уведомления (CJM 08) | `GET /notifications`, `POST /notifications/{id}/read`, `POST /notifications/read-all`, `GET /notifications/stream` (SSE) |

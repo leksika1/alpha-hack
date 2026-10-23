@@ -41,7 +41,7 @@ Swagger `http://localhost:8000/docs`. Внутренние API для ML опи�
 | GET | `/insights/{id}/trace` | На чём основан вывод: признаки, источники, шаги агента, вызовы инструментов и LLM, скоринг, проверка |
 | POST | `/insights/{id}/state` | `open`, `hide`, `unhide`, `save`, `unsave`, `watch` |
 | POST | `/insights/{id}/feedback` | Полезно или бесполезно + причина; ответ — что сделано с отзывом |
-| POST | `/insights/{id}/source-click` | Ссылка на первоисточник: новость или страница PDF (presigned, 15 мин) |
+| POST | `/insights/{id}/source-click` | Ссылка на первоисточник: новость или страница PDF (через API, 15 мин) |
 | POST | `/insights/{id}/actions` | Менеджер, обратный звонок, заявка → мок-CRM |
 | **Вопросы к аналитике** | | |
 | POST | `/insights/{id}/ask` | Вопрос к инсайту (SSE) |
@@ -55,7 +55,8 @@ Swagger `http://localhost:8000/docs`. Внутренние API для ML опи�
 | GET | `/bank-products` | Каталог продуктов банка |
 | GET | `/news/{id}` | Новость: первоисточник события, флаги, теги |
 | GET | `/analytics/documents` | Материалы аналитики банка |
-| GET | `/analytics/documents/{id}/download` | Presigned-ссылка на PDF, `#page=N` |
+| GET | `/analytics/documents/{id}/download` | Ссылка на PDF (15 минут), `#page=N` |
+| GET | `/analytics/documents/{id}/file?token=` | Сам PDF по ссылке из `download` / `source-click`; доступ по токену в адресе (ADR-033) |
 | POST | `/events` | События интерфейса для воронки (`widget_shown`, `widget_click`, `card_impression`, …) |
 | **Администрирование** (`admin`) | | |
 | GET | `/admin/metrics` | North star и метрики этапов CJM, генерация, ежедневные снимки (`docs/METRICS.md`) |

@@ -109,7 +109,6 @@ ML_SERVICE_TOKEN=<как у Backend>
 | ML-сервис команды ML | `INSIGHT_GENERATOR=remote`, `ML_SERVICE_URL`, `ML_SERVICE_TOKEN` | `POST /api/v1/admin/insights/regenerate` для нужных компаний |
 | LLM организаторов | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL_MAP` (алиас → ID), `LLM_PRICES` (₽ за 1M токенов) | проверка: `make smoke-live` |
 | Модель эмбеддингов (выбирает ML) | `EMBEDDING_PROVIDER=local` + `EMBEDDING_MODEL`, или `remote` + `EMBEDDING_REMOTE_URL`; размерность 384 | `docker compose exec api python scripts/ingest.py analytics --reembed` |
-| Публичный адрес S3 для ссылок на PDF | `S3_PUBLIC_ENDPOINT_URL` | — |
 | Фронтенд | `CORS_ORIGINS` | — |
 
 Секреты (`JWT_SECRET`, `SERVICE_TOKEN`, `ML_SERVICE_TOKEN`, `LLM_API_KEY`) — только в `.env` или в окружении.
