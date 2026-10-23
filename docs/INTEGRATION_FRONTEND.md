@@ -19,20 +19,33 @@
 
 | Экран / элемент | Эндпоинты |
 |---|---|
-| Виджет на главной «Альфа-Бизнес» (постоянная точка входа) | `GET /feed/summary` (непрочитанные, срочные, топ-1 заголовок) + `GET /notifications/stream` |
+| Виджет на главной «Альфа-Бизнес» (постоянная точка входа, CJM 01) | `GET /feed/summary` (непрочитанные, срочные, топ-1 с `why_for_you`) + `GET /notifications/stream`; показ и клик — `POST /events` (`widget_shown`, `widget_click`) |
 | Выбор компании и роли | `GET /me`, `GET /companies`, `PUT /me/companies/{id}/role` |
-| Лента | `GET /feed?company_id&role&filter=all|urgent|risks|opportunities|saved&period` |
-| Карточка инсайта | `GET /insights/{id}` — блоки: «Что произошло», «Почему важно вам», «Последствия», «Что можно сделать», «Позиция банка», «На чём основано» |
+| Лента (CJM 03) | `GET /feed?company_id&role&filter=all|urgent|risks|opportunities|saved|hidden&period`; в карточке `why_for_you` («почему это для вас»), `priority_reasons` («почему выше»), `state.updated` («обновлено») |
+| Карточка инсайта | `GET /insights/{id}?via=feed&position=N` (via/position — для метрик воронки) — блоки: «Что произошло», «Почему важно вам», «Последствия», «Что можно сделать», «Позиция банка», «На чём основано» |
 | «На чём основано» / трассировка | `GET /insights/{id}/trace` |
-| Открыть/скрыть/сохранить | `POST /insights/{id}/state` |
-| Полезно/бесполезно | `POST /insights/{id}/feedback` |
+| Открыть/скрыть/сохранить/наблюдать | `POST /insights/{id}/state` (`watch` — «наблюдать», CJM 07) |
+| Полезно/бесполезно (CJM 08) | `POST /insights/{id}/feedback` → `applied[]` — показать, что сделано с отзывом; `hidden=true` при «нерелевантно» (вернуть — `unhide`) |
 | Перейти к источнику | `POST /insights/{id}/source-click` → URL новости или presigned URL PDF с `#page=N` (живёт 15 минут — запрашивать по клику, не кэшировать); `note` — показать подсказку |
 | Материалы аналитики | `GET /analytics/documents` (название, дата, темы, страницы, метод извлечения), `GET /analytics/documents/{id}/download?page=N` → presigned URL |
-| CTA (менеджер, звонок, заявка) | `POST /insights/{id}/actions` |
-| Вопрос к аналитике | `POST /insights/{id}/ask`, `POST /ask` (SSE) |
+| CTA (менеджер, звонок, заявка) | `POST /insights/{id}/actions`; статус — `GET /me/requests` и уведомление `request_update` |
+| Вопрос к аналитике (CJM 06) | `POST /insights/{id}/ask`, `POST /ask` — SSE (см. ниже); история — `GET /insights/{id}/questions`, `GET /ask/history?company_id` |
+| Уведомления (CJM 08) | `GET /notifications`, `POST /notifications/{id}/read`, `POST /notifications/read-all`, `GET /notifications/stream` (SSE) |
 | Профиль компании (что мы знаем, полнота) и анкета | `GET /companies/{id}/profile`, `PATCH /companies/{id}/profile` |
 | Связи компании | `GET /companies/{id}/graph` (гипотезы помечены) |
-| Дайджест | `GET /digest?period=day|week` |
+| Дайджест | `GET /digest?company_id&period=day|week` — счётчики, топ-5, риски, возможности, следующие шаги |
+
+## SSE: вопросы и уведомления
+
+- Авторизация — заголовок `Authorization: Bearer`, поэтому вместо `EventSource` используйте `fetch` со стримингом
+  (например, `@microsoft/fetch-event-source`). Токен в URL не принимаем.
+- **Вопрос** (`POST /insights/{id}/ask`, `POST /ask`): события `run` (`run_id`, `question_id`) → `step`/`token`/`source`
+  (от агента, показывать по мере прихода) → `done` (ответ, `sources`, `statements` с `kind`, дисклеймеры — после
+  проверки бэкендом) **или** `error` (problem+json: `ml-unavailable`, `agent-timeout`, `invalid-answer`). Если пришёл
+  `error` после токенов — показать, что ответ не прошёл проверку, и не выдавать его за итоговый.
+- **Уведомления** (`GET /notifications/stream`): `ready` (`unread`, `last_id`) → `notification` (с `id:`) и пинги-комментарии.
+  Соединение живёт до `max_s` (300 с по умолчанию); при обрыве переподключаться с заголовком `Last-Event-ID` —
+  придут пропущенные. Виды: `urgent_insight` (срочный или с высоким влиянием), `digest`, `request_update`.
 
 ## Отображение происхождения выводов (обязательно по кейсу)
 

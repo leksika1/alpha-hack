@@ -15,7 +15,10 @@ STATE_COLUMNS = {
     "unhide": ("hidden_at", "NULL"),
     "save": ("saved_at", "now()"),
     "unsave": ("saved_at", "NULL"),
+    "watch": ("saved_at", "now()"),  # CJM 07 "наблюдать": keep in "saved" and count as a chosen next step
 }
+# feedback reason that hides the insight right away (the user said it is not about their business)
+AUTO_HIDE_REASONS = {"irrelevant"}
 
 CTA_MESSAGES = {
     "contact_manager": "Заявка передана персональному менеджеру; он свяжется с вами в рабочее время.",
@@ -62,6 +65,21 @@ async def add_feedback(
         comment,
     )
     return row["id"], row["created_at"]
+
+
+async def apply_feedback(
+    conn: Any, user_id: uuid.UUID, insight: Any, useful: bool, reason: str | None
+) -> tuple[bool, list[str]]:
+    """What the service did with the feedback — shown to the user (CJM 08 "сервис учёл мой отзыв?")."""
+    applied = ["Отзыв сохранён и учитывается в оценке качества ленты."]
+    hidden = False
+    if not useful and reason in AUTO_HIDE_REASONS:
+        await set_state(conn, user_id, insight, "hide")
+        hidden = True
+        applied.append("Инсайт скрыт из ленты; вернуть можно в разделе «Скрытые».")
+    elif useful:
+        applied.append("Похожие события останутся в приоритете для вашей компании и роли.")
+    return hidden, applied
 
 
 async def log_action(

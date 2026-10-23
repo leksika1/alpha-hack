@@ -759,8 +759,10 @@ class Feedback(Base):
 
 
 class UserAction(Base):
+    """User event log for the CJM funnel and the north-star metrics (docs/METRICS.md)."""
+
     __tablename__ = "user_actions"
-    __table_args__ = {"schema": "core"}
+    __table_args__ = (Index("ix_user_actions_created_at", "created_at"), {"schema": "core"})
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("core.users.id", ondelete="CASCADE"), index=True)
@@ -799,9 +801,68 @@ class CrmRequest(Base):
     product_id: Mapped[str | None] = mapped_column(ForeignKey("core.bank_products.id"))
     comment: Mapped[str | None] = mapped_column(Text)
     preferred_time: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(16), server_default="new")
+    status: Mapped[str] = mapped_column(
+        String(16), server_default="new"
+    )  # new | in_progress | done | rejected
     external_ref: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Notification(Base):
+    """In-app notifications (SSE + list): urgent insights, digests, request status, feedback applied."""
+
+    __tablename__ = "notifications"
+    __table_args__ = (
+        UniqueConstraint("user_id", "dedup_key"),
+        Index("ix_notifications_user_id_id", "user_id", "id"),
+        {"schema": "core"},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("core.users.id", ondelete="CASCADE"))
+    company_id: Mapped[str | None] = mapped_column(String(32))
+    insight_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    kind: Mapped[str] = mapped_column(
+        String(24)
+    )  # urgent_insight | digest | request_update | feedback_applied
+    title: Mapped[str] = mapped_column(Text)
+    body: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    dedup_key: Mapped[str] = mapped_column(String(160))
+    created_at: Mapped[datetime] = _now()
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class QaMessage(Base):
+    """Questions to the analytics and the agent's answers (CJM stage 06), per user x company x insight."""
+
+    __tablename__ = "qa_messages"
+    __table_args__ = (Index("ix_qa_messages_user_id_company_id", "user_id", "company_id"), {"schema": "core"})
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("core.users.id", ondelete="CASCADE"))
+    company_id: Mapped[str] = mapped_column(String(32))
+    insight_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
+    run_id: Mapped[str | None] = mapped_column(String(64))
+    role: Mapped[str] = mapped_column(String(16))  # user | assistant
+    intent: Mapped[str | None] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text)
+    sources: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    statements: Mapped[list[Any]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    status: Mapped[str] = mapped_column(String(16), server_default="ok")  # ok | error
+    created_at: Mapped[datetime] = _now()
+
+
+class MetricsDaily(Base):
+    """Daily snapshot of the quality metrics (docs/METRICS.md), filled by the scheduler."""
+
+    __tablename__ = "metrics_daily"
+    __table_args__ = {"schema": "core"}
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    metrics: Mapped[dict[str, Any]] = mapped_column()
+    computed_at: Mapped[datetime] = _now()
 
 
 # ---------------------------------------------------------------- core: bank analytics (phase 4)

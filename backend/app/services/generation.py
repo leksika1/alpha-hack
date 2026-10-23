@@ -19,6 +19,7 @@ from app.domain.contracts.insight import Insight, Role
 from app.domain.insight_validator import ValidationContext, ValidationResult, validate_insight
 from app.domain.ports import GenerationRequest, InsightGenerator, ScoreResult
 from app.services.llm_gateway import budget
+from app.services.notifications import notify_insight
 
 log = get_logger(__name__)
 
@@ -329,6 +330,7 @@ async def generate_one(
     )
     stats.generated += 1
     stats.insight_ids.append(insight_id)
+    await notify_insight(conn, insight_id)  # urgent / high impact -> users of the company (CJM 08)
 
 
 async def generate_pending(

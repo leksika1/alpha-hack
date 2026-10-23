@@ -1,7 +1,7 @@
-"""Task registry. News/analytics pipelines are added in phases 3-4."""
+"""Task registry: generation, news, analytics, digests and metrics snapshots."""
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -10,7 +10,9 @@ from app.core.pg import pg_connection
 from app.integrations.generators import get_generator
 from app.services.analytics_run import run_analytics_ingest
 from app.services.generation import generate_pending
+from app.services.metrics import snapshot_day
 from app.services.news_run import run_news_collection
+from app.services.notifications import create_digests
 from app.workers.broker import broker, log
 
 READY_TIMEOUT_S = 180
@@ -79,3 +81,24 @@ async def ingest_analytics_task(force: bool = False) -> list[dict[str, object]]:
     async with pg_connection() as conn:
         outcomes = await run_analytics_ingest(conn, settings, force=force)
     return [o.__dict__ for o in outcomes]
+
+
+@broker.task(task_name="notifications.digest_daily", schedule=[{"cron": get_settings().digest_daily_cron}])
+async def digest_daily_task() -> int:
+    async with pg_connection() as conn:
+        return await create_digests(conn, "day")
+
+
+@broker.task(task_name="notifications.digest_weekly", schedule=[{"cron": get_settings().digest_weekly_cron}])
+async def digest_weekly_task() -> int:
+    async with pg_connection() as conn:
+        return await create_digests(conn, "week")
+
+
+@broker.task(task_name="metrics.snapshot", schedule=[{"cron": get_settings().metrics_daily_cron}])
+async def metrics_snapshot_task(day: str | None = None) -> str:
+    """Yesterday's metrics (UTC day) into core.metrics_daily."""
+    target = datetime.fromisoformat(day).date() if day else (datetime.now(UTC) - timedelta(days=1)).date()
+    async with pg_connection() as conn:
+        await snapshot_day(conn, target)
+    return target.isoformat()

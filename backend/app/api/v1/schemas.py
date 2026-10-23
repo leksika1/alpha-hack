@@ -165,6 +165,9 @@ class InsightState(_Model):
     opened: bool
     saved: bool
     hidden: bool
+    updated: bool = Field(
+        default=False, description="Инсайт перегенерирован после просмотра (новые новости, изменился профиль)"
+    )
 
 
 class InsightCard(_Model):
@@ -186,6 +189,10 @@ class InsightCard(_Model):
     published_at: datetime
     sources_count: int
     bank_view_coverage: Literal["direct", "related", "none"]
+    why_for_you: str | None = Field(default=None, description="Первая причина «почему важно вам» из инсайта")
+    priority_reasons: list[str] = Field(
+        default_factory=list, description="Почему выше в ленте: главные компоненты релевантности, по-русски"
+    )
     state: InsightState
 
 
@@ -238,7 +245,9 @@ class TraceOut(_Model):
 
 
 class StateIn(_Model):
-    action: Literal["open", "hide", "unhide", "save", "unsave"]
+    action: Literal["open", "hide", "unhide", "save", "unsave", "watch"] = Field(
+        description="watch — «наблюдать»: сохранить и отметить как выбранный следующий шаг"
+    )
 
 
 class FeedbackIn(_Model):
@@ -257,6 +266,10 @@ class FeedbackIn(_Model):
 class FeedbackOut(_Model):
     feedback_id: int
     recorded_at: datetime
+    hidden: bool = Field(default=False, description="Инсайт скрыт по отзыву (причина irrelevant)")
+    applied: list[str] = Field(
+        default_factory=list, description="Что сервис сделал с отзывом — показать пользователю"
+    )
 
 
 class SourceClickIn(_Model):

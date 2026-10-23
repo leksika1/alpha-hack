@@ -2,9 +2,9 @@
 
 import json
 import uuid
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from app.api.deps import CompanyAccess, Conn, CurrentUser, SettingsDep, User, company_access
 from app.api.v1.auth import ERR_401, ERR_403, Responses
@@ -40,8 +40,22 @@ async def _load(
 
 
 @router.get("/{insight_id}", response_model=InsightOut, responses=ERRS, summary="Полный инсайт по контракту")
-async def get_insight(insight_id: uuid.UUID, user: User, conn: Conn, settings: SettingsDep) -> InsightOut:
+async def get_insight(
+    insight_id: uuid.UUID,
+    user: User,
+    conn: Conn,
+    settings: SettingsDep,
+    via: Annotated[
+        Literal["feed", "widget", "digest", "notification", "search", "other"] | None,
+        Query(description="Откуда открыт инсайт (для метрик воронки)"),
+    ] = None,
+    position: Annotated[int | None, Query(ge=1, le=500, description="Позиция карточки в ленте")] = None,
+) -> InsightOut:
     row, access = await _load(conn, user, insight_id, settings)
+    await svc.log_action(
+        conn, user.id, row["company_id"], row["id"], "insight_open",
+        {"via": via, "position": position, "event_id": row["event_id"]},
+    )  # fmt: skip
     payload = json.loads(row["payload"])
     payload["insight_id"] = str(row["id"])
     return InsightOut(
@@ -62,6 +76,7 @@ async def get_insight(insight_id: uuid.UUID, user: User, conn: Conn, settings: S
 )
 async def get_trace(insight_id: uuid.UUID, user: User, conn: Conn, settings: SettingsDep) -> TraceOut:
     row, _ = await _load(conn, user, insight_id, settings)
+    await svc.log_action(conn, user.id, row["company_id"], row["id"], "trace_view", {})
     return TraceOut(**await feed_svc.trace(conn, row))
 
 
@@ -76,6 +91,7 @@ async def set_state(
 ) -> None:
     row, _ = await _load(conn, user, insight_id, settings)
     await svc.set_state(conn, user.id, row, body.action)
+    await svc.log_action(conn, user.id, row["company_id"], row["id"], body.action, {})
 
 
 @router.post(
@@ -90,7 +106,16 @@ async def feedback(
 ) -> FeedbackOut:
     row, access = await _load(conn, user, insight_id, settings)
     fid, at = await svc.add_feedback(conn, user.id, row, access.role, body.useful, body.reason, body.comment)
-    return FeedbackOut(feedback_id=fid, recorded_at=at)
+    hidden, applied = await svc.apply_feedback(conn, user.id, row, body.useful, body.reason)
+    await svc.log_action(
+        conn,
+        user.id,
+        row["company_id"],
+        row["id"],
+        "feedback",
+        {"useful": body.useful, "reason": body.reason},
+    )
+    return FeedbackOut(feedback_id=fid, recorded_at=at, hidden=hidden, applied=applied)
 
 
 @router.post(

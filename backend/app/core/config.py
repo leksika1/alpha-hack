@@ -104,6 +104,16 @@ class Settings(BaseSettings):
     insight_ttl_days: int = 14
     tool_calls_per_run: int = 120
 
+    # Delivery (phase 6): notifications SSE, digests, questions to the analytics
+    notifications_poll_s: float = 2.0
+    notifications_stream_max_s: int = 300  # the client reconnects with Last-Event-ID
+    notifications_retry_ms: int = 3000
+    digest_daily_cron: str = "0 6 * * *"  # 09:00 Moscow (scheduler runs in UTC)
+    digest_weekly_cron: str = "0 6 * * 1"
+    metrics_daily_cron: str = "30 0 * * *"
+    qa_history_messages: int = 6  # previous messages of the thread passed to the agent
+    qa_timeout_s: float = 90.0
+
     # Rate limits (Redis token bucket per caller)
     rate_limit_enabled: bool = True
     rate_limit_public_per_min: int = 120

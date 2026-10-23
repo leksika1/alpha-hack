@@ -149,6 +149,16 @@ erDiagram
 | `core.events` | `id`, uq `cluster_key` | событие (кластер новостей): тип, направление, срочность и её причины, объединённые теги (GIN), первое и последнее упоминание, число новостей |
 | `core.event_news` | (`event_id`, `news_id`) | состав события |
 
+## Доставка и взаимодействие (фаза 6, ADR-030)
+
+| Таблица | Ключ | Содержание |
+|---|---|---|
+| `core.notifications` | `id`, uq (`user_id`, `dedup_key`) | уведомление: вид (`urgent_insight`, `digest`, `request_update`), заголовок, текст, компания, инсайт, данные, прочитано |
+| `core.qa_messages` | `id`; индекс (`user_id`, `company_id`) | ветка вопросов: роль (`user`/`assistant`), intent, текст, источники и утверждения ответа, статус проверки, `run_id` запуска агента |
+| `core.metrics_daily` | `day` | ежедневный снимок метрик (`docs/METRICS.md`) |
+
+`core.user_actions` — лог событий воронки CJM (индекс по времени); `core.crm_requests.updated_at` — смена статуса заявки.
+
 ## LLM Gateway (фаза 5, ADR-028)
 
 | Таблица | Ключ | Содержание |
