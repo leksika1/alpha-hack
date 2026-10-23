@@ -1,25 +1,52 @@
-// Дайджест за день или неделю: счётчики, главное, риски, возможности и следующие шаги.
-import { useEffect, useState } from 'react';
+// Дайджест за день или неделю: плитки-счётчики работают как фильтры (по умолчанию — непрочитанные),
+// ниже — все подходящие инсайты периода и следующие шаги.
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
-import { trackEvent, useDigest } from '../../api/hooks';
-import type { InsightCard } from '../../api/types';
+import { trackEvent, useDigest, useFeedAll } from '../../api/hooks';
+import type { InsightCard, Polarity } from '../../api/types';
 import { useSession } from '../../auth/session';
-import { actionTypeClass, CardSkeleton, EmptyState, ErrorBox, H2, ImpactMeter, PolarityStatus, Segmented } from '../../components/ui';
-import { ACTION_TYPES, formatDate } from '../../lib/format';
+import { actionLabelClass, CardSkeleton, EmptyState, ErrorBox, H2, ImpactMeter, POLARITY_TEXT, Segmented, SortToggle, sortInsights, type SortMode } from '../../components/ui';
+import { ACTION_TYPES, cleanTitle, formatDate, formatRelative, POLARITY } from '../../lib/format';
 import { cn } from '../../lib/cn';
+import { useCountUp } from '../../lib/useCountUp';
 
-function MiniInsight({ it, via, className }: { it: InsightCard; via: string; className?: string }) {
+type TileKey = 'unread' | 'all' | 'urgent' | 'risks' | 'opportunities' | 'bank' | 'updated';
+
+const TILES: { key: TileKey; label: string; empty: string; match: (it: InsightCard) => boolean }[] = [
+  { key: 'unread', label: 'Непрочитанные', empty: 'Все инсайты периода прочитаны.', match: (it) => !it.state.opened },
+  { key: 'all', label: 'Все за период', empty: 'За период событий нет.', match: () => true },
+  { key: 'urgent', label: 'Срочные', empty: 'Срочных событий нет.', match: (it) => it.urgent },
+  { key: 'risks', label: 'Риски', empty: 'Рисков за период нет.', match: (it) => it.polarity === 'risk' || it.polarity === 'mixed' },
+  { key: 'opportunities', label: 'Возможности', empty: 'Возможностей за период нет.', match: (it) => it.polarity === 'opportunity' || it.polarity === 'mixed' },
+  { key: 'bank', label: 'С аналитикой банка', empty: 'Инсайтов с аналитикой банка нет.', match: (it) => it.bank_view_coverage !== 'none' },
+  { key: 'updated', label: 'Обновлённые', empty: 'Обновлённых инсайтов нет.', match: (it) => it.state.updated },
+];
+
+function CountUp({ value, className }: { value: number | undefined; className?: string }) {
+  const shown = useCountUp(value);
+  return <span className={className}>{shown ?? '—'}</span>;
+}
+
+function MiniInsight({ it, index }: { it: InsightCard; index: number }) {
+  const polarity = (it.polarity as Polarity) ?? 'neutral';
   return (
     <Link
-      to={`/analytics/insight/${it.insight_id}?via=${via}`}
-      className={cn('flex flex-col gap-1.5 rounded-tile bg-white px-4 py-3.5 text-ink shadow-card hover:no-underline hover:shadow-lift', className)}
+      to={`/analytics/insight/${it.insight_id}?via=digest`}
+      style={{ '--i': Math.min(index, 12) } as CSSProperties}
+      className="stagger pressable flex flex-col gap-1.5 rounded-tile bg-white px-4 py-3.5 text-ink shadow-card hover:-translate-y-0.5 hover:no-underline hover:shadow-lift"
     >
-      <div className="flex items-center justify-between">
-        <PolarityStatus polarity={it.polarity as never} />
-        <ImpactMeter level={it.impact_level as never} compact />
+      <div className="flex items-center gap-2.5 text-xs text-ink-2">
+        {it.urgent && <span className="font-semibold text-accent">Срочно</span>}
+        <span className={cn('font-medium', POLARITY_TEXT[polarity])}>{POLARITY[polarity]?.label}</span>
+        <span>{formatRelative(it.published_at)}</span>
+        <span className="ml-auto">
+          <ImpactMeter level={it.impact_level as never} compact />
+        </span>
       </div>
-      <div className="leading-snug font-bold">{it.title}</div>
-      {it.why_for_you && <div className="line-clamp-2 text-[13px] text-ink-2">{it.why_for_you}</div>}
+      <div className="flex items-start gap-2 leading-snug font-bold">
+        {!it.state.opened && <span className="mt-[7px] size-2 shrink-0 rounded-full bg-info" title="Не прочитано" />}
+        <span className="line-clamp-3">{cleanTitle(it.title)}</span>
+      </div>
     </Link>
   );
 }
@@ -27,97 +54,91 @@ function MiniInsight({ it, via, className }: { it: InsightCard; via: string; cla
 export function DigestPage() {
   const { company } = useSession();
   const [period, setPeriod] = useState<'day' | 'week'>('week');
+  const [tile, setTile] = useState<TileKey>('unread');
+  const [sort, setSort] = useState<SortMode>('importance');
   const digest = useDigest(company?.company_id, period);
+  const feed = useFeedAll(company?.company_id, period);
 
   useEffect(() => {
     if (company) trackEvent('digest_opened', company.company_id, null, { period });
   }, [company, period]);
 
-  const d = digest.data;
-  const counters = d
-    ? [
-        ['Новых', d.counts.new],
-        ['Срочных', d.counts.urgent],
-        ['Рисков', d.counts.risks],
-        ['Возможностей', d.counts.opportunities],
-        ['С аналитикой банка', d.counts.with_bank_analytics],
-        ['Обновлено', d.counts.updated],
-      ]
-    : [];
+  const all = feed.data ?? [];
+  const active = TILES.find((t) => t.key === tile)!;
+  const shown = sortInsights(all.filter(active.match), sort);
 
   return (
     <div>
-      <Segmented
-        label="Период дайджеста"
-        value={period}
-        onChange={setPeriod}
-        options={[
-          { key: 'day', label: 'За день' },
-          { key: 'week', label: 'За неделю' },
-        ]}
-      />
+      <div className="flex flex-wrap items-center gap-3">
+        <Segmented
+          label="Период дайджеста"
+          value={period}
+          onChange={setPeriod}
+          options={[
+            { key: 'day', label: 'За день' },
+            { key: 'week', label: 'За неделю' },
+          ]}
+        />
+        {digest.data && (
+          <span className="mb-3 text-ink-2">
+            {formatDate(digest.data.since)} — {formatDate(digest.data.until)}
+          </span>
+        )}
+      </div>
 
-      {digest.isLoading && <CardSkeleton rows={4} />}
-      {digest.isError && <ErrorBox error={digest.error} onRetry={() => digest.refetch()} />}
-      {d && (
-        <>
-          <p className="text-ink-2">
-            {formatDate(d.since)} — {formatDate(d.until)}
-          </p>
-          <div className="mt-2 mb-5 grid grid-cols-3 gap-2.5 lg:grid-cols-6">
-            {counters.map(([label, value]) => (
-              <div key={label} className="flex flex-col rounded-tile bg-white p-3.5 shadow-card">
-                <span className="text-[26px] font-bold">{value}</span>
-                <span className="text-[13px] text-ink-2">{label}</span>
-              </div>
-            ))}
-          </div>
+      {feed.isError && <ErrorBox error={feed.error} onRetry={() => feed.refetch()} />}
 
-          {d.top.length === 0 ? (
-            <EmptyState title="За период событий нет" text="Попробуйте выбрать неделю или загляните в ленту позже." />
-          ) : (
-            <>
-              <H2>Главное</H2>
-              <div className="mb-5 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-                {d.top.map((it) => (
-                  <MiniInsight key={it.insight_id} it={it} via="digest" />
-                ))}
-              </div>
-              <div className="mb-4 grid gap-4 md:grid-cols-2">
-                <div>
-                  <H2>Риски</H2>
-                  {d.risks.length ? d.risks.map((it) => <MiniInsight key={it.insight_id} it={it} via="digest" className="mb-2.5" />) : <p className="text-ink-2">Нет</p>}
-                </div>
-                <div>
-                  <H2>Возможности</H2>
-                  {d.opportunities.length ? (
-                    d.opportunities.map((it) => <MiniInsight key={it.insight_id} it={it} via="digest" className="mb-2.5" />)
-                  ) : (
-                    <p className="text-ink-2">Нет</p>
-                  )}
-                </div>
-              </div>
-              {d.next_steps.length > 0 && (
-                <section className="card p-6">
-                  <H2>Следующие шаги</H2>
-                  <ul>
-                    {d.next_steps.map((s, i) => (
-                      <li key={i} className="flex items-start gap-3 border-b border-line py-2.5 last:border-b-0">
-                        <span className={actionTypeClass(s.type)}>{ACTION_TYPES[s.type] ?? s.type}</span>
-                        <div>
-                          <div>{s.text}</div>
-                          <Link className="text-[13px]" to={`/analytics/insight/${s.insight_id}?via=digest`}>
-                            {s.insight_title}
-                          </Link>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
+      <div className="mt-1 mb-6 grid grid-cols-2 gap-2.5 sm:grid-cols-4 xl:grid-cols-7" role="group" aria-label="Фильтр дайджеста">
+        {TILES.map((t) => {
+          const count = all.filter(t.match).length;
+          const on = t.key === tile;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setTile(t.key)}
+              className={cn(
+                'pressable flex flex-col rounded-tile border-2 bg-white p-3.5 text-left shadow-card hover:-translate-y-0.5 hover:shadow-lift',
+                on ? 'border-night' : 'border-transparent',
               )}
-            </>
-          )}
-        </>
+            >
+              <CountUp value={feed.isLoading ? undefined : count} className={cn('text-[26px] font-bold tabular-nums', t.key === 'urgent' && count > 0 && 'text-accent')} />
+              <span className="text-[13px] text-ink-2">{t.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <H2>
+          {active.label} <span className="font-normal text-ink-3">{shown.length}</span>
+        </H2>
+        <SortToggle value={sort} onChange={setSort} />
+      </div>
+      {feed.isLoading && <CardSkeleton rows={3} />}
+      {!feed.isLoading && shown.length === 0 && <EmptyState title="Пусто" text={active.empty} />}
+      <div key={`${tile}-${period}-${sort}`} className={cn('mb-6 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 transition-opacity', feed.isFetching && !feed.isLoading && 'opacity-60')}>
+        {shown.map((it, i) => (
+          <MiniInsight key={it.insight_id} it={it} index={i + 1} />
+        ))}
+      </div>
+
+      {!!digest.data?.next_steps.length && (
+        <section className="card p-6">
+          <H2>Следующие шаги</H2>
+          <ul className="divide-y divide-line">
+            {digest.data.next_steps.map((s, i) => (
+              <li key={i} className="py-3 first:pt-0 last:pb-0">
+                <div className={actionLabelClass(s.type)}>{ACTION_TYPES[s.type] ?? s.type}</div>
+                <div>{s.text}</div>
+                <Link className="text-[13px]" to={`/analytics/insight/${s.insight_id}?via=digest`}>
+                  {cleanTitle(s.insight_title)}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   );

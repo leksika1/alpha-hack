@@ -1,20 +1,23 @@
 // Постоянная точка входа на главной (CJM 01): 2–3 главных инсайта активной компании и «почему это для вас».
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@alfalab/core-components/button';
 import { Skeleton } from '@alfalab/core-components/skeleton';
 import { ArrowRightMIcon } from '@alfalab/icons-glyph/ArrowRightMIcon';
 import { trackEvent, useFeed, useFeedSummary } from '../api/hooks';
 import { useSession } from '../auth/session';
-import { companyShortName, EVENT_TYPES, formatRelative, plural } from '../lib/format';
-import { ImpactMeter, PolarityStatus, UrgentStatus } from './ui';
+import { cleanTitle, companyShortName, formatRelative, plural, POLARITY } from '../lib/format';
+import { ImpactMeter, POLARITY_TEXT } from './ui';
+import type { Polarity } from '../api/types';
 import { SparkIcon } from '../layout/icons';
 import { cn } from '../lib/cn';
+import { useCountUp } from '../lib/useCountUp';
 
 function Counter({ value, label, urgent = false }: { value: number | undefined; label: string; urgent?: boolean }) {
+  const shown = useCountUp(value);
   return (
-    <div className={cn('flex min-w-28 flex-col rounded-tile px-4 py-3', urgent ? 'bg-neg-bg' : 'bg-muted')}>
-      <span className={cn('text-[28px] leading-tight font-bold', urgent && 'text-accent')}>{value ?? '—'}</span>
+    <div className={cn('flex min-w-28 flex-col rounded-tile px-4 py-3 tabular-nums', urgent ? 'bg-neg-bg' : 'bg-muted')}>
+      <span className={cn('text-[28px] leading-tight font-bold', urgent && 'text-accent')}>{shown ?? '—'}</span>
       <span className="text-[13px] text-ink-2">{label}</span>
     </div>
   );
@@ -45,7 +48,7 @@ export function AnalyticsWidget() {
 
   return (
     <section
-      className="relative mt-4 overflow-hidden rounded-3xl border border-accent/20 bg-white p-6 shadow-card before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-linear-to-r before:from-accent before:to-[#ff8a65]"
+      className="relative mt-4 overflow-hidden rounded-3xl border border-accent/20 bg-white p-6 shadow-card"
       aria-label="Аналитика для вашей компании"
     >
       <div className="mb-4 flex flex-col justify-between gap-6 md:flex-row">
@@ -76,28 +79,28 @@ export function AnalyticsWidget() {
         {!feed.isLoading && items.length === 0 && (
           <div className="col-span-full py-3 text-ink-2">Пока нет значимых событий для этой компании — мы сообщим, когда они появятся.</div>
         )}
-        {items.map((it, i) => (
-          <button
-            key={it.insight_id}
-            className="flex flex-col gap-2 rounded-tile bg-muted p-4 text-left transition hover:-translate-y-px hover:bg-[#eaebee]"
-            onClick={() => open(it.insight_id, i + 1)}
-          >
-            <div className="flex flex-wrap items-center gap-1.5">
-              {it.urgent && <UrgentStatus />}
-              <PolarityStatus polarity={it.polarity as never} />
-              <span className="flex-1 text-xs text-ink-2">
-                {EVENT_TYPES[it.event_type] ?? it.event_type} · {formatRelative(it.published_at)}
-              </span>
-              <ImpactMeter level={it.impact_level as never} compact />
-            </div>
-            <div className="text-[15px] leading-snug font-bold">{it.title}</div>
-            {it.why_for_you && (
-              <div className="line-clamp-3 text-[13px] text-ink-2">
-                <span className="font-semibold text-ink">Почему это для вас:</span> {it.why_for_you}
+        {items.map((it, i) => {
+          const polarity = (it.polarity as Polarity) ?? 'neutral';
+          return (
+            <button
+              key={it.insight_id}
+              style={{ '--i': i + 1 } as CSSProperties}
+              className="stagger pressable group flex flex-col gap-1.5 rounded-tile bg-muted p-4 text-left hover:-translate-y-0.5 hover:bg-white hover:shadow-lift"
+              onClick={() => open(it.insight_id, i + 1)}
+            >
+              <div className="flex items-center gap-2.5 text-xs text-ink-2">
+                {it.urgent && <span className="font-semibold text-accent">Срочно</span>}
+                <span className={cn('font-medium', POLARITY_TEXT[polarity])}>{POLARITY[polarity]?.label}</span>
+                <span>{formatRelative(it.published_at)}</span>
+                <span className="ml-auto">
+                  <ImpactMeter level={it.impact_level as never} compact />
+                </span>
               </div>
-            )}
-          </button>
-        ))}
+              <div className="line-clamp-3 text-[15px] leading-snug font-bold">{cleanTitle(it.title)}</div>
+              {it.why_for_you && <div className="line-clamp-2 text-[13px] text-ink-2">{it.why_for_you}</div>}
+            </button>
+          );
+        })}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-5">

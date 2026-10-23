@@ -1,12 +1,12 @@
 // Профиль компании (CJM 02): что сервис знает, источник каждого признака, пробелы, анкета и связи компании.
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { Button } from '@alfalab/core-components/button';
 import { useGraph, useProfile, useUpdateProfile } from '../../api/hooks';
 import type { GraphEdge, ProfileSection } from '../../api/types';
 import { useSession } from '../../auth/session';
 import { CardSkeleton, Chip, ErrorBox, H2, H3, KindBadge } from '../../components/ui';
 import { useToast } from '../../components/Toasts';
-import { featureLabel, featureValue, FEATURE_SOURCE, formatMoney, formatPercent, industryTag } from '../../lib/format';
+import { capitalizeFirst, featureLabel, featureValue, FEATURE_SOURCE, formatMoney, formatPercent, industryTag } from '../../lib/format';
 import { cn } from '../../lib/cn';
 
 const HIDDEN_PATHS = /industry_share_|top_in|top_out|group\.id$|client_type|shared_person_companies/;
@@ -47,7 +47,7 @@ export function ProfilePage() {
 
   return (
     <div>
-      <section className="card flex flex-col items-start justify-between gap-6 p-6 md:flex-row md:items-center">
+      <section className="stagger card flex flex-col items-start justify-between gap-6 p-6 md:flex-row md:items-center">
         <div>
           <H2>Что мы знаем о компании</H2>
           <p className="text-ink-2">
@@ -71,11 +71,11 @@ export function ProfilePage() {
       </section>
 
       <div className="my-4 grid gap-4 md:grid-cols-2">
-        {p.sections.map((s) => {
+        {p.sections.map((s, si) => {
           const features = s.features.filter((f) => !HIDDEN_PATHS.test(f.path));
           if (!features.length && s.key !== 'counterparties') return null;
           return (
-            <section key={s.key} className="card p-6">
+            <section key={s.key} style={{ '--i': si + 1 } as CSSProperties} className="stagger card p-6">
               <H3>{s.title}</H3>
               <dl className="grid grid-cols-[minmax(120px,0.9fr)_1.1fr] gap-x-3 gap-y-2 text-sm">
                 {features.map((f) => (
@@ -95,7 +95,7 @@ export function ProfilePage() {
 
       {company && <ProfileForm companyId={company.company_id} userProvided={p.user_provided as Record<string, unknown>} />}
 
-      <section className="card mt-4 p-6">
+      <section style={{ '--i': 10 } as CSSProperties} className="stagger card mt-4 p-6">
         <H3>Связи компании</H3>
         {graph.isLoading && <p className="text-ink-2">Загружаем граф связей…</p>}
         {graph.data && (
@@ -140,15 +140,15 @@ function CounterpartyTable({ title, rows }: { title: string; rows: TopCounterpar
             {r.okved_name ?? 'Контрагент вне базы'}
             <span className="text-ink-2">
               {' '}
-              · {r.region ?? 'регион неизвестен'}
-              {r.same_group && ' · своя группа'}
+              , {r.region ?? 'регион неизвестен'}
+              {r.same_group && ', своя группа'}
             </span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-sm bg-muted-2">
             <span className="block h-full bg-night" style={{ width: `${Math.min(100, r.share * 100)}%` }} />
           </div>
           <div className="text-right text-ink-2">
-            {formatPercent(r.share)} · {formatMoney(r.amount_rub)}
+            {formatPercent(r.share)}, {formatMoney(r.amount_rub)}
           </div>
         </div>
       ))}
@@ -218,7 +218,7 @@ function ProfileForm({ companyId, userProvided }: { companyId: string; userProvi
     );
 
   return (
-    <section className="card flex flex-col items-start gap-3 p-6">
+    <section style={{ '--i': 9 } as CSSProperties} className="stagger card flex flex-col items-start gap-3 p-6">
       <h3 className="mt-1 text-[17px]">Дополнить профиль</h3>
       <p className="text-[13px] text-ink-2">Необязательно. Только то, чего нет в данных банка: так мы точнее поймём, какие события касаются вас.</p>
       <div className="grid w-full gap-3 md:grid-cols-2">
@@ -275,8 +275,8 @@ function GraphView({ edges, group, unknown }: { edges: GraphEdge[]; group: Recor
       <div className="mb-3 flex flex-col gap-1.5">
         {group && (
           <div>
-            <b>{String(group.size)}</b> юрлиц в группе · выручка группы {formatMoney(Number(group.revenue_rub ?? 0))}
-            {group.industries ? <span className="text-[13px] text-ink-2"> · отрасли: {Object.keys(group.industries as object).join(', ')}</span> : null}
+            <b>{String(group.size)}</b> юрлиц в группе, выручка группы {formatMoney(Number(group.revenue_rub ?? 0))}
+            {group.industries ?  <span className="text-[13px] text-ink-2">Отрасли: {Object.keys(group.industries as object).join(', ')}</span> : null}
           </div>
         )}
         {unknown && (
@@ -294,7 +294,10 @@ function GraphView({ edges, group, unknown }: { edges: GraphEdge[]; group: Recor
           const cp = e.counterparty as Record<string, unknown>;
           const ev = e.evidence as Record<string, unknown> | null;
           return (
-            <div key={i} className={cn('rounded-[14px] border px-3.5 py-3', e.is_hypothesis ? 'border-dashed border-[#f1a64d]' : 'border-line')}>
+            <div
+              key={i}
+              style={{ '--i': Math.min(i + 1, 12) } as CSSProperties}
+              className={cn('stagger pressable rounded-[14px] border px-3.5 py-3 hover:-translate-y-0.5 hover:shadow-lift', e.is_hypothesis ? 'border-dashed border-[#f1a64d]' : 'border-line')}>
               <div className="mb-1 flex items-center justify-between gap-2">
                 <span className="text-sm font-bold">{EDGE_LABELS[e.label] ?? EDGE_LABELS[e.edge_type] ?? e.label}</span>
                 {e.is_hypothesis && (
@@ -305,12 +308,12 @@ function GraphView({ edges, group, unknown }: { edges: GraphEdge[]; group: Recor
               </div>
               <div className="text-sm">
                 {String(cp?.okved_name ?? 'Контрагент вне базы')}
-                <span className="text-[13px] text-ink-2"> · {String(cp?.region ?? '')}</span>
+                <span className="ml-1.5 text-[13px] text-ink-2">{String(cp?.region ?? '')}</span>
               </div>
               <div className="text-[13px] text-ink-2">
                 {e.amount_rub ? `${formatMoney(e.amount_rub)}` : ''}
-                {e.share ? ` · ${formatPercent(e.share)} оборота` : ''}
-                {ev?.statement ? ` · ${String(ev.statement)}` : ''}
+                {e.share ? `${e.amount_rub ? ', ' : ''}${formatPercent(e.share)} оборота` : ''}
+                {ev?.statement ? `${e.amount_rub || e.share ? '. ' : ''}${capitalizeFirst(String(ev.statement))}` : ''}
                 {Array.isArray(ev?.basis) ? ` (основание: ${(ev!.basis as string[]).map(industryTag).join(', ')})` : ''}
               </div>
             </div>

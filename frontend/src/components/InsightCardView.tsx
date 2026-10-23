@@ -1,25 +1,30 @@
-import { useEffect, useRef } from 'react';
+// Строка ленты: только то, что нужно, чтобы решить, открывать ли инсайт, — заголовок, характер и сила влияния,
+// одна строка «почему это вам». Подробности — в карточке инсайта.
+import { useEffect, useRef, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookmarkMIcon } from '@alfalab/icons-glyph/BookmarkMIcon';
 import { BookmarkLineMIcon } from '@alfalab/icons-glyph/BookmarkLineMIcon';
 import { EyeOffMIcon } from '@alfalab/icons-glyph/EyeOffMIcon';
 import { EyeMIcon } from '@alfalab/icons-glyph/EyeMIcon';
-import { trackEvent, useInsightState } from '../api/hooks';
-import type { InsightCard } from '../api/types';
-import { EVENT_TYPES, formatRelative, plural } from '../lib/format';
-import { Flag, ImpactMeter, PolarityStatus, UrgentStatus } from './ui';
+import { trackEvent, useInsightState, useTrack } from '../api/hooks';
+import type { InsightCard, Polarity } from '../api/types';
+import { cleanTitle, EVENT_TYPES, formatRelative, POLARITY } from '../lib/format';
+import { ImpactMeter, POLARITY_TEXT } from './ui';
 import { useToast } from './Toasts';
 import { cn } from '../lib/cn';
 
-const smallIconBtn = 'inline-flex size-8 items-center justify-center rounded-full text-ink-2 hover:bg-muted-2 hover:text-ink [&_svg]:size-5';
+const smallIconBtn =
+  'inline-flex size-8 items-center justify-center rounded-full text-ink-2 transition hover:bg-muted-2 hover:text-ink active:scale-90 [&_svg]:size-5';
 
 export function InsightCardView({ item, position, via = 'feed' }: { item: InsightCard; position: number; via?: string }) {
   const navigate = useNavigate();
   const toast = useToast();
   const state = useInsightState(item.insight_id);
+  const track = useTrack(item.insight_id);
   const ref = useRef<HTMLElement>(null);
+  const polarity = (item.polarity as Polarity) ?? 'neutral';
 
-  // card_impression — один раз, когда карточка попала в экран (метрика CJM 03).
+  // card_impression — один раз, когда строка попала в экран (метрика CJM 03).
   useEffect(() => {
     const el = ref.current;
     if (!el || item.state.seen) return;
@@ -39,6 +44,14 @@ export function InsightCardView({ item, position, via = 'feed' }: { item: Insigh
   const open = () => navigate(`/analytics/insight/${item.insight_id}?via=${via}&position=${position}`);
 
   const act = (action: 'save' | 'unsave' | 'hide' | 'unhide') => {
+    if (action === 'save' || action === 'unsave') {
+      track.mutate(action === 'save', {
+        onSuccess: () =>
+          action === 'save' &&
+          toast.show({ title: 'Отслеживается', body: 'Инсайт в фильтре «Отслеживаемые», об обновлениях события сообщим.', tone: 'positive', ttl: 3500 }),
+      });
+      return;
+    }
     state.mutate(action, {
       onSuccess: () => {
         if (action === 'hide')
@@ -47,7 +60,6 @@ export function InsightCardView({ item, position, via = 'feed' }: { item: Insigh
             body: 'Вернуть его можно во вкладке «Скрытые».',
             action: { label: 'Вернуть', onClick: () => state.mutate('unhide') },
           });
-        if (action === 'save') toast.show({ title: 'Сохранено', body: 'Инсайт доступен в фильтре «Сохранённые».', tone: 'positive', ttl: 3000 });
       },
     });
   };
@@ -55,28 +67,41 @@ export function InsightCardView({ item, position, via = 'feed' }: { item: Insigh
   return (
     <article
       ref={ref}
+      style={{ '--i': Math.min(position, 12) } as CSSProperties}
       className={cn(
-        'cursor-pointer rounded-card border border-transparent bg-white px-6 py-5 shadow-card transition hover:border-line hover:shadow-lift focus-visible:outline-2 focus-visible:outline-info',
-        item.state.hidden && 'opacity-70',
+        'stagger group relative flex cursor-pointer gap-4 px-5 py-4 transition-colors duration-200 hover:bg-[#f8f8f9] focus-visible:bg-[#f8f8f9] focus-visible:outline-none',
+        item.state.hidden && 'opacity-60',
       )}
       onClick={open}
       role="link"
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && open()}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        {item.urgent && <UrgentStatus />}
-        <PolarityStatus polarity={item.polarity as never} />
-        {!item.state.opened && <Flag tone="blue">Новое</Flag>}
-        {item.state.updated && <Flag tone="orange">Обновлено</Flag>}
-        <span className="text-[13px] text-ink-2">
-          {EVENT_TYPES[item.event_type] ?? item.event_type} · {formatRelative(item.published_at)}
-        </span>
-        <span className="ml-auto flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex flex-wrap items-center gap-x-3 text-[13px] text-ink-2">
+          {item.urgent && <span className="font-semibold text-accent">Срочно</span>}
+          <span className={cn('font-medium', POLARITY_TEXT[polarity])}>{POLARITY[polarity]?.label}</span>
+          <span>{EVENT_TYPES[item.event_type] ?? item.event_type}</span>
+          <span>{formatRelative(item.published_at)}</span>
+          {item.state.updated && <span className="font-medium text-att">Обновлено</span>}
+        </div>
+        <h3 className="flex items-start gap-2 text-[17px] leading-snug">
+          {!item.state.opened && <span className="mt-2 size-2 shrink-0 rounded-full bg-info" title="Не прочитано" />}
+          <span className="line-clamp-2">{cleanTitle(item.title)}</span>
+        </h3>
+        {item.why_for_you && <p className="mt-1 mb-0 line-clamp-1 text-sm text-ink-2">{item.why_for_you}</p>}
+      </div>
+
+      <div className="flex shrink-0 flex-col items-end justify-between gap-2">
+        <ImpactMeter level={item.impact_level as never} compact />
+        <span
+          className="flex gap-0.5 opacity-0 transition-opacity duration-200 group-focus-within:opacity-100 group-hover:opacity-100"
+          onClick={(e) => e.stopPropagation()}
+        >
           <button
             className={smallIconBtn}
-            title={item.state.saved ? 'Убрать из сохранённых' : 'Сохранить'}
-            aria-label={item.state.saved ? 'Убрать из сохранённых' : 'Сохранить'}
+            title={item.state.saved ? 'Не отслеживать' : 'Отслеживать'}
+            aria-label={item.state.saved ? 'Не отслеживать' : 'Отслеживать'}
             onClick={() => act(item.state.saved ? 'unsave' : 'save')}
           >
             {item.state.saved ? <BookmarkMIcon className="text-accent" /> : <BookmarkLineMIcon />}
@@ -89,29 +114,6 @@ export function InsightCardView({ item, position, via = 'feed' }: { item: Insigh
           >
             {item.state.hidden ? <EyeMIcon /> : <EyeOffMIcon />}
           </button>
-        </span>
-      </div>
-
-      <h3 className="mt-2.5 mb-1.5 text-lg leading-snug">{item.title}</h3>
-      <p className="line-clamp-2 text-ink-2">{item.summary}</p>
-
-      {item.why_for_you && (
-        <div className="my-3 rounded-xl bg-muted px-3.5 py-2.5 text-sm">
-          <span className="mb-0.5 block text-xs font-bold text-accent">Почему это для вас</span>
-          {item.why_for_you}
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-4">
-        <ImpactMeter level={item.impact_level as never} score={item.impact_score} />
-        {!!item.priority_reasons?.length && (
-          <span className="text-[13px] text-ink-2" title="Почему инсайт выше в ленте">
-            Выше в ленте: {item.priority_reasons.join(' · ')}
-          </span>
-        )}
-        <span className="ml-auto text-[13px] text-ink-2">
-          {item.sources_count} {plural(item.sources_count, 'источник', 'источника', 'источников')}
-          {item.bank_view_coverage !== 'none' && <span className="ml-1.5 font-semibold text-accent">+ аналитика банка</span>}
         </span>
       </div>
     </article>

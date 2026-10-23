@@ -6,7 +6,7 @@ import { Button } from '@alfalab/core-components/button';
 import { get } from '../../api/client';
 import { useSourceClick } from '../../api/hooks';
 import type { Source } from '../../api/types';
-import { formatDate, SOURCE_TYPES } from '../../lib/format';
+import { formatDate, SOURCE_TYPES, sourceLabel } from '../../lib/format';
 import { useToast } from '../Toasts';
 import { Note } from '../ui';
 import { cn } from '../../lib/cn';
@@ -83,7 +83,7 @@ const REF_TONE: Record<string, string> = {
 };
 
 export const srcRefClass = (type: string) =>
-  cn('cursor-pointer whitespace-nowrap rounded-lg px-2 py-px text-xs hover:underline', REF_TONE[type] ?? 'bg-info-bg text-info');
+  cn('cursor-pointer rounded-lg px-2 py-px text-left text-xs hover:underline', REF_TONE[type] ?? 'bg-info-bg text-info');
 
 // Ссылка-сноска на источник: «Банк России, с. 2».
 export function SourceRef({ id }: { id: string }) {
@@ -100,8 +100,7 @@ export function SourceRef({ id }: { id: string }) {
       }}
       title={`${SOURCE_TYPES[src.type] ?? src.type}: ${src.title}${src.page ? `, с. ${src.page}` : ''}`}
     >
-      {src.publisher ? shortPublisher(src.publisher) : SOURCE_TYPES[src.type] ?? src.type}
-      {src.page ? `, с. ${src.page}` : ''}
+      {sourceLabel(src)}
     </button>
   );
 }
@@ -117,10 +116,6 @@ export function SourceRefs({ ids }: { ids: string[] | undefined }) {
   );
 }
 
-function shortPublisher(p: string): string {
-  return p.length > 34 ? `${p.slice(0, 32)}…` : p;
-}
-
 export function SourceList({ sources }: { sources: Source[] }) {
   const { open } = useSources();
   return (
@@ -131,7 +126,7 @@ export function SourceList({ sources }: { sources: Source[] }) {
             <span className={cn('row-span-2 text-xs font-bold', s.type === 'bank_analytics' ? 'text-accent' : 'text-ink-2')}>{SOURCE_TYPES[s.type] ?? s.type}</span>
             <span className="font-medium text-info">{s.title}</span>
             <span className="text-xs text-ink-2">
-              {[s.publisher, s.published_at ? formatDate(s.published_at) : null, s.page ? `стр. ${s.page}` : null].filter(Boolean).join(' · ')}
+              {[s.publisher, s.published_at ? formatDate(s.published_at) : null, s.page ? `стр. ${s.page}` : null].filter(Boolean).join(', ')}
             </span>
           </button>
         </li>
@@ -152,7 +147,7 @@ export function NewsModal({ path, onClose }: { path: string | null; onClose: () 
         {n && (
           <div>
             <div className="mb-1.5 text-[13px] text-ink-2">
-              {n.publisher} · {formatDate(n.published_at, true)}
+              {n.publisher}, {formatDate(n.published_at, true)}
             </div>
             <h3 className="mb-2.5 text-xl">{n.title}</h3>
             {n.is_fixture && <Note>Синтетическая демо-новость — используется для офлайн-демонстрации конвейера.</Note>}

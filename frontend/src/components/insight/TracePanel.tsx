@@ -101,21 +101,27 @@ export function TracePanel({ trace }: { trace: Trace }) {
           <b>Трасса анализа</b>
           <span className="text-ink-2">
             {' '}
-            · {steps.length} шагов агента · {llmCalls.length} вызовов LLM · проверка: {validation?.status === 'passed' ? 'пройдена' : validation?.status ?? '—'}
+           : {steps.length} шагов агента, {llmCalls.length} вызовов LLM, проверка {validation?.status === 'passed' ? 'пройдена' : validation?.status ?? '—'}
           </span>
         </span>
         <ChevronDownMIcon className={cn('text-ink-2 transition-transform', open && 'rotate-180')} />
       </button>
-      {open && (
+      <div className={cn('grid transition-[grid-template-rows] duration-300 ease-alfa', open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+        <div className="min-h-0 overflow-hidden">
         <div className="px-4 pb-4">
           <div className="mb-3 grid gap-4 md:grid-cols-2">
             <div>
               <div className={traceLabel}>Запуск</div>
               <div className="font-mono text-[13px]">{trace.trace_id}</div>
               <div className="text-[13px] text-ink-2">
-                {String(run?.generator ?? '')} · {String(run?.outcome ?? run?.status ?? '')}
-                {usage.latency_ms !== undefined && ` · ${usage.latency_ms} мс`}
-                {usage.tokens_in ? ` · ${usage.tokens_in}/${usage.tokens_out} токенов` : ''}
+                {[
+                  String(run?.generator ?? ''),
+                  String(run?.outcome ?? run?.status ?? ''),
+                  usage.latency_ms !== undefined ? `${usage.latency_ms} мс` : '',
+                  usage.tokens_in ? `${usage.tokens_in}/${usage.tokens_out} токенов` : '',
+                ]
+                  .filter(Boolean)
+                  .join(', ')}
               </div>
             </div>
             <div>
@@ -139,12 +145,12 @@ export function TracePanel({ trace }: { trace: Trace }) {
           )}
 
           <div className={traceLabel}>Шаги агента</div>
-          <ol className="ml-2">
+          <ol>
             {steps.map((s, i) => (
-              <li key={s.seq} className="relative flex flex-wrap items-baseline gap-x-2.5 gap-y-1 border-l-2 border-line py-1.5 pl-7 text-[13px]">
+              <li key={s.seq} className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 py-1.5 text-[13px]">
                 <span
                   className={cn(
-                    'absolute top-1.5 -left-[11px] flex size-5 items-center justify-center rounded-full border-2 bg-white text-[10px]',
+                    'flex size-5 shrink-0 items-center justify-center self-start rounded-full border-2 bg-white text-[10px]',
                     s.status === 'error' ? 'border-accent' : 'border-line',
                   )}
                 >
@@ -153,7 +159,7 @@ export function TracePanel({ trace }: { trace: Trace }) {
                 <span className="rounded-md bg-muted px-1.5 py-px text-[11px] font-bold">{STEP_TYPES[s.step_type] ?? s.step_type}</span>
                 <span className="font-mono">
                   {s.name}
-                  {s.attempt > 1 && <span className="text-att"> · попытка {s.attempt}</span>}
+                  {s.attempt > 1 && <span className="ml-1.5 text-att">попытка {s.attempt}</span>}
                 </span>
                 {s.latency_ms != null && <span className="ml-auto text-ink-3">{s.latency_ms} мс</span>}
                 {s.output_preview && <span className="basis-full break-words text-ink-2">→ {s.output_preview}</span>}
@@ -168,15 +174,16 @@ export function TracePanel({ trace }: { trace: Trace }) {
               <ul className="list-disc pl-[18px] text-[13px]">
                 {llmCalls.map((c, i) => (
                   <li key={i}>
-                    {String(c.model ?? '')} · {String(c.purpose ?? '')} · {String(c.tokens_in ?? '')}/{String(c.tokens_out ?? '')} токенов
-                    {c.cost_rub != null && ` · ${String(c.cost_rub)} ₽`}
+                    {String(c.model ?? '')}, {String(c.purpose ?? '')}, {String(c.tokens_in ?? '')}/{String(c.tokens_out ?? '')} токенов
+                    {c.cost_rub != null && `, ${String(c.cost_rub)} ₽`}
                   </li>
                 ))}
               </ul>
             </>
           )}
         </div>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

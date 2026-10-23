@@ -1,5 +1,10 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+// Всплывающие уведомления в стилистике Альфа-Бизнеса: светлая карточка, иконка по смыслу, плавные появление и уход.
+import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
 import { CrossMIcon } from '@alfalab/icons-glyph/CrossMIcon';
+import { CheckmarkCircleMIcon } from '@alfalab/icons-glyph/CheckmarkCircleMIcon';
+import { ExclamationCircleMIcon } from '@alfalab/icons-glyph/ExclamationCircleMIcon';
+import { InformationCircleMIcon } from '@alfalab/icons-glyph/InformationCircleMIcon';
+import { BellMIcon } from '@alfalab/icons-glyph/BellMIcon';
 import { cn } from '../lib/cn';
 
 export interface Toast {
@@ -17,22 +22,30 @@ interface ToastApi {
 
 const ToastContext = createContext<ToastApi>({ show: () => undefined });
 
-const TONE_BORDER: Record<NonNullable<Toast['tone']>, string> = {
-  default: '',
-  urgent: 'border-l-4 border-accent',
-  positive: 'border-l-4 border-pos-dot',
-  error: 'border-l-4 border-[#ff4837]',
-};
+const TONE_ICON = {
+  default: { icon: InformationCircleMIcon, className: 'bg-muted text-ink-2' },
+  urgent: { icon: BellMIcon, className: 'bg-neg-bg text-accent' },
+  positive: { icon: CheckmarkCircleMIcon, className: 'bg-pos-bg text-pos' },
+  error: { icon: ExclamationCircleMIcon, className: 'bg-neg-bg text-neg' },
+} as const;
 
+const LEAVE_MS = 220;
 let seq = 0;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<Toast[]>([]);
+  const [items, setItems] = useState<(Toast & { leaving?: boolean })[]>([]);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
-  const dismiss = useCallback((id: number) => setItems((xs) => xs.filter((x) => x.id !== id)), []);
+  const dismiss = useCallback((id: number) => {
+    setItems((xs) => xs.map((x) => (x.id === id ? { ...x, leaving: true } : x)));
+    setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== id)), LEAVE_MS);
+  }, []);
 
   const show = useCallback(
     (t: Omit<Toast, 'id'>) => {
+      // То же самое сообщение уже на экране — второй раз не показываем.
+      if (itemsRef.current.some((x) => !x.leaving && x.title === t.title && x.body === t.body)) return;
       const id = ++seq;
       setItems((xs) => [...xs.slice(-3), { ...t, id }]);
       setTimeout(() => dismiss(id), t.ttl ?? 7000);
@@ -44,31 +57,41 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ show }}>
       {children}
       <div className="fixed right-6 bottom-6 z-[1000] flex w-[380px] max-w-[calc(100vw-32px)] flex-col gap-2.5" role="status" aria-live="polite">
-        {items.map((t) => (
-          <div
-            key={t.id}
-            className={cn('flex animate-toast-in items-start gap-3 rounded-tile bg-[#1c1c1e] py-3.5 pr-3.5 pl-[18px] text-white shadow-[0_12px_40px_rgba(0,0,0,0.25)]', TONE_BORDER[t.tone ?? 'default'])}
-          >
-            <div className="min-w-0 flex-1">
-              <div className="font-bold">{t.title}</div>
-              {t.body && <div className="mt-0.5 line-clamp-3 text-sm text-white/75">{t.body}</div>}
-              {t.action && (
-                <button
-                  className="mt-2 rounded-[10px] bg-white px-3 py-1.5 font-semibold text-night"
-                  onClick={() => {
-                    t.action?.onClick();
-                    dismiss(t.id);
-                  }}
-                >
-                  {t.action.label}
-                </button>
+        {items.map((t) => {
+          const tone = TONE_ICON[t.tone ?? 'default'];
+          const Icon = tone.icon;
+          return (
+            <div
+              key={t.id}
+              className={cn(
+                'flex items-start gap-3 rounded-tile border border-line bg-white p-4 shadow-pop',
+                t.leaving ? 'motion-safe:animate-toast-out' : 'motion-safe:animate-toast-in',
               )}
+            >
+              <span className={cn('inline-flex size-9 shrink-0 items-center justify-center rounded-full [&_svg]:size-5', tone.className)}>
+                <Icon />
+              </span>
+              <div className="min-w-0 flex-1 pt-0.5">
+                <div className="leading-snug font-semibold">{t.title}</div>
+                {t.body && <div className="mt-0.5 line-clamp-3 text-sm text-ink-2">{t.body}</div>}
+                {t.action && (
+                  <button
+                    className="pressable mt-2.5 rounded-[10px] bg-muted px-3 py-1.5 text-sm font-semibold hover:bg-muted-2"
+                    onClick={() => {
+                      t.action?.onClick();
+                      dismiss(t.id);
+                    }}
+                  >
+                    {t.action.label}
+                  </button>
+                )}
+              </div>
+              <button className="p-0.5 text-ink-3 transition-colors hover:text-ink" aria-label="Закрыть" onClick={() => dismiss(t.id)}>
+                <CrossMIcon width={18} height={18} />
+              </button>
             </div>
-            <button className="p-0 text-white/60" aria-label="Закрыть" onClick={() => dismiss(t.id)}>
-              <CrossMIcon width={18} height={18} />
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </ToastContext.Provider>
   );

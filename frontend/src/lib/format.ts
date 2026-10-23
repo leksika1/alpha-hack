@@ -82,7 +82,7 @@ export const ACTION_TYPES: Record<string, string> = {
   callback: 'Заказать звонок',
   application: 'Оставить заявку',
   analyze: 'Проанализировать',
-  monitor: 'Наблюдать',
+  monitor: 'Отслеживать',
   read_source: 'Изучить источник',
 };
 
@@ -316,10 +316,9 @@ export function plural(n: number, one: string, few: string, many: string): strin
   return many;
 }
 
-// Короткое имя компании для переключателя: «Торговля оптовая металлами · Свердловская область» → первая часть.
+// Имя компании без региона: «Торговля оптовая металлами · Свердловская область» → первая часть (регион показываем отдельно).
 export function companyShortName(title: string): string {
-  const [name] = title.split(' · ');
-  return name.length > 48 ? `${name.slice(0, 46)}…` : name;
+  return title.split(' · ')[0];
 }
 
 export function companyInitials(title: string): string {
@@ -340,4 +339,33 @@ export function isDemoStatement(
   if (st.kind !== 'bank_analytics') return false;
   const refs = st.source_refs.map((id) => sources.find((s) => s.id === id)).filter(Boolean);
   return refs.length > 0 && refs.every((s) => isSyntheticSource(s));
+}
+
+// Хвост заголовка «…: риск для компании» дублирует бадж полярности на карточке — убираем его при показе.
+export function cleanTitle(title: string): string {
+  return title.replace(/:\s*(риски?|возможност[ьи])(\s+и\s+(риски?|возможност[ьи]))?\s+для\s+компании\.?$/i, '');
+}
+
+// Демо-утверждения бэкенд начинает с пометки «Демо-материал (синтетика), не аналитика Альфа-Банка: …»;
+// пометку показываем меткой, а из текста убираем, чтобы не повторять.
+export function stripDemoPrefix(text: string): string {
+  return text.replace(/^Демо-материал \(синтетика\), не аналитика Альфа-Банка(\s*\([^)]*\))?:\s*/, '');
+}
+
+export function capitalizeFirst(s: string): string {
+  return s.charAt(0).toLocaleUpperCase('ru') + s.slice(1);
+}
+
+// Короткая подпись источника для сносок: аналитика банка — название документа и страница, новость — издатель.
+export function sourceLabel(src: { type: string; title: string; publisher: string | null; page: number | null }): string {
+  let label: string;
+  if (src.type === 'bank_analytics') {
+    const name = src.title.replace(/^ДЕМО \(синтетика\):\s*/, '');
+    label = isSyntheticSource(src) ? `${name} (демо)` : name;
+  } else if (src.type === 'news') {
+    label = src.publisher || src.title;
+  } else {
+    label = SOURCE_TYPES[src.type] ?? src.title;
+  }
+  return src.page ? `${label}, с. ${src.page}` : label;
 }

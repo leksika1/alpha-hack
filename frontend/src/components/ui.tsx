@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, SelectHTMLAttributes } from 'react';
+import { ChevronDownMIcon } from '@alfalab/icons-glyph/ChevronDownMIcon';
 import { Status } from '@alfalab/core-components/status';
 import { Button } from '@alfalab/core-components/button';
 import { Skeleton } from '@alfalab/core-components/skeleton';
@@ -14,6 +15,13 @@ export function Card({ children, className, as: Tag = 'section', id }: { childre
     </Tag>
   );
 }
+
+export const POLARITY_TEXT: Record<Polarity, string> = {
+  risk: 'text-neg',
+  opportunity: 'text-pos',
+  mixed: 'text-att',
+  neutral: 'text-ink-2',
+};
 
 const PILL_TONES = {
   grey: 'bg-muted text-ink-2 font-medium',
@@ -95,7 +103,7 @@ export function ImpactMeter({ level, score, compact = false }: { level: ImpactLe
       {!compact && (
         <span className="font-semibold">
           {info.label}
-          {score !== undefined && <span className="font-normal text-ink-2"> · {score}/100</span>}
+          {score !== undefined && <span className="ml-1.5 font-normal text-ink-2">{score}/100</span>}
         </span>
       )}
     </span>
@@ -137,7 +145,7 @@ export function Note({ tone = 'info', children }: { tone?: 'info' | 'warning'; c
 export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   const e = error instanceof ApiError ? error : null;
   return (
-    <div className="flex flex-col items-start gap-2 rounded-card border-l-4 border-accent bg-white p-6" role="alert">
+    <div className="flex flex-col items-start gap-2 rounded-card border border-accent/40 bg-white p-6" role="alert">
       <div className="font-bold">{e?.status === 403 ? 'Нет доступа к данным компании' : 'Не удалось загрузить данные'}</div>
       <div>{e ? e.message : error instanceof Error ? error.message : 'Попробуйте ещё раз'}</div>
       {e?.traceId && <div className="font-mono text-xs text-ink-2">Код для поддержки: {e.traceId}</div>}
@@ -205,19 +213,61 @@ export function LinkButton({ onClick, children, className }: { onClick: () => vo
 }
 
 const ACTION_TONE: Record<string, string> = {
-  contact_manager: 'bg-neg-bg text-neg',
-  callback: 'bg-neg-bg text-neg',
-  application: 'bg-neg-bg text-neg',
-  monitor: 'bg-info-bg text-info',
+  contact_manager: 'text-accent',
+  callback: 'text-accent',
+  application: 'text-accent',
+  monitor: 'text-info',
 };
 
-// Метка типа действия: «Связаться с менеджером», «Наблюдать»…
-export const actionTypeClass = (type: string) =>
-  cn('min-w-[132px] whitespace-nowrap rounded-lg px-2 py-1 text-center text-xs font-bold', ACTION_TONE[type] ?? 'bg-muted');
+// Подпись типа действия над его текстом: «Связаться с менеджером», «Отслеживать»…
+export const actionLabelClass = (type: string) => cn('mb-0.5 text-xs font-semibold', ACTION_TONE[type] ?? 'text-ink-2');
 
-// Нативный select в стиле полей Альфа-Бизнеса.
-// Ширину и фон задаёт место использования, чтобы утилиты не конфликтовали.
-export const selectClass = 'rounded-xl border border-line px-3 py-2.5 text-ink outline-none disabled:opacity-60';
+// Нативный select без системной стрелки: своя иконка с отступом от края, как в полях Альфа-Бизнеса.
+// field — поле в рамке (фон задаётся через className), inline — выбор внутри текста.
+export function Select({
+  variant = 'field',
+  block = false,
+  className,
+  ...props
+}: SelectHTMLAttributes<HTMLSelectElement> & { variant?: 'field' | 'inline'; block?: boolean }) {
+  return (
+    <span className={cn('relative inline-flex max-w-full items-center', block && 'flex w-full')}>
+      <select
+        {...props}
+        className={cn(
+          'w-full min-w-0 cursor-pointer appearance-none text-ink outline-none disabled:cursor-default disabled:opacity-60',
+          variant === 'field' ? 'rounded-xl border border-line py-2.5 pr-10 pl-3.5' : 'bg-transparent pr-7 [field-sizing:content]',
+          className,
+        )}
+      />
+      <ChevronDownMIcon
+        className={cn('pointer-events-none absolute top-1/2 size-5 -translate-y-1/2 text-ink-2', variant === 'field' ? 'right-3' : 'right-0')}
+      />
+    </span>
+  );
+}
+
+export type SortMode = 'importance' | 'recent';
+
+// Порядок с бэкенда — по значимости для компании и роли; «сначала новые» — по дате публикации.
+export function sortInsights<T extends { published_at: string | null }>(items: T[], mode: SortMode): T[] {
+  if (mode === 'importance') return items;
+  return [...items].sort((a, b) => new Date(b.published_at ?? 0).getTime() - new Date(a.published_at ?? 0).getTime());
+}
+
+export function SortToggle({ value, onChange }: { value: SortMode; onChange: (v: SortMode) => void }) {
+  return (
+    <Segmented
+      label="Порядок"
+      value={value}
+      onChange={onChange}
+      options={[
+        { key: 'importance', label: 'По значимости' },
+        { key: 'recent', label: 'Сначала новые' },
+      ]}
+    />
+  );
+}
 
 // Сегментированный переключатель (день/неделя и т. п.).
 export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { key: T; label: string }[]; onChange: (v: T) => void; label: string }) {

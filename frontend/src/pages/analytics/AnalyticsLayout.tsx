@@ -1,10 +1,11 @@
 // Раздел «Аналитика» внутри интернет-банка: контекст компании (CJM 02), роль и вкладки.
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useLayoutEffect, useRef, useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSetRole } from '../../api/hooks';
 import type { Role } from '../../api/types';
 import { useSession } from '../../auth/session';
 import { useToast } from '../../components/Toasts';
-import { LinkButton, selectClass } from '../../components/ui';
+import { LinkButton, Select } from '../../components/ui';
 import { CompanyAvatar } from '../../layout/TopBar';
 import { companyShortName, ROLE_FOCUS, ROLE_LABELS, segmentLabel } from '../../lib/format';
 import { SparkIcon } from '../../layout/icons';
@@ -26,6 +27,7 @@ export function AnalyticsLayout() {
   const setRole = useSetRole();
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
 
   if (meLoading) return <div className="p-10 text-ink-2">Загружаем ваши компании…</div>;
   if (!company) {
@@ -68,8 +70,9 @@ export function AnalyticsLayout() {
           <div className="text-xs text-ink-2">Анализ подготовлен для</div>
           <div className="text-[17px] font-bold">
             {companies.length > 1 ? (
-              <select
-                className="max-w-full cursor-pointer bg-transparent p-0 text-[17px] font-bold outline-none"
+              <Select
+                variant="inline"
+                className="text-[17px] font-bold text-nowrap"
                 value={company.company_id}
                 onChange={(e) => setCompanyId(e.target.value)}
                 aria-label="Компания"
@@ -79,13 +82,15 @@ export function AnalyticsLayout() {
                     {companyShortName(c.title)}
                   </option>
                 ))}
-              </select>
+              </Select>
             ) : (
               companyShortName(company.title)
             )}
           </div>
           <div className="flex flex-wrap items-center gap-3 text-[13px] text-ink-2">
-            ОКВЭД {company.okved_code} · {company.region} · {segmentLabel(company.segment)}
+            <span>ОКВЭД {company.okved_code}</span>
+            <span>{company.region}</span>
+            <span>{segmentLabel(company.segment)}</span>
             <LinkButton onClick={() => navigate('/analytics/profile')}>Что мы знаем о компании</LinkButton>
           </div>
         </div>
@@ -93,36 +98,62 @@ export function AnalyticsLayout() {
           <label className="text-xs text-ink-2" htmlFor="role-select">
             Ваша роль
           </label>
-          <select id="role-select" className={cn(selectClass, 'w-full bg-muted')} value={company.role} disabled={setRole.isPending} onChange={(e) => changeRole(e.target.value as Role)}>
+          <Select block id="role-select" className="bg-muted" value={company.role} disabled={setRole.isPending} onChange={(e) => changeRole(e.target.value as Role)}>
             {ROLES.map((r) => (
               <option key={r} value={r}>
                 {ROLE_LABELS[r]}
               </option>
             ))}
-          </select>
+          </Select>
           <div className="mt-1 text-xs text-ink-2">Фокус: {ROLE_FOCUS[company.role]}</div>
         </div>
       </div>
 
-      <nav className="mt-5 mb-4 flex gap-1 overflow-x-auto border-b border-line" aria-label="Разделы аналитики">
-        {TABS.map((t) => (
-          <NavLink
-            key={t.to}
-            to={t.to}
-            end={t.end}
-            className={({ isActive }) =>
-              cn(
-                '-mb-px border-b-2 px-3.5 py-2.5 font-semibold whitespace-nowrap hover:text-ink hover:no-underline',
-                isActive ? 'border-accent text-ink' : 'border-transparent text-ink-2',
-              )
-            }
-          >
-            {t.label}
-          </NavLink>
-        ))}
-      </nav>
+      <Tabs />
 
-      <Outlet />
+      <div key={location.pathname} className="motion-safe:animate-fade-in">
+        <Outlet />
+      </div>
     </div>
+  );
+}
+
+// Вкладки раздела: под активной — красная черта (фирменный «фундамент»), которая переезжает к выбранной вкладке.
+function Tabs() {
+  const location = useLocation();
+  const navRef = useRef<HTMLElement>(null);
+  const [bar, setBar] = useState<{ left: number; width: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const active = navRef.current?.querySelector<HTMLElement>('[aria-current="page"]');
+      setBar(active ? { left: active.offsetLeft, width: active.offsetWidth } : null);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [location.pathname]);
+
+  return (
+    <nav ref={navRef} className="relative mt-5 mb-4 flex gap-1 overflow-x-auto border-b border-line" aria-label="Разделы аналитики">
+      {TABS.map((t) => (
+        <NavLink
+          key={t.to}
+          to={t.to}
+          end={t.end}
+          className={({ isActive }) =>
+            cn('px-3.5 py-2.5 font-semibold whitespace-nowrap transition-colors duration-200 hover:text-ink hover:no-underline', isActive ? 'text-ink' : 'text-ink-2')
+          }
+        >
+          {t.label}
+        </NavLink>
+      ))}
+      {bar && (
+        <span
+          className="absolute bottom-0 h-0.5 rounded-full bg-accent transition-[left,width] duration-300 ease-alfa"
+          style={{ left: bar.left, width: bar.width }}
+        />
+      )}
+    </nav>
   );
 }

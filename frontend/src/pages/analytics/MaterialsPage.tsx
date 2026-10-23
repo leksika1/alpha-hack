@@ -1,4 +1,5 @@
 // Материалы аналитики банка: документ, дата, темы, метод извлечения; открытие PDF по presigned-ссылке.
+import type { CSSProperties } from 'react';
 import { get } from '../../api/client';
 import { useAnalyticsDocuments } from '../../api/hooks';
 import { CardSkeleton, EmptyState, ErrorBox, Pill } from '../../components/ui';
@@ -37,12 +38,17 @@ export function MaterialsPage() {
         офлайн-демонстрации, не аналитика банка.
       </p>
       <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-        {docs.data.map((d) => (
-          <button key={d.document_id} className="card flex flex-col gap-1.5 p-6 text-left hover:shadow-lift" onClick={() => open(d.document_id)}>
+        {docs.data.map((d, i) => (
+          <button
+            key={d.document_id}
+            style={{ '--i': Math.min(i + 1, 12) } as CSSProperties}
+            className="stagger pressable card flex flex-col gap-1.5 p-6 text-left hover:-translate-y-0.5 hover:shadow-lift"
+            onClick={() => open(d.document_id)}
+          >
             <DocumentPdfMIcon className="text-accent" />
             <div className="font-bold">{d.title}</div>
             <div className="text-[13px] text-ink-2">
-              {formatDate(d.doc_date)} · {d.pages} стр. · {EXTRACTION[d.extraction] ?? d.extraction}
+              {formatDate(d.doc_date)}, {d.pages} стр., {EXTRACTION[d.extraction] ?? d.extraction}
               {d.ocr_confidence != null && ` (${formatPercent(d.ocr_confidence)})`}
             </div>
             <div className="flex flex-wrap gap-1">

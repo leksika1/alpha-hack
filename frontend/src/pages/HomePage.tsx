@@ -26,7 +26,10 @@ const TASKS: [string, number, boolean][] = [
 function QuickButton({ onClick, muted = false, children }: { onClick: () => void; muted?: boolean; children: ReactNode }) {
   return (
     <button
-      className={cn('inline-flex items-center gap-2.5 rounded-[14px] px-5 py-3 font-medium [&_svg]:size-5', muted ? 'bg-muted-2' : 'bg-white shadow-card')}
+      className={cn(
+        'pressable inline-flex items-center gap-2.5 rounded-[14px] px-5 py-3 font-medium [&_svg]:size-5',
+        muted ? 'bg-muted-2 hover:bg-[#dfe0e3]' : 'bg-white shadow-card hover:shadow-lift',
+      )}
       onClick={onClick}
     >
       {children}
@@ -36,8 +39,8 @@ function QuickButton({ onClick, muted = false, children }: { onClick: () => void
 
 function HeroTile({ icon, title, sub, onClick }: { icon: ReactNode; title: string; sub: string; onClick: () => void }) {
   return (
-    <button className="flex items-center gap-3 text-left text-white" onClick={onClick}>
-      <span className="inline-flex size-10 items-center justify-center rounded-xl bg-white/10">{icon}</span>
+    <button className="pressable group flex items-center gap-3 text-left text-white" onClick={onClick}>
+      <span className="inline-flex size-10 items-center justify-center rounded-xl bg-white/10 group-hover:bg-white/20">{icon}</span>
       <span>
         {title}
         <small className="block text-xs text-white/55">{sub}</small>
@@ -71,14 +74,13 @@ export function HomePage() {
         </QuickButton>
       </div>
 
-      <section className="grid gap-3 rounded-3xl bg-[radial-gradient(700px_400px_at_70%_120%,rgba(239,49,36,0.55),transparent_60%),linear-gradient(120deg,#0b0b0d,#1b1416)] p-3 text-white md:grid-cols-[1.6fr_1fr]">
-        <div className="rounded-[18px] bg-white/6 p-5">
+      <section className="grid gap-3 rounded-3xl bg-black bg-[radial-gradient(45%_60%_at_80%_120%,rgba(239,49,36,0.45),transparent_70%)] p-3 text-white md:grid-cols-[1.6fr_1fr]">
+        <div className="rounded-[18px] bg-linear-160 from-[#26262a] to-[#18181b] p-5">
           <div className="text-sm text-white/60">{companies.length > 1 ? `В ${companies.length} компаниях` : 'На счетах'}</div>
           <div className="my-1 text-[34px] font-bold tracking-[-0.01em]">2 524 550 000,00 RUB</div>
           <div className="text-white/60">↳ 10 800 570 344,95 RUB с овердрафтом</div>
           <div className="mt-3 mb-5 flex items-center gap-2.5 font-medium">
             <span>4 000,00 CNY</span>
-            <span className="text-white/40">·</span>
             <span>40 000,00 KZT</span>
             <span className="rounded-lg bg-white/12 px-1.5 py-0.5 text-xs">+5</span>
           </div>
@@ -87,10 +89,10 @@ export function HomePage() {
             <HeroTile icon={<CardMIcon />} title="Бизнес-карты" sub="Реквизиты и операции" onClick={() => stub('Бизнес-карты')} />
           </div>
         </div>
-        <div className="rounded-[18px] bg-white/6 p-5">
+        <div className="rounded-[18px] bg-linear-160 from-[#222225] from-45% to-[#3a1511] p-5">
           <div className="mb-2 font-bold">Дела в работе</div>
           {TASKS.map(([label, n, red]) => (
-            <button key={label} className="flex w-full justify-between py-[7px] text-white/92" onClick={() => stub(label)}>
+            <button key={label} className="flex w-full justify-between py-[7px] text-white/92 transition-colors duration-200 hover:text-white" onClick={() => stub(label)}>
               <span>{label}</span>
               <span className={cn('inline-flex h-5 min-w-5 items-center justify-center rounded-[10px] text-xs', red ? 'bg-accent' : 'bg-white/12')}>{n}</span>
             </button>
@@ -100,11 +102,7 @@ export function HomePage() {
 
       <AnalyticsWidget />
 
-      <div className="mt-7 mb-4 flex gap-6 text-[22px] font-bold text-ink-3">
-        <span className="text-ink">Сводка</span>
-        <span>Остатки по компаниям</span>
-        <span className="hidden md:inline">Мультибанк</span>
-      </div>
+      <h2 className="mt-7 mb-4 text-[22px]">Сводка</h2>
       <div className="grid gap-4 md:grid-cols-[1.3fr_1fr]">
         <section className="card p-6">
           <div className="mb-3 flex items-center justify-between">
@@ -117,7 +115,7 @@ export function HomePage() {
               <div>
                 <div className="font-semibold">{ACTION_TYPES[r.request_type] ?? r.request_type}</div>
                 <div className="text-xs text-ink-2">
-                  {formatDate(r.created_at)} · {r.external_ref}
+                  {formatDate(r.created_at)}, {r.external_ref}
                 </div>
               </div>
               <Pill tone={REQUEST_STATUS[r.status]?.color ?? 'grey'}>{REQUEST_STATUS[r.status]?.label ?? r.status}</Pill>
