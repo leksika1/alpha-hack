@@ -46,46 +46,39 @@ export function LoginPage() {
   };
 
   return (
-    <div className="login">
-      <div className="login__brand">
+    <div className="min-h-screen bg-[radial-gradient(1200px_600px_at_80%_-10%,rgba(239,49,36,0.12),transparent_60%)] p-8">
+      <div className="mb-12 flex items-center gap-3 text-xl font-bold">
         <AlfaLogo size={40} />
         <span>Альфа-Бизнес</span>
       </div>
-      <div className="login__grid">
-        <form className="card card--pad login__form" onSubmit={submit}>
-          <h1>Вход в интернет-банк</h1>
-          <p className="muted">Демонстрационный вход: в реальном банке полномочия в компании уже проверены при авторизации.</p>
+      <div className="grid items-start justify-center gap-8 md:grid-cols-[minmax(0,440px)_minmax(0,420px)]">
+        <form className="card flex flex-col gap-4 p-6" onSubmit={submit}>
+          <h1 className="text-[26px]">Вход в интернет-банк</h1>
+          <p className="text-ink-2">Демонстрационный вход: в реальном банке полномочия в компании уже проверены при авторизации.</p>
           <Input label="Логин" block size={56} value={name} onChange={(_, { value }) => setName(value)} autoComplete="username" />
-          <PasswordInput
-            label="Пароль"
-            block
-            size={56}
-            value={password}
-            onChange={(_, { value }) => setPassword(value)}
-            autoComplete="current-password"
-          />
-          {error && <div className="login__error">{error}</div>}
+          <PasswordInput label="Пароль" block size={56} value={password} onChange={(_, { value }) => setPassword(value)} autoComplete="current-password" />
+          {error && <div className="text-sm text-neg">{error}</div>}
           <Button view="accent" size={56} block type="submit" loading={loading}>
             Войти
           </Button>
         </form>
-        <div className="login__demo">
-          <div className="login__demo-title">Демо-учётки</div>
+        <div className="flex flex-col gap-3">
+          <div className="label-caps text-[13px]">Демо-учётки</div>
           {DEMO_ACCOUNTS.map((a) => (
             <button
               key={a.login}
               type="button"
-              className="login__account"
               disabled={loading}
+              className="flex flex-col gap-1 rounded-tile bg-white px-[18px] py-4 text-left shadow-card transition hover:-translate-y-px hover:shadow-lift"
               onClick={() => {
                 setName(a.login);
                 setPassword(a.password);
                 submit(undefined, a);
               }}
             >
-              <span className="login__account-title">{a.title}</span>
-              <span className="login__account-text">{a.text}</span>
-              <span className="login__account-creds">
+              <span className="font-bold">{a.title}</span>
+              <span className="text-[13px] text-ink-2">{a.text}</span>
+              <span className="font-mono text-xs text-ink-3">
                 {a.login} / {a.password}
               </span>
             </button>

@@ -1,6 +1,6 @@
 // Карточка инсайта: шесть блоков кейса — что произошло, почему важно вам, последствия, что сделать, позиция банка,
 // на чём основан вывод — плюс вопрос к аналитике, действие и отзыв.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '@alfalab/core-components/button';
 import { ArrowLeftMIcon } from '@alfalab/icons-glyph/ArrowLeftMIcon';
@@ -18,25 +18,24 @@ import {
   COVERAGE,
   EVENT_TYPES,
   featureLabel,
-  featureValue,
-  FEATURE_SOURCE,
   formatDate,
   formatMoney,
   formatNumber,
   HORIZON,
-  isDemoStatement,
   IMPACT_MEANING,
+  isDemoStatement,
   PLAUSIBILITY,
   ROLE_LABELS,
   STATEMENT_KIND,
 } from '../../lib/format';
-import { CardSkeleton, Disclaimers, ErrorBox, ImpactMeter, KindBadge, PolarityStatus, UrgentStatus } from '../../components/ui';
+import { actionTypeClass, CardSkeleton, Disclaimers, ErrorBox, Flag, ImpactMeter, KindBadge, LinkButton, Note, Pill, PolarityStatus, UrgentStatus } from '../../components/ui';
 import { SourceList, SourceRefs, SourcesProvider } from '../../components/insight/sources';
-import { RelevanceBreakdown, TracePanel } from '../../components/insight/TracePanel';
+import { FeatureChip, RelevanceBreakdown, TracePanel } from '../../components/insight/TracePanel';
 import { AskPanel } from '../../components/insight/AskPanel';
 import { ActionModal, type ActionDraft } from '../../components/insight/ActionModal';
 import { FeedbackPanel } from '../../components/insight/FeedbackPanel';
 import { useToast } from '../../components/Toasts';
+import { cn } from '../../lib/cn';
 
 const KIND_ORDER: StatementKind[] = ['fact', 'bank_analytics', 'model_inference', 'hypothesis'];
 const CTA_TYPES = new Set(['contact_manager', 'callback', 'application']);
@@ -50,6 +49,35 @@ const NAV = [
   ['basis', 'На чём основано'],
   ['ask', 'Задать вопрос'],
 ] as const;
+
+type Statement = InsightBody['statements'][number];
+
+function Block({ id, num, title, bank = false, children }: { id: string; num?: number; title: string; bank?: boolean; children: ReactNode }) {
+  return (
+    <section id={id} className={cn('card mt-3 scroll-mt-[130px] p-6', bank && 'border-l-4 border-accent')}>
+      <h2 className="mb-3.5 flex items-center gap-2.5 text-xl">
+        {num !== undefined && (
+          <span className={cn('inline-flex size-7 shrink-0 items-center justify-center rounded-full text-sm text-white', bank ? 'bg-accent' : 'bg-night')}>
+            {num}
+          </span>
+        )}
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+const SubTitle = ({ children }: { children: ReactNode }) => <h3 className="mt-5 mb-2.5 text-base">{children}</h3>;
+
+function StatementRow({ kind, demo, children }: { kind: StatementKind; demo?: boolean; children: ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-2.5 border-b border-line py-2 last:border-b-0">
+      <KindBadge kind={kind} demo={demo} />
+      <span>{children}</span>
+    </div>
+  );
+}
 
 export function InsightPage() {
   const { id } = useParams();
@@ -84,14 +112,23 @@ export function InsightPage() {
   );
   const statementsById = useMemo(() => Object.fromEntries((ins?.statements ?? []).map((s) => [s.id, s])), [ins]);
 
-  if (insightQ.isLoading) return <div className="insight-page"><CardSkeleton rows={5} /><CardSkeleton rows={4} /></div>;
+  if (insightQ.isLoading)
+    return (
+      <div>
+        <CardSkeleton rows={5} />
+        <CardSkeleton rows={4} />
+      </div>
+    );
   if (insightQ.isError || !data || !ins) return <ErrorBox error={insightQ.error} onRetry={() => insightQ.refetch()} />;
 
   const st = data.state;
+  const demo = (s: Statement) => isDemoStatement(s, ins.sources);
+  const refBadges = (refs: string[]) => refs.map((sid) => statementsById[sid] && <KindBadge key={sid} kind={statementsById[sid].kind} demo={demo(statementsById[sid])} />);
   const productName = (pid: string | null) => products.data?.find((p) => p.product_id === pid)?.name;
   const firstWhy = ins.why_it_matters[0]?.text ?? '';
   const ctaActions = ins.actions.filter((a) => CTA_TYPES.has(a.type));
   const otherActions = ins.actions.filter((a) => !CTA_TYPES.has(a.type));
+  const openDraft = (type: string, productId: string | null) => setDraft({ type: type as ActionDraft['type'], productId, reason: firstWhy });
 
   const doState = (action: 'save' | 'unsave' | 'hide' | 'unhide' | 'watch') =>
     state.mutate(action, {
@@ -107,212 +144,157 @@ export function InsightPage() {
       },
     });
 
-  const suggestions = [
-    'Как это повлияет на наши финансы в ближайший квартал?',
-    'А если смотреть на другое юрлицо нашей группы?',
-    'Что об этом пишет аналитика банка?',
-  ];
+  const suggestions = ['Как это повлияет на наши финансы в ближайший квартал?', 'А если смотреть на другое юрлицо нашей группы?', 'Что об этом пишет аналитика банка?'];
 
   return (
     <SourcesProvider insightId={data.insight_id} sources={ins.sources}>
-      <div className="insight-page">
-        <div className="insight-page__back">
-          <button className="link-btn" onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/analytics'))}>
+      <div>
+        <div className="mt-1 mb-4">
+          <LinkButton onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/analytics'))}>
             <ArrowLeftMIcon width={20} height={20} /> К ленте
-          </button>
+          </LinkButton>
         </div>
 
-        <div className="insight-layout">
-          <div className="insight-main">
-            <header className="card card--pad insight-hero">
-              <div className="insight-hero__statuses">
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="min-w-0">
+            <header className="card p-6">
+              <div className="flex flex-wrap items-center gap-2 text-[13px]">
                 {ins.urgent && <UrgentStatus />}
                 <PolarityStatus polarity={ins.polarity} />
-                <span className="muted">
+                <span className="text-ink-2">
                   {EVENT_TYPES[ins.event.event_type] ?? ins.event.event_type} · {formatDate(ins.event.occurred_at, true)}
                 </span>
-                {st.updated && <span className="insight-card__updated">Обновлено</span>}
+                {st.updated && <Flag tone="orange">Обновлено</Flag>}
               </div>
-              <h1 className="insight-hero__title">{ins.title}</h1>
-              <p className="insight-hero__summary">{ins.summary}</p>
+              <h1 className="mt-3 mb-2.5 text-[26px] leading-tight">{ins.title}</h1>
+              <p className="text-base">{ins.summary}</p>
               {!data.role_match && (
-                <div className="note note--info">
-                  Инсайт подготовлен для роли «{ROLE_LABELS[ins.role_variant]}». Вариант под вашу текущую роль генерируется — порядок ленты уже учитывает
-                  смену роли.
-                </div>
+                <Note>
+                  Инсайт подготовлен для роли «{ROLE_LABELS[ins.role_variant]}». Вариант под вашу текущую роль генерируется — порядок ленты уже учитывает смену
+                  роли.
+                </Note>
               )}
-              <div className="insight-hero__actions">
-                <Button
-                  view="secondary"
-                  size={40}
-                  leftAddons={st.saved ? <BookmarkMIcon /> : <BookmarkLineMIcon />}
-                  onClick={() => doState(st.saved ? 'unsave' : 'save')}
-                >
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button view="secondary" size={40} leftAddons={st.saved ? <BookmarkMIcon /> : <BookmarkLineMIcon />} onClick={() => doState(st.saved ? 'unsave' : 'save')}>
                   {st.saved ? 'Сохранено' : 'Сохранить'}
                 </Button>
                 <Button view="secondary" size={40} leftAddons={<TelescopeMIcon />} onClick={() => doState('watch')}>
                   Наблюдать
                 </Button>
-                <Button
-                  view="secondary"
-                  size={40}
-                  leftAddons={st.hidden ? <EyeMIcon /> : <EyeOffMIcon />}
-                  onClick={() => doState(st.hidden ? 'unhide' : 'hide')}
-                >
+                <Button view="secondary" size={40} leftAddons={st.hidden ? <EyeMIcon /> : <EyeOffMIcon />} onClick={() => doState(st.hidden ? 'unhide' : 'hide')}>
                   {st.hidden ? 'Вернуть в ленту' : 'Скрыть'}
                 </Button>
               </div>
             </header>
 
-            <nav className="anchor-nav" aria-label="Разделы инсайта">
+            <nav className="sticky top-[72px] z-5 my-3 flex gap-1.5 overflow-x-auto bg-page py-2 [scrollbar-width:none]" aria-label="Разделы инсайта">
               {NAV.map(([key, label]) => (
-                <a key={key} href={`#${key}`} onClick={(e) => { e.preventDefault(); document.getElementById(key)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
+                <a
+                  key={key}
+                  href={`#${key}`}
+                  className="rounded-[14px] bg-white px-3 py-1.5 text-[13px] whitespace-nowrap text-ink shadow-card hover:bg-muted-2 hover:no-underline"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    document.getElementById(key)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                >
                   {label}
                 </a>
               ))}
             </nav>
 
-            {/* 1. Что произошло */}
-            <section className="card card--pad block" id="what">
-              <h2 className="block__title">
-                <span className="block__num">1</span> Что произошло
-              </h2>
-              <h3 className="block__event">{ins.event.title}</h3>
+            <Block id="what" num={1} title="Что произошло">
+              <h3 className="mb-1.5 text-[17px]">{ins.event.title}</h3>
               <p>{ins.event.summary}</p>
-              <ul className="facts">
+              <div className="mt-3">
                 {ins.event.key_facts.map((f, i) => (
-                  <li key={i} className="statement">
-                    <KindBadge kind="fact" />
-                    <span>
-                      {f.text} <SourceRefs ids={f.source_refs} />
-                    </span>
-                  </li>
+                  <StatementRow key={i} kind="fact">
+                    {f.text} <SourceRefs ids={f.source_refs} />
+                  </StatementRow>
                 ))}
-              </ul>
-              {ins.event.participants?.length > 0 && (
-                <p className="muted small">Участники: {ins.event.participants.map((p) => p.name).join(', ')}</p>
-              )}
-            </section>
+              </div>
+              {ins.event.participants?.length > 0 && <p className="text-[13px] text-ink-2">Участники: {ins.event.participants.map((p) => p.name).join(', ')}</p>}
+            </Block>
 
-            {/* 2. Почему это важно вам */}
-            <section className="card card--pad block" id="why">
-              <h2 className="block__title">
-                <span className="block__num">2</span> Почему это важно именно вашей компании
-              </h2>
+            <Block id="why" num={2} title="Почему это важно именно вашей компании">
               {ins.why_it_matters.map((w, i) => (
-                <div key={i} className="why-item">
-                  <p className="why-item__text">{w.text}</p>
-                  <div className="feature-chips">
-                    {w.feature_refs.map((path) => {
-                      const f = featureMap[path];
-                      return (
-                        <span key={path} className="feature-chip" title={f?.note ?? undefined}>
-                          {featureLabel(path)}
-                          {f && (
-                            <>
-                              : <b>{featureValue(path, f.value)}</b>
-                              <span className="feature-chip__src">{FEATURE_SOURCE[f.source] ?? f.source}</span>
-                            </>
-                          )}
-                        </span>
-                      );
+                <div key={i} className="border-b border-line py-3 last-of-type:border-b-0">
+                  <p className="text-base font-medium">{w.text}</p>
+                  <div className="my-1.5 flex flex-wrap gap-1.5">
+                    {w.feature_refs.map((path) => (
+                      <FeatureChip key={path} path={path} f={featureMap[path]} />
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {w.statement_refs.map((sid) => {
+                      const s = statementsById[sid];
+                      return s && s.kind !== 'fact' ? <KindBadge key={sid} kind={s.kind} demo={demo(s)} /> : null;
                     })}
                   </div>
-                  {w.statement_refs.map((sid) => {
-                    const s = statementsById[sid];
-                    return s && s.kind !== 'fact' ? (
-                      <div key={sid} className="why-item__kind">
-                        <KindBadge kind={s.kind} demo={isDemoStatement(s, ins.sources)} />
-                      </div>
-                    ) : null;
-                  })}
                 </div>
               ))}
-              <p className="muted small">
+              <p className="text-[13px] text-ink-2">
                 Почему инсайт выше в ленте: совпадение по признакам {ins.relevance.matched_features.map(featureLabel).join(', ').toLowerCase()}.{' '}
                 <Link to="/analytics/profile">Проверить или дополнить профиль</Link>
               </p>
-            </section>
+            </Block>
 
-            {/* 3. Последствия */}
-            <section className="card card--pad block" id="consequences">
-              <h2 className="block__title">
-                <span className="block__num">3</span> Возможные последствия
-              </h2>
-              <div className="impact-box">
+            <Block id="consequences" num={3} title="Возможные последствия">
+              <div className="mb-4 rounded-xl bg-muted px-3.5 py-3">
                 <ImpactMeter level={ins.impact.level} score={ins.impact.score} />
-                <p className="muted small">
+                <p className="mt-1.5 text-[13px] text-ink-2">
                   {IMPACT_MEANING[ins.impact.level]}. {ins.impact.rationale}
                 </p>
               </div>
               {ins.impact.quantitative?.length > 0 && (
-                <div className="quant">
+                <div className="mb-4 flex flex-wrap gap-3">
                   {ins.impact.quantitative.map((q, i) => (
-                    <div key={i} className="quant__item">
-                      <div className="quant__value">
+                    <div key={i} className="min-w-[220px] flex-1 rounded-xl border border-line px-3.5 py-3">
+                      <div className="text-[22px] font-bold">
                         {q.unit.includes('₽') ? formatMoney(q.value) : formatNumber(q.value)}
-                        <span className="quant__unit">{q.unit.replace(/^₽/, '').trim()}</span>
+                        <span className="ml-1.5 text-[13px] font-normal text-ink-2">{q.unit.replace(/^₽/, '').trim()}</span>
                       </div>
-                      <div className="quant__period">{q.period}</div>
-                      <div className="muted small">{q.basis}</div>
+                      <div className="text-[13px] text-ink-2">{q.period}</div>
+                      <div className="text-[13px] text-ink-2">{q.basis}</div>
                     </div>
                   ))}
                 </div>
               )}
-              <div className="conseq">
-                <div className="conseq__col conseq__col--risk">
-                  <h3>Риски</h3>
-                  {ins.consequences.risks.length === 0 && <p className="muted small">Существенных рисков не выявлено.</p>}
-                  {ins.consequences.risks.map((r, i) => (
-                    <ConsequenceItem key={i} c={r} statementsById={statementsById} sources={ins.sources} />
-                  ))}
-                </div>
-                <div className="conseq__col conseq__col--opp">
-                  <h3>Возможности</h3>
-                  {ins.consequences.opportunities.length === 0 && <p className="muted small">Явных возможностей не выявлено.</p>}
-                  {ins.consequences.opportunities.map((r, i) => (
-                    <ConsequenceItem key={i} c={r} statementsById={statementsById} sources={ins.sources} />
-                  ))}
-                </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConsequenceColumn title="Риски" tone="risk" empty="Существенных рисков не выявлено." items={ins.consequences.risks} refBadges={refBadges} />
+                <ConsequenceColumn title="Возможности" tone="opp" empty="Явных возможностей не выявлено." items={ins.consequences.opportunities} refBadges={refBadges} />
               </div>
               {ins.consequences.scenarios.length > 0 && (
                 <>
-                  <h3 className="block__sub">Сценарии</h3>
-                  <div className="scenarios">
+                  <SubTitle>Сценарии</SubTitle>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
                     {ins.consequences.scenarios.map((s, i) => (
-                      <div key={i} className={`scenario scenario--${s.plausibility}`}>
-                        <div className="scenario__head">
+                      <div key={i} className={cn('rounded-xl border p-3.5', s.plausibility === 'high' ? 'border-[#c9ccd3]' : 'border-line')}>
+                        <div className="mb-1.5 flex justify-between gap-2">
                           <b>{s.name}</b>
-                          <span className="scenario__pl">{PLAUSIBILITY[s.plausibility] ?? s.plausibility}</span>
+                          <span className="text-xs whitespace-nowrap text-ink-2">{PLAUSIBILITY[s.plausibility] ?? s.plausibility}</span>
                         </div>
                         <p>{s.logic}</p>
-                        {s.signals.length > 0 && <p className="muted small">За чем следить: {s.signals.join(', ')}</p>}
-                        {s.statement_refs.map(
-                          (sid) =>
-                            statementsById[sid] && <KindBadge key={sid} kind={statementsById[sid].kind} demo={isDemoStatement(statementsById[sid], ins.sources)} />,
-                        )}
+                        {s.signals.length > 0 && <p className="text-[13px] text-ink-2">За чем следить: {s.signals.join(', ')}</p>}
+                        <div className="mt-1 flex flex-wrap gap-1.5">{refBadges(s.statement_refs)}</div>
                       </div>
                     ))}
                   </div>
                 </>
               )}
-            </section>
+            </Block>
 
-            {/* 4. Что можно сделать */}
-            <section className="card card--pad block" id="actions">
-              <h2 className="block__title">
-                <span className="block__num">4</span> Что можно сделать
-              </h2>
-              <ul className="actions-list">
+            <Block id="actions" num={4} title="Что можно сделать">
+              <ul>
                 {ins.actions.map((a, i) => (
-                  <li key={i} className="actions-list__item">
-                    <span className={`actions-list__type actions-list__type--${a.type}`}>{ACTION_TYPES[a.type] ?? a.type}</span>
-                    <div className="actions-list__body">
+                  <li key={i} className="flex items-center gap-3 border-b border-line py-3 last:border-b-0">
+                    <span className={actionTypeClass(a.type)}>{ACTION_TYPES[a.type] ?? a.type}</span>
+                    <div className="flex flex-1 flex-col">
                       <span>{a.text}</span>
-                      {a.product_id && productName(a.product_id) && <span className="muted small">Продукт: {productName(a.product_id)}</span>}
+                      {a.product_id && productName(a.product_id) && <span className="text-[13px] text-ink-2">Продукт: {productName(a.product_id)}</span>}
                     </div>
                     {CTA_TYPES.has(a.type) && (
-                      <Button view="primary" size={32} onClick={() => setDraft({ type: a.type as ActionDraft['type'], productId: a.product_id, reason: firstWhy })}>
+                      <Button view="primary" size={32} onClick={() => openDraft(a.type, a.product_id)}>
                         Оформить
                       </Button>
                     )}
@@ -326,46 +308,39 @@ export function InsightPage() {
                 ))}
               </ul>
               {ctaActions.length === 0 && otherActions.length > 0 && (
-                <p className="muted small">Банковский продукт здесь не предлагаем: действие не требует участия банка.</p>
+                <p className="text-[13px] text-ink-2">Банковский продукт здесь не предлагаем: действие не требует участия банка.</p>
               )}
-            </section>
+            </Block>
 
-            {/* 5. Позиция банка */}
-            <section className="card card--pad block block--bank" id="bank">
-              <h2 className="block__title">
-                <span className="block__num block__num--bank">5</span> Позиция Альфа-Банка
-              </h2>
-              <p className="muted">{COVERAGE[ins.bank_view.coverage] ?? ins.bank_view.coverage}</p>
+            <Block id="bank" num={5} title="Позиция Альфа-Банка" bank>
+              <p className="text-ink-2">{COVERAGE[ins.bank_view.coverage] ?? ins.bank_view.coverage}</p>
               {ins.bank_view.model_disagrees_with_bank && (
-                <div className="note note--warning">
+                <Note tone="warning">
                   <ExclamationCircleMIcon width={20} height={20} />
                   <span>
-                    <b>Вывод модели расходится с позицией банка.</b> {ins.bank_view.disagreement_note} Это вывод AI, а не официальная позиция
-                    Альфа-Банка.
+                    <b>Вывод модели расходится с позицией банка.</b> {ins.bank_view.disagreement_note} Это вывод AI, а не официальная позиция Альфа-Банка.
                   </span>
-                </div>
+                </Note>
               )}
               {ins.bank_view.positions.map((p, i) => (
-                <figure key={i} className="bank-quote">
-                  <p className="bank-quote__text">{p.text}</p>
-                  {p.quote && <blockquote>«{p.quote}»</blockquote>}
+                <figure key={i} className="my-3 rounded-xl bg-[#fff7f6] px-4 py-3.5">
+                  <p className="font-medium">{p.text}</p>
+                  {p.quote && <blockquote className="my-2 border-l-[3px] border-accent pl-3 text-ink-2 italic">«{p.quote}»</blockquote>}
                   <figcaption>
                     <SourceRefs ids={[p.source_ref]} />
                   </figcaption>
                 </figure>
               ))}
-              {ins.bank_view.positions.length === 0 && <p className="muted small">Материалов аналитики банка по этому событию нет — выводы ниже сделаны без опоры на них.</p>}
-            </section>
+              {ins.bank_view.positions.length === 0 && (
+                <p className="text-[13px] text-ink-2">Материалов аналитики банка по этому событию нет — выводы ниже сделаны без опоры на них.</p>
+              )}
+            </Block>
 
-            {/* 6. На чём основан вывод */}
-            <section className="card card--pad block" id="basis">
-              <h2 className="block__title">
-                <span className="block__num">6</span> На чём основан вывод
-              </h2>
-              <div className="kinds-legend">
+            <Block id="basis" num={6} title="На чём основан вывод">
+              <div className="mb-2 flex flex-wrap gap-x-4 gap-y-2 rounded-xl bg-muted px-3 py-2.5">
                 {KIND_ORDER.map((k) => (
                   <span key={k}>
-                    <KindBadge kind={k} /> <span className="muted small">{STATEMENT_KIND[k].hint}</span>
+                    <KindBadge kind={k} /> <span className="text-[13px] text-ink-2">{STATEMENT_KIND[k].hint}</span>
                   </span>
                 ))}
               </div>
@@ -373,64 +348,54 @@ export function InsightPage() {
                 const list = ins.statements.filter((s) => s.kind === kind);
                 if (!list.length) return null;
                 return (
-                  <div key={kind} className="statements-group">
+                  <div key={kind} className="mt-2">
                     {list.map((s) => (
-                      <div key={s.id} className="statement">
-                        <KindBadge kind={s.kind} demo={isDemoStatement(s, ins.sources)} />
-                        <span>
-                          {s.text} <SourceRefs ids={s.source_refs} />
-                          <span className="statement__conf" title="Уверенность">
-                            {Math.round(s.confidence * 100)}%
-                          </span>
+                      <StatementRow key={s.id} kind={s.kind} demo={demo(s)}>
+                        {s.text} <SourceRefs ids={s.source_refs} />
+                        <span className="ml-1.5 text-xs text-ink-3" title="Уверенность">
+                          {Math.round(s.confidence * 100)}%
                         </span>
-                      </div>
+                      </StatementRow>
                     ))}
                   </div>
                 );
               })}
-              <h3 className="block__sub">Источники</h3>
+              <SubTitle>Источники</SubTitle>
               <SourceList sources={ins.sources} />
               <RelevanceBreakdown breakdown={ins.relevance.breakdown} score={ins.relevance.score} />
               {traceQ.data && <TracePanel trace={traceQ.data} />}
-              <p className="muted small">
+              <p className="text-[13px] text-ink-2">
                 Модели: {ins.models_used.map((m) => `${m.name} (${m.purpose})`).join(', ')} · сформировано {formatDate(ins.generated_at, true)} · актуально до{' '}
                 {formatDate(ins.expires_at)}
               </p>
-            </section>
+            </Block>
 
-            {/* Вопрос к аналитике */}
-            <section className="card card--pad block" id="ask">
-              <h2 className="block__title">Уточнить сценарий</h2>
+            <Block id="ask" title="Уточнить сценарий">
               <AskPanel insightId={data.insight_id} companyId={data.company_id} suggestions={suggestions} />
-            </section>
+            </Block>
 
             <Disclaimers items={ins.disclaimers} />
           </div>
 
-          <aside className="insight-aside">
-            <div className="card card--pad aside-card">
-              <div className="aside-card__label">Влияние на компанию</div>
+          <aside className="flex flex-col gap-3 xl:sticky xl:top-[88px]">
+            <div className="card flex flex-col gap-2.5 p-6">
+              <div className="label-caps mt-1">Влияние на компанию</div>
               <ImpactMeter level={ins.impact.level} score={ins.impact.score} />
-              <div className="aside-card__why">{firstWhy}</div>
-              <div className="aside-card__label">Следующий шаг</div>
+              <div className="text-sm text-ink-2">{firstWhy}</div>
+              <div className="label-caps mt-1">Следующий шаг</div>
               {ctaActions.slice(0, 1).map((a, i) => (
-                <Button key={i} view="accent" size={48} block onClick={() => setDraft({ type: a.type as ActionDraft['type'], productId: a.product_id, reason: firstWhy })}>
+                <Button key={i} view="accent" size={48} block onClick={() => openDraft(a.type, a.product_id)}>
                   {ACTION_TYPES[a.type]}
                 </Button>
               ))}
-              <Button
-                view="secondary"
-                size={48}
-                block
-                onClick={() => setDraft({ type: 'callback', productId: null, reason: firstWhy })}
-              >
+              <Button view="secondary" size={48} block onClick={() => openDraft('callback', null)}>
                 Заказать звонок
               </Button>
               <Button view="secondary" size={48} block onClick={() => document.getElementById('ask')?.scrollIntoView({ behavior: 'smooth' })}>
                 Задать вопрос
               </Button>
             </div>
-            <div className="card card--pad aside-card">
+            <div className="card p-6">
               <FeedbackPanel insightId={data.insight_id} hidden={st.hidden} />
             </div>
           </aside>
@@ -442,25 +407,33 @@ export function InsightPage() {
   );
 }
 
-function ConsequenceItem({
-  c,
-  statementsById,
-  sources,
+function ConsequenceColumn({
+  title,
+  tone,
+  empty,
+  items,
+  refBadges,
 }: {
-  c: InsightBody['consequences']['risks'][number];
-  statementsById: Record<string, InsightBody['statements'][number]>;
-  sources: InsightBody['sources'];
+  title: string;
+  tone: 'risk' | 'opp';
+  empty: string;
+  items: InsightBody['consequences']['risks'];
+  refBadges: (refs: string[]) => ReactNode;
 }) {
   return (
-    <div className="conseq__item">
-      <p>{c.text}</p>
-      <div className="conseq__meta">
-        {c.horizon && <span className="pill pill--grey">Горизонт: {HORIZON[c.horizon] ?? c.horizon}</span>}
-        {c.statement_refs.map(
-          (sid) => statementsById[sid] && <KindBadge key={sid} kind={statementsById[sid].kind} demo={isDemoStatement(statementsById[sid], sources)} />,
-        )}
-      </div>
-      {c.drivers.length > 0 && <p className="muted small">Что повлияет: {c.drivers.join(', ')}</p>}
+    <div className={cn('rounded-xl px-4 py-3.5', tone === 'risk' ? 'bg-neg-soft' : 'bg-[#f1fbf3]')}>
+      <h3 className={cn('mb-2 text-[15px]', tone === 'risk' ? 'text-neg' : 'text-pos')}>{title}</h3>
+      {items.length === 0 && <p className="text-[13px] text-ink-2">{empty}</p>}
+      {items.map((c, i) => (
+        <div key={i} className="border-black/6 [&+&]:mt-3 [&+&]:border-t [&+&]:pt-3">
+          <p>{c.text}</p>
+          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+            {c.horizon && <Pill>Горизонт: {HORIZON[c.horizon] ?? c.horizon}</Pill>}
+            {refBadges(c.statement_refs)}
+          </div>
+          {c.drivers.length > 0 && <p className="text-[13px] text-ink-2">Что повлияет: {c.drivers.join(', ')}</p>}
+        </div>
+      ))}
     </div>
   );
 }
