@@ -6,13 +6,15 @@ x-test-env: &test-env
   APP_ENV: test
   DATA_DIR: data/synthetic
   NEWS_FIXTURES_ENABLED: "true"
-  NEWS_LIVE_SOURCES_ENABLED: "false"
+  NEWS_LIVE_SOURCES_ENABLED: "true"   # only the e2e catalog above: nothing leaves the stack
   INSIGHT_GENERATOR: stub
   EMBEDDING_PROVIDER: fake
   OCR_PROVIDER: fake
   LLM_BASE_URL: ""
   LLM_API_KEY: ""
   LLM_PROVIDER: fake                 # deterministic answers through the real gateway path
+  LLM_DAILY_BUDGET_RUB: "0.3"        # small: scenario 11 spends it and checks the degradation
+  NEWS_SOURCES_PATH: data/synthetic/news/e2e_sources.json  # primary on .invalid + local reserve (scenario 11)
 
 services:
   postgres:

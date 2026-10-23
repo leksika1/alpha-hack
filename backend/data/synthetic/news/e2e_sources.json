@@ -1,0 +1,22 @@
+{
+  "_comment": "Каталог источников только для e2e (SPEC §11.2 №11 «источник down → резерв»): основной RSS на несуществующем домене .invalid (запросы никуда не уходят), резерв — локальный файл с синтетическими новостями.",
+  "sources": [
+    {
+      "id": "e2e_primary_down",
+      "name": "E2E: недоступный основной источник",
+      "kind": "rss",
+      "url": "http://news-primary.invalid/rss.xml",
+      "priority": 1,
+      "topics": ["e2e"]
+    },
+    {
+      "id": "e2e_reserve",
+      "name": "E2E: резервный источник (синтетика)",
+      "kind": "fixture",
+      "url": "data/synthetic/news/e2e_reserve_news.json",
+      "priority": 2,
+      "fallback_for": "e2e_primary_down",
+      "topics": ["e2e"]
+    }
+  ]
+}

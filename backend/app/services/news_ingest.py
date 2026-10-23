@@ -16,10 +16,11 @@ from typing import Any
 from app.core.s3 import ObjectStore, S3ObjectStore
 from app.integrations.news.connectors import SourceInfo, connector_for
 from app.integrations.news.http import FetchResult, PoliteFetcher
-from app.services.news_store import FIXTURE_SOURCE_ID, StoreResult, store_news
+from app.services.news_store import FIXTURE_SOURCE_ID, StoreResult, ensure_source, store_news
 
 HEALTHY_OUTCOMES = {"ok", "not_modified", "unchanged"}
-__all__ = ["ObjectStore", "S3ObjectStore", "poll", "reprocess_raw", "sync_sources"]
+__all__ = ["ObjectStore", "S3ObjectStore", "ingest_manual", "poll", "reprocess_raw", "sync_sources"]
+MANUAL_SOURCE_ID = "manual"
 
 
 @dataclass
@@ -266,5 +267,24 @@ async def reprocess_raw(
         body = await asyncio.to_thread(store.get, row["s3_key"])
         n_items, stored = await process_raw(conn, row, row["raw_id"], body, now)
         result.sources.append(SourceRun(row["id"], "reprocessed", n_items=n_items, n_new=stored.inserted))
+        result.merge(stored)
+    return result
+
+
+async def ingest_manual(
+    conn: Any, store: ObjectStore, items: list[dict[str, Any]], now: datetime | None = None
+) -> PollResult:
+    """News submitted by hand go through the same steps as a polled feed: raw JSON to S3, parse, dedup,
+    clustering, source health. The manual source is never polled itself (enabled = false)."""
+    now = now or datetime.now(UTC)
+    await ensure_source(conn, MANUAL_SOURCE_ID, "Ручной ввод (аналитики банка)", "manual", None, False)
+    await conn.execute("UPDATE core.sources SET enabled = false WHERE id = $1", MANUAL_SOURCE_ID)
+    src = await conn.fetchrow("SELECT * FROM core.sources WHERE id = $1", MANUAL_SOURCE_ID)
+    body = json.dumps({"items": items}, ensure_ascii=False, default=str).encode()
+    fetch = FetchResult("manual", "ok", 200, body, "application/json")
+    result = PollResult()
+    run, stored = await _handle(conn, store, src, fetch, now, failures_to_down=3)
+    result.sources.append(run)
+    if stored is not None:
         result.merge(stored)
     return result

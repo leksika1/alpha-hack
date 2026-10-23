@@ -623,3 +623,26 @@ async def test_admin_operations(env: dict[str, Any]) -> None:
     )
     assert regen.status_code == 202 and regen.json()["candidates"] > 0
     assert len(env["stats"]) == before + 1  # app.state.enqueue ran the generation
+
+
+async def test_admin_manual_news_goes_through_the_pipeline(env: dict[str, Any]) -> None:
+    c = env["client"]
+    ah = await admin_headers(c)
+    news = {
+        "title": "ЕС ввёл новые санкции против российских производителей стального проката",
+        "body": "Под ограничения попали поставки арматуры, сортового проката и стали из России; "
+        "металлурги ждут сокращения экспорта.",
+    }
+    before = len(env["stats"])
+    first = (await c.post("/api/v1/admin/news", headers=ah, json={"items": [news]})).json()
+    assert first["outcome"] == "ok" and first["new"] == 1 and first["urgent_events"], first
+    assert METALS in first["companies_queued"] and len(env["stats"]) == before + 1
+    again = (await c.post("/api/v1/admin/news", headers=ah, json={"items": [news]})).json()
+    assert again["outcome"] == "unchanged" and again["new"] == 0  # same body: stored once
+    async with pg_connection(env["url"]) as conn:
+        src = await conn.fetchrow("SELECT enabled, kind, health_status FROM core.sources WHERE id = 'manual'")
+        raw = await conn.fetchval("SELECT count(*) FROM core.news_raw WHERE source_id = 'manual'")
+    state = (src["enabled"], src["kind"], src["health_status"])
+    assert state == (False, "manual", "healthy") and raw == 2
+    h = await login(c)
+    assert (await c.post("/api/v1/admin/news", headers=h, json={"items": [news]})).status_code == 403

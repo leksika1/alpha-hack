@@ -115,7 +115,33 @@ class FixtureConnector:
         return fixture_drafts(json.loads(raw.decode("utf-8")), now)
 
 
-CONNECTORS: dict[str, NewsConnector] = {c.kind: c for c in (RssConnector(), FixtureConnector())}
+class ManualConnector:
+    """News submitted by bank analysts via the admin API (`POST /admin/news`): JSON `items[]` with absolute
+    `published_at`. Goes through the same pipeline as RSS (raw in S3, dedup, events, matching)."""
+
+    kind = "manual"
+
+    def parse(self, raw: bytes, source: SourceInfo, now: datetime) -> list[NewsDraft]:
+        data = json.loads(raw.decode("utf-8"))
+        drafts = []
+        for item in data["items"]:
+            published = datetime.fromisoformat(item["published_at"]) if item.get("published_at") else now
+            drafts.append(
+                NewsDraft(
+                    url=item.get("url") or f"https://manual.local/news/{item['id']}",
+                    title=html_to_text(item["title"])[:500],
+                    body=html_to_text(item["body"])[:MAX_BODY_CHARS],
+                    published_at=published if published.tzinfo else published.replace(tzinfo=UTC),
+                    publisher=item.get("publisher") or source.name,
+                    external_id=item["id"],
+                )
+            )
+        return drafts
+
+
+CONNECTORS: dict[str, NewsConnector] = {
+    c.kind: c for c in (RssConnector(), FixtureConnector(), ManualConnector())
+}
 
 
 def connector_for(kind: str) -> NewsConnector:
