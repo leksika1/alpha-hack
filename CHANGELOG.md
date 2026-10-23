@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Добавлено (фаза 8 — сдача)
+- README со сценарием проверки для жюри; `scripts/demo_check.py` проходит путь пользователя по API.
+- `docs/ARCHITECTURE.md`, `docs/API.md`, `docs/RUNBOOK.md`, `docs/REPORT.md`; live smoke (`make smoke-live`).
+
 ### Добавлено (фаза 7 — e2e)
 - Все 12 сценариев SPEC §11.2 в e2e; `docs/TESTING.md` с картой сценариев и тестов.
 - `POST /api/v1/admin/news` — ручной ввод новости (пресс-релиз, сообщение аналитика) через общий конвейер.

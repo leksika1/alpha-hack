@@ -24,7 +24,8 @@ cp .env.example .env
 docker compose up -d --build        # или: make up
 ```
 
-Через 1–2 минуты стенд готов. На Windows, если `make` нет, команды из `Makefile` запускаются как есть.
+Первая сборка образов — 5–10 минут; дальше стенд поднимается примерно за минуту, первые инсайты появляются через
+30–60 секунд после старта. На Windows, если `make` нет, команды из `Makefile` запускаются как есть.
 
 | Что | Где |
 |---|---|
@@ -145,7 +146,7 @@ CI (GitHub Actions) запускает lint, типы, unit, integration и e2e 
 | [`docs/METRICS.md`](docs/METRICS.md) · [`docs/TESTING.md`](docs/TESTING.md) | Метрики по CJM; тесты и сценарии |
 | [`docs/SECURITY.md`](docs/SECURITY.md) · [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Безопасность; эксплуатация и типовые ситуации |
 | [`docs/DATA.md`](docs/DATA.md) · [`docs/SOURCES.md`](docs/SOURCES.md) · [`docs/IMPACT_SCALE.md`](docs/IMPACT_SCALE.md) | Данные, источники новостей, шкала влияния |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) · [`docs/PROGRESS.md`](docs/PROGRESS.md) · [`CHANGELOG.md`](CHANGELOG.md) | Решения (ADR), прогресс, изменения |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) · [`docs/PROGRESS.md`](docs/PROGRESS.md) · [`docs/REPORT.md`](docs/REPORT.md) · [`CHANGELOG.md`](CHANGELOG.md) | Решения (ADR), прогресс, итоговый отчёт, изменения |
 | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) | Лицензии зависимостей и моделей |
 
 Известные ограничения — [`docs/SPEC.md` §16](docs/SPEC.md).
