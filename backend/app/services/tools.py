@@ -5,7 +5,10 @@ Responses follow the contract component schemas. News texts are returned as untr
 """
 
 import json
+from datetime import date
 from typing import Any
+
+from app.services.analytics_search import QueryEmbedder, hybrid_search
 
 SECTION_PREFIXES: dict[str, tuple[str, ...]] = {
     "identity": (
@@ -267,12 +270,20 @@ async def search_news(conn: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-async def search_bank_analytics(conn: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
-    """Phase 4 adds the analytics pipeline (OCR -> chunks -> pgvector + tsvector). Until then: no hits."""
-    exists = await conn.fetchval("SELECT to_regclass('core.analytics_chunks') IS NOT NULL")
-    if not exists:
-        return []
-    return []
+async def search_bank_analytics(
+    conn: Any, args: dict[str, Any], embedder: QueryEmbedder
+) -> list[dict[str, Any]]:
+    """Hybrid RAG over bank analytics with quotes and pages (app/services/analytics_search.py)."""
+    date_from = args.get("date_from")
+    return await hybrid_search(
+        conn,
+        embedder,
+        str(args["query"])[:500],
+        limit=min(int(args.get("limit", 6)), 20),
+        date_from=date.fromisoformat(date_from) if date_from else None,
+        tags=list(args.get("tags") or []),
+        document_ids=[str(d) for d in args.get("document_ids") or []],
+    )
 
 
 async def bank_products(conn: Any, tags: list[str]) -> list[dict[str, Any]]:

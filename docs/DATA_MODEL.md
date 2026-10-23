@@ -148,3 +148,13 @@ erDiagram
 | `core.news_items` | `id`, uq `canonical_url` | нормализованная новость: заголовок, лид (без строк с prompt injection), текст, дата, хэш текста, теги тегера, флаги (`suspected_prompt_injection`), `raw_id` |
 | `core.events` | `id`, uq `cluster_key` | событие (кластер новостей): тип, направление, срочность и её причины, объединённые теги (GIN), первое и последнее упоминание, число новостей |
 | `core.event_news` | (`event_id`, `news_id`) | состав события |
+
+## Аналитика банка (фаза 4, ADR-024)
+
+| Таблица | Ключ | Содержание |
+|---|---|---|
+| `core.analytics_documents` | `id`, uq `sha256` | PDF-материал: имя файла, ключ в S3 (`analytics/<sha256>.pdf`), название, дата (`doc_date`), темы (`topics`, GIN), происхождение (`organizers`, `synthetic`, `upload`), число страниц, метод извлечения (`text_layer`, `ocr_tesseract`, `mixed`), средняя уверенность OCR, статус (`processing`, `ready`, `failed`) и ошибка, модель эмбеддингов |
+| `core.analytics_pages` | (`document_id`, `page`) | текст страницы, метод и уверенность извлечения, число символов — повторная нарезка без OCR |
+| `core.analytics_chunks` | `id` | фрагмент: страница, порядковый номер, раздел, текст; `tsv` — generated `to_tsvector('russian', section ‖ text)` (GIN); `embedding vector(384)` (HNSW, `vector_cosine_ops`) |
+
+Удаление документа каскадно удаляет страницы и фрагменты. Кэш OCR в S3: `analytics/ocr/<sha256>/<page>.<метод>.json`.

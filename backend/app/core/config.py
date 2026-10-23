@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     ml_service_token: SecretStr = SecretStr("change-me-ml-token")
     insight_generator: Literal["stub", "remote", "fake"] = "stub"
     embedding_provider: Literal["fake", "local", "remote"] = "fake"
-    embedding_model: str = "intfloat/multilingual-e5-small"
+    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     embedding_dim: int = 384
     embedding_remote_url: str | None = None
     scorer_provider: Literal["baseline", "remote", "fake"] = "baseline"

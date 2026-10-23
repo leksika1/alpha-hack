@@ -6,6 +6,9 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from app.core.config import Settings
+from app.services.analytics_docs import chunk_link
+
 STATE_COLUMNS = {
     "open": ("opened_at", "now()"),
     "hide": ("hidden_at", "now()"),
@@ -80,7 +83,9 @@ async def log_action(
     )
 
 
-async def resolve_source(conn: Any, insight: Any, source_id: str) -> dict[str, Any] | None:
+async def resolve_source(
+    conn: Any, insight: Any, source_id: str, settings: Settings
+) -> dict[str, Any] | None:
     payload = json.loads(insight["payload"])
     src = next((s for s in payload.get("sources", []) if s["id"] == source_id), None)
     if src is None:
@@ -88,10 +93,14 @@ async def resolve_source(conn: Any, insight: Any, source_id: str) -> dict[str, A
     note = None
     url = src.get("url")
     if src["type"] == "bank_analytics":
-        url = None
-        note = (
-            "Ссылка на страницу PDF аналитики формируется через /analytics/documents/{id}/download (фаза 4)."
-        )
+        link = await chunk_link(conn, settings, src["ref_id"]) if src.get("ref_id") else None
+        url = link["url"] if link else None
+        if link is None:
+            note = "Материал аналитики больше недоступен."
+        elif link["title"].startswith("ДЕМО"):
+            note = "Временная ссылка на страницу демо-PDF (синтетика, не аналитика Альфа-Банка), 15 минут."
+        else:
+            note = "Временная ссылка на страницу PDF аналитики Альфа-Банка (действует 15 минут)."
     elif src["type"] == "company_data":
         url = f"/api/v1/companies/{insight['company_id']}/profile"
     elif src["type"] == "news" and src.get("ref_id"):

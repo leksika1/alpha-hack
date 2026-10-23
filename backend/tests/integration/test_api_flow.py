@@ -15,6 +15,7 @@ from app.core.pg import pg_connection
 from app.core.security import issue_run_token
 from app.integrations.generators import get_generator
 from app.main import create_app
+from app.services.analytics_run import run_analytics_ingest
 from app.services.generation import generate_pending
 from app.services.ingest_companies import ingest_companies
 from app.services.seed import DEMO_PASSWORD, seed_demo
@@ -43,6 +44,7 @@ async def env(infra: dict[str, str]) -> AsyncIterator[dict[str, Any]]:
     app.state.enqueue = enqueue
     async with pg_connection(infra["DATABASE_URL"]) as conn:
         await ingest_companies(conn, SYNTH, REF)
+        await run_analytics_ingest(conn, settings, SYNTH / "analytics", "synthetic")
         summary = await seed_demo(conn, settings, SYNTH, REF, ROOT)
     async with app.router.lifespan_context(app):
         await enqueue(summary["demo_companies"])
@@ -273,3 +275,31 @@ async def test_no_rejected_insights_and_runs_closed(env: dict[str, Any]) -> None
         assert await conn.fetchval("SELECT count(*) FROM core.insights_rejected") == 0
         open_runs = await conn.fetchval("SELECT count(*) FROM core.agent_runs WHERE finished_at IS NULL")
         assert open_runs == 0
+
+
+async def test_bank_analytics_source_links_to_pdf_page(env: dict[str, Any]) -> None:
+    c = env["client"]
+    h = await login(c)
+    for card in (await feed(c, h, METALS))["items"]:
+        full = (await c.get(f"/api/v1/insights/{card['insight_id']}", headers=h)).json()["insight"]
+        src = next((s for s in full["sources"] if s["type"] == "bank_analytics"), None)
+        if src:
+            break
+    else:
+        pytest.fail("no insight cites bank analytics")
+    assert src["ref_id"] and src["page"] >= 1 and "синтетика" in src["publisher"].lower()
+    resp = await c.post(
+        f"/api/v1/insights/{card['insight_id']}/source-click", headers=h, json={"source_id": src["id"]}
+    )
+    body = resp.json()
+    assert resp.status_code == 200 and body["url"].endswith(f"#page={src['page']}"), body
+    assert "не аналитика Альфа-Банка" in body["note"]
+    docs = (await c.get("/api/v1/analytics/documents", headers=h)).json()
+    assert {d["file_name"] for d in docs} >= {"demo_key_rate_outlook.pdf", "demo_steel_market.pdf"}
+    doc_id = docs[0]["document_id"]
+    dl = await c.get(f"/api/v1/analytics/documents/{doc_id}/download", headers=h, params={"page": 1})
+    assert dl.status_code == 200 and dl.json()["url"].endswith("#page=1")
+    assert (
+        await c.get(f"/api/v1/analytics/documents/{doc_id}/download", headers=h, params={"page": 999})
+    ).status_code == 422
+    assert (await c.get("/api/v1/analytics/documents")).status_code == 401

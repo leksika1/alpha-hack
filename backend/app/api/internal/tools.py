@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.deps import Conn, RunScope, Scope, SettingsDep
 from app.core.errors import ProblemError, problem_body
+from app.integrations.embeddings import get_embedder
 from app.services import tools as svc
 from app.services.generation import add_step
 
@@ -156,7 +157,11 @@ async def search_bank_analytics(
     async def run() -> tuple[int, Any]:
         if not str(args.get("query", "")).strip():
             raise ProblemError(422, "validation", "query is required")
-        return 200, {"hits": await svc.search_bank_analytics(conn, args)}
+        try:
+            hits = await svc.search_bank_analytics(conn, args, get_embedder(settings))
+        except ValueError as exc:
+            raise ProblemError(422, "validation", "Invalid filter", str(exc)) from exc
+        return 200, {"hits": hits}
 
     return await _run_tool(conn, scope, "search_bank_analytics", args, settings.tool_calls_per_run, run)
 

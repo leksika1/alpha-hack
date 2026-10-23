@@ -79,3 +79,17 @@ def test_scenario_7_callback_goes_to_mock_crm(api: httpx.Client, auth: dict[str,
 
 def test_scenario_11_foreign_company_is_forbidden(api: httpx.Client, auth: dict[str, str]) -> None:
     assert api.get(f"/api/v1/companies/{AGRO}/profile", headers=auth).status_code == 403
+
+
+def test_bank_analytics_indexed_and_cited(api: httpx.Client, auth: dict[str, str]) -> None:
+    docs = api.get("/api/v1/analytics/documents", headers=auth).json()
+    assert len(docs) >= 2 and all(d["chunks"] > 0 for d in docs), docs
+    link = api.get(
+        f"/api/v1/analytics/documents/{docs[0]['document_id']}/download", headers=auth, params={"page": 1}
+    ).json()
+    assert link["url"].endswith("#page=1")
+    cited = []
+    for card in wait_feed(api, auth, METALS)[:5]:
+        full = api.get(f"/api/v1/insights/{card['insight_id']}", headers=auth).json()["insight"]
+        cited += [s for s in full["sources"] if s["type"] == "bank_analytics"]
+    assert cited and all(s["page"] and s["ref_id"] for s in cited)
