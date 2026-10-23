@@ -145,16 +145,8 @@
 
 | Модель | Назначение | Лицензия / условия | Статус |
 |---|---|---|---|
-| `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (fastembed ONNX) | эмбеддинги аналитики банка (`EMBEDDING_PROVIDER=local`) | Apache-2.0 | выбор ML-команды (ml/docs/DECISIONS.md, ADR-ML-006); скачивается при первом запуске |
-| `rules@1`, `ml-ranker@1` (код `ml/`) | детерминированный аналитик и ранжировщик ML-сервиса | MIT (часть репозитория) | без внешних моделей |
+| модель эмбеддингов для `EMBEDDING_PROVIDER=local/remote` | эмбеддинги аналитики банка | по выбору ML-команды | бэкенд модель не поставляет; по умолчанию `fake` |
 | Gemma 4 26B A4B, GLM-5.3-Flash, Qwen3.6 35B A3B, DeepSeek-V4.1-Flash, Qwen3-VL-30B-A3B-Instruct, Kimi-K2.6 | генеративные LLM — только через LLM Gateway | условия провайдера организаторов кейса | белый список (кейс, прил. 3) |
-
-### ML-сервис (`ml/uv.lock`)
-
-ML-сервис использует подмножество тех же пакетов (fastapi, uvicorn, httpx, pydantic, jsonschema, structlog;
-для разработки — pytest, pytest-asyncio, ruff, mypy; для EDA — pandas, pyarrow). Версии — `ml/uv.lock`.
-Идеи кластеризации и документирования критериев взяты из открытых репозиториев финала PROD-2026
-(BrandRadar, `github.com/Central-University-IT-prod`); код не копировался.
 
 ## Датасеты
 

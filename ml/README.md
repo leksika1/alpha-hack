@@ -8,6 +8,7 @@
 |---|---|
 | Архитектура агента, шаги, трассировка | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | Решения и альтернативы (ADR) | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
+| Сторонние модели и библиотеки | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
 | Критерии кейса → где это в коде | [`docs/CRITERIA.md`](docs/CRITERIA.md) |
 | Метрики, мониторинг, деградация, бюджет | [`docs/QUALITY.md`](docs/QUALITY.md) |
 | Офлайн-оценка (ранжирование, качество инсайтов) | [`reports/eval.md`](reports/eval.md), [`reports/real_profiles.md`](reports/real_profiles.md) |
