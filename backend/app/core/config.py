@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     embedding_dim: int = 384
     embedding_remote_url: str | None = None
+    embedding_remote_key: SecretStr | None = None
     scorer_provider: Literal["baseline", "remote", "fake"] = "baseline"
     ocr_provider: Literal["tesseract", "vlm", "fake"] = "tesseract"
 
