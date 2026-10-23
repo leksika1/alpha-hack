@@ -12,7 +12,11 @@
 docker compose up -d --build
 ```
 
-Интерфейс — http://localhost:3000 (порт — `FRONTEND_PORT`), `/api` проксируется на сервис `api`.
+Интерфейс — http://localhost:3000 (порт — `FRONTEND_PORT`), `/api` проксируется на бэкенд.
+
+Compose фронтенда — `frontend/docker-compose.yml` (сервис Dokploy, без портов) и `frontend/docker-compose.override.yml`
+(порт для локального запуска); корневой `docker-compose.yml` подключает оба. Адрес бэкенда для nginx —
+`BACKEND_UPSTREAM` (`http://${BACKEND_ALIAS}:8000`). Деплой — `docs/RUNBOOK.md`, «Деплой» (ADR-032).
 
 Для разработки (нужен Node 20+ и запущенный бэкенд на `http://localhost:8000`):
 

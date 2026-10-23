@@ -14,7 +14,8 @@
 и интерфейсы `EmbeddingProvider` / `RelevanceScorer` / `InsightGenerator` (`fake` / `baseline` / `remote`).
 
 - Репозиторий разделён: **`backend/`** — наша зона; `ml/` — команда ML; `frontend/` — команда фронтенда
-  (их **не трогать**, кроме README-указателей). Общие: `contracts/`, `docs/`, `docker-compose*.yml`, `Makefile`, CI.
+  (их **не трогать**, кроме README-указателей). Общие: `contracts/`, `docs/`, корневой `docker-compose.yml` (только `include` частей), `Makefile`, CI.
+  Compose каждой части лежит в её папке (`<часть>/docker-compose.yml` + `.override.yml`, ADR-032).
 - Пути к коду в документации (`app/...`, `scripts/...`, `tests/...`) — относительно `backend/`.
 - `contracts/` меняются **только** через ADR в `docs/DECISIONS.md` + `contracts/CHANGELOG.md` + bump `schema_version`.
 - Пограничная задача (например, классификация новостей) → baseline на правилах за интерфейсом + ADR «ML может заменить».

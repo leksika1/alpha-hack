@@ -39,6 +39,69 @@
 5. Новости: опрашиваются планировщиком каждые `NEWS_POLL_INTERVAL_MIN` минут. Сразу — `make ingest-news` или
    `POST /api/v1/admin/ingest/news`. Ручная новость — `POST /api/v1/admin/news`.
 
+## Деплой (Dokploy)
+
+Схема (ADR-032): каждая часть — отдельный Compose-сервис Dokploy из своего файла; корневой `docker-compose.yml`
+в Dokploy не используется — это весь стек для локального запуска и CI. Два окружения: prod — ветка `main`,
+dev — ветка `dev`; в каждом свои сервисы.
+
+| Сервис | Compose Path | Что поднимает | Domains |
+|---|---|---|---|
+| **Backend** | `./backend/docker-compose.yml` | api, worker, scheduler, ml-stub, migrate, seed, Postgres, Redis, MinIO | необязательно: домен API → `api`, порт `8000` |
+| **Frontend** | `./frontend/docker-compose.yml` | nginx с фронтендом, `/api` → бэкенд | домен → `frontend`, порт `80` |
+| **ML** | `./ml/docker-compose.yml` | ML-сервис команды ML (агент, чат, ранжирование) | не нужен |
+
+```
+Интернет → Traefik → frontend ──dokploy-network──▶ api (BACKEND_ALIAS) ◀──▶ ML (ML_ALIAS)
+                                                     └─ сеть проекта Backend: Postgres, Redis, MinIO
+```
+
+Compose-файлы частей по умолчанию настроены на Dokploy (сеть `dokploy-network`), как в VTB-Hack: в Environment
+только алиас и секреты. Секреты — `openssl rand -hex 32`, у prod и dev разные.
+
+**Backend → Environment**
+
+```
+BACKEND_ALIAS=alfa-backend-prod       # в dev: alfa-backend-dev
+ML_ALIAS=alfa-ml-prod                 # в dev: alfa-ml-dev; бэкенд зовёт ML по нему
+APP_ENV=prod                          # с dev-секретами из .env.example сервис не стартует
+JWT_SECRET=<openssl rand -hex 32>
+SERVICE_TOKEN=<openssl rand -hex 32>
+ML_SERVICE_TOKEN=<openssl rand -hex 32>   # такой же — в сервисе ML
+POSTGRES_PASSWORD=<openssl rand -hex 32>
+MINIO_ROOT_PASSWORD=<openssl rand -hex 32>
+# когда выданы ключи LLM (без них ML работает на правилах rules@1): LLM_BASE_URL, LLM_API_KEY, LLM_MODEL_MAP
+```
+
+**Frontend → Environment**
+
+```
+BACKEND_ALIAS=alfa-backend-prod       # то же, что у Backend этого окружения
+```
+
+**ML → Environment**
+
+```
+ML_ALIAS=alfa-ml-prod                 # то же, что у Backend этого окружения
+ML_SERVICE_TOKEN=<как у Backend>
+```
+
+Адреса Tools API и LLM Gateway бэкенд передаёт ML в каждом запросе (`http://<BACKEND_ALIAS>:8000`), отдельно их
+задавать не нужно. Настройки агента (`ML_LLM_*`, `ML_MODEL_*`) — необязательные, см. `ml/README.md`.
+
+Порядок первого запуска: ML и Backend (миграции и seed), затем Frontend; до старта ML генерация ждёт его. Проверка: `https://<домен>/api/v1/...`
+через фронтенд или `/ready` на домене API.
+
+**Автодеплой** — задание CI `deploy` после зелёных тестов бэкенда, ML и сборки фронтенда на push в `main`/`dev`:
+1. Dokploy → каждый сервис: ветка своего окружения, **Auto Deploy включён** — без него Dokploy отклоняет вебхук
+   (отвечает 301); Deployments → Webhook URL.
+2. Источник сервиса — провайдер **Git** (URL репозитория), а не GitHub App: через приложение GitHub Dokploy
+   деплоит сам на каждый push, не дожидаясь тестов, и вместе с вебхуком CI деплой будет двойным.
+3. GitHub → Settings → Environments → `prod` и `dev` → секреты `DOKPLOY_WEBHOOK_BACKEND`, `DOKPLOY_WEBHOOK_ML`,
+   `DOKPLOY_WEBHOOK_FRONTEND` (вебхуки сервисов этого окружения).
+4. Часть без своего compose-файла не деплоится; для существующей части без секрета задание красное; успех — только
+   HTTP 200 (301 — у сервиса выключен Auto Deploy или другая ветка).
+
 ## Подключение внешних компонентов
 
 | Что | Настройка | После изменения |

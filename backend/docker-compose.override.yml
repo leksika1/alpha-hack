@@ -1,0 +1,14 @@
+# Local host ports for the backend stack. Not used in Dokploy (it deploys backend/docker-compose.yml alone).
+# Picked up by the root docker-compose.yml (include) and by a plain `docker compose up` in backend/.
+
+services:
+  postgres:
+    ports: ["${POSTGRES_PORT:-5432}:5432"]
+  redis:
+    ports: ["${REDIS_PORT:-6379}:6379"]
+  minio:
+    ports: ["${MINIO_PORT:-9000}:9000", "${MINIO_CONSOLE_PORT:-9001}:9001"]
+  api:
+    ports: ["${API_PORT:-8000}:8000"]
+  ml-stub:
+    ports: ["${ML_STUB_PORT:-8100}:8100"]
