@@ -1,24 +1,93 @@
-# ml — ML-сервис (зона команды ML)
+# ml — ML-сервис «Альфа-Аналитика» (зона команды ML)
 
-Здесь живёт ML-сервис: агент генерации инсайтов, ответы на вопросы, (опционально) ранжирование.
-Бэкенд эту папку не меняет.
+Агент, который превращает событие из новостей в персональный инсайт для конкретной компании и роли
+пользователя, отвечает на уточняющие вопросы и ранжирует ленту. Работает строго по контрактам
+[`../contracts/`](../contracts/README.md): бэкенд вызывает сервис, сервис ходит в Tools API и LLM Gateway бэкенда.
 
-## Что реализовать
+> **Что делать дальше (подключение LLM, бюджет, проверка, сдача) — [`NEXT_STEPS.md`](NEXT_STEPS.md).**
 
-Сервис по контракту [`../contracts/ml-service.openapi.yaml`](../contracts/ml-service.openapi.yaml):
-`GET /health`, `POST /v1/insights/generate`, `POST /v1/chat` (SSE), опционально `POST /v1/score`.
-Результат генерации — инсайт по [`../contracts/insight.schema.json`](../contracts/insight.schema.json).
+| Что | Где |
+|---|---|
+| Архитектура агента, шаги, трассировка | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
+| Решения и альтернативы (ADR) | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
+| Сторонние модели и библиотеки | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
+| Критерии кейса → где это в коде | [`docs/CRITERIA.md`](docs/CRITERIA.md) |
+| Метрики, мониторинг, деградация, бюджет | [`docs/QUALITY.md`](docs/QUALITY.md) |
+| Офлайн-оценка (ранжирование, качество инсайтов) | [`reports/eval.md`](reports/eval.md), [`reports/real_profiles.md`](reports/real_profiles.md) |
+| EDA данных организаторов для ML | [`reports/eda_ml.md`](reports/eda_ml.md) |
 
-## Что даёт бэкенд
+## Результаты офлайн-оценки (rules@1, без LLM)
 
-- Tools API (`/internal/tools/*`) — [`../contracts/tools-api.openapi.yaml`](../contracts/tools-api.openapi.yaml):
-  контекст компании, группа, контрагенты, новости и события, аналитика банка (RAG), продукты, `log_step` для трейса.
-- LLM Gateway (`/internal/llm/*`) — [`../contracts/llm-gateway.openapi.yaml`](../contracts/llm-gateway.openapi.yaml):
-  единственный доступ к LLM, только 6 моделей из белого списка.
-- Словарь признаков компании — [`../docs/DATA_MODEL.md`](../docs/DATA_MODEL.md); гайд — [`../docs/INTEGRATION_ML.md`](../docs/INTEGRATION_ML.md).
+| | baseline@1 бэкенда | ml-ranker@1 + отбор агента |
+|---|---|---|
+| nDCG@5 (CFO / CEO) | 0,909 / 0,760 | 0,917 / 0,880 |
+| Важные события в ленте (recall gold=2) | 1,00 | 1,00 |
+| Доля нерелевантного в ленте | 0,51 | 0,22 |
 
-## Подключение к общему стеку
+Инсайты: 100% проходят валидатор бэкенда, 100% утверждений со ссылкой на источник, 3,6 признака компании на
+инсайт, 100% с количественной оценкой. На 65 реальных клиентах: медиана 3 события из 15 в ленте, 0 ошибок.
+Порог подобран на том же наборе — подробности и ограничения в `reports/eval.md` и ADR-ML-005.
 
-Пока ML-сервиса нет, работает детерминированная заглушка `backend/ml_stub` с тем же контрактом.
-Чтобы подключить свой сервис: добавить его в `docker-compose.yml` и выставить `ML_SERVICE_URL=http://<сервис>:<порт>`,
-`INSIGHT_GENERATOR=remote`.
+## Эндпоинты (contracts/ml-service.openapi.yaml)
+
+| Метод | Назначение |
+|---|---|
+| `GET /health` | liveness |
+| `GET /v1/info` | версии промптов, модели, счётчики (для мониторинга) |
+| `POST /v1/insights/generate` | инсайт по `insight.schema.json` или `status: skipped` (идемпотентно по `request_id`) |
+| `POST /v1/chat` | ответ на вопрос (SSE: `step` / `token` / `source` / `done` / `error`) |
+| `POST /v1/score` | батч-перекалибровка baseline-скоров (опционально) |
+
+## Как устроен агент (кратко)
+
+```
+plan (правила + LLM-планировщик) → retrieval (контекст компании, событие, аналитика банка, новости,
+контрагенты, группа, продукты) → draft (LLM-аналитик или rules@1) → assemble (детерминированная сборка
+по контракту) → self_check (правила валидатора бэкенда + качество) → critic (LLM) → revise (до 2 раз) → final
+```
+
+- **Классификатор решает, LLM объясняет.** Подверженность компании событию считается детерминированно по
+  признакам `company_context` (продукты, ВЭД, отрасль, доли контрагентов, сырьё, регион). Она решает, показывать
+  ли событие (`skipped`), даёт оценку влияния (шкала v1) и релевантность (`ml-ranker@1`) и задаёт допустимые
+  `feature_refs`. LLM пишет текст и связывает факторы, но не может выдумать признак, источник или число.
+- **Сборщик владеет фактами контракта.** Ссылки на несуществующие источники и признаки удаляются, утверждение
+  «позиция банка» без фрагмента аналитики понижается до «вывода модели», цитата банка сверяется с текстом
+  фрагмента, числа берутся только из детерминированного расчёта.
+- **Без LLM сервис работает** (`rules@1`): нет ключа, кончился бюджет (429), провайдер упал, ответ не JSON —
+  пользователь получает обоснованный инсайт, а не ошибку.
+- **Каждый шаг в трассировке** (`log_step`): план, вызовы инструментов, LLM-вызовы с токенами, результаты
+  самопроверки и замечания сборщика, повторы, финал.
+
+## Запуск
+
+В общем стеке: `docker compose up -d --build` из корня — сервис `ml` (порт 8200) является генератором по умолчанию
+(`INSIGHT_GENERATOR=remote`, `ML_SERVICE_URL=http://ml:8200`). Вернуться на заглушку: `INSIGHT_GENERATOR=stub`,
+`ML_SERVICE_URL=http://ml-stub:8100`.
+
+Локально:
+
+```bash
+cd ml
+uv sync
+uv run uvicorn alfa_ml.main:app --port 8200
+uv run pytest            # тесты: фейковый Tools API/Gateway по contracts/examples + валидатор бэкенда
+uv run ruff check . && uv run mypy
+uv run python -m eval.run_eval                                   # офлайн-оценка (rules@1)
+uv run python -m eval.real_profiles --data-dir ../data/raw       # реальные профили (CSV организаторов)
+```
+
+Переменные окружения (все необязательны): `ML_SERVICE_TOKEN`, `ML_LLM_ENABLED`, `ML_LLM_PLANNER`,
+`ML_LLM_CRITIC`, `ML_MODEL_PLANNER|ANALYST|CRITIC|CHAT` (алиасы из `GET /internal/llm/models`),
+`ML_MAX_ITERATIONS` (1), `ML_SKIP_THRESHOLD` (0,35), `ML_LLM_MIN_SCORE` (0,5 — ниже пишет rules@1, экономия бюджета), `ML_LLM_TIMEOUT_S`, `CONTRACTS_DIR`. См. `../.env.example`.
+
+## Модели
+
+| Шаг | Модель по умолчанию | Почему |
+|---|---|---|
+| Планировщик | Gemma 4 26B A4B | короткий JSON-план, самая дешёвая из списка |
+| Аналитик (генерация) | Qwen3.6 35B A3B | хороший русский, JSON, MoE — дёшево |
+| Критик | GLM-5.3-Flash | другая модель, чем у аналитика: независимая проверка |
+| Чат | Qwen3.6 35B A3B | тот же стиль, что у инсайтов |
+| Эмбеддинги (RAG бэкенда) | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (fastembed, 384) | русский, без миграции размерности, без префиксов query/passage |
+
+Выбор подтверждается/меняется по результатам `eval.run_eval --llm-base-url …` после получения ключа (ADR-ML-004).

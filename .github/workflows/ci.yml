@@ -56,3 +56,24 @@ jobs:
       - name: E2E (docker compose, profile test; prints logs on failure)
         working-directory: .
         run: make e2e
+
+  ml:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: ml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install 3.12
+      - run: uv sync --frozen
+      - name: Lint
+        run: |
+          uv run ruff check alfa_ml tests eval scripts
+          uv run ruff format --check alfa_ml tests eval scripts
+      - name: Typecheck
+        run: uv run mypy
+      - name: Tests (agent, chat, contract checks by the backend validator)
+        run: uv run pytest -q
