@@ -35,9 +35,11 @@ class Settings(BaseModel):
     ml_model_chat: str = "qwen3.6-35b-a3b"
 
     # Agent budget per run (backend generate timeout is 60 s).
-    ml_max_iterations: int = Field(default=2, ge=0, le=4)
+    ml_max_iterations: int = Field(default=1, ge=0, le=4)
     ml_deadline_margin_ms: int = 6000
     ml_skip_threshold: float = 0.35
+    # budget guard: the LLM writes only insights that matter (pre-score >= this); the rest is rules@1
+    ml_llm_min_score: float = 0.5
     ml_max_news: int = 5
     ml_max_analytics_hits: int = 4
 
@@ -57,9 +59,10 @@ def get_settings() -> Settings:
         ml_model_analyst=_env("ML_MODEL_ANALYST", "qwen3.6-35b-a3b"),
         ml_model_critic=_env("ML_MODEL_CRITIC", "glm-5.3-flash"),
         ml_model_chat=_env("ML_MODEL_CHAT", "qwen3.6-35b-a3b"),
-        ml_max_iterations=int(_env("ML_MAX_ITERATIONS", "2")),
+        ml_max_iterations=int(_env("ML_MAX_ITERATIONS", "1")),
         ml_deadline_margin_ms=int(_env("ML_DEADLINE_MARGIN_MS", "6000")),
         ml_skip_threshold=float(_env("ML_SKIP_THRESHOLD", "0.35")),
+        ml_llm_min_score=float(_env("ML_LLM_MIN_SCORE", "0.5")),
         ml_max_news=int(_env("ML_MAX_NEWS", "5")),
         ml_max_analytics_hits=int(_env("ML_MAX_ANALYTICS_HITS", "4")),
     )

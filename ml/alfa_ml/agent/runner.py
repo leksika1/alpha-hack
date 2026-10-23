@@ -263,6 +263,15 @@ class Agent:
                     "skipped", skip_reason="unsafe_content", usage=self.usage(), trace=self.trace
                 )
 
+            if self.llm is not None and pre["score"] < self.s.ml_llm_min_score:
+                await self.step(
+                    "plan",
+                    "llm_budget_guard",
+                    "skipped",
+                    output_preview=f"pre-score {pre['score']} < {self.s.ml_llm_min_score}: rules@1 without LLM calls",
+                )
+                await self.llm.close()
+                self.llm = None
             if self.s.ml_llm_planner and self.llm_ok(30):
                 answer = await self.ask(
                     "planning", "planner", self.s.ml_model_planner, planner_message(ev, plan), 350, "llm_plan"
