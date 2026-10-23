@@ -16,9 +16,20 @@ from app.core.logging import configure_logging, get_logger
 
 _settings = get_settings()
 
-broker = ListQueueBroker(url=_settings.redis_url, queue_name="alfa-tasks").with_result_backend(
-    RedisAsyncResultBackend(redis_url=_settings.redis_url, result_ex_time=24 * 3600)
-)
+QUEUE_NAME = "alfa-tasks"
+
+
+def make_broker(redis_url: str, queue_name: str = QUEUE_NAME) -> ListQueueBroker:
+    """The worker waits for a task with BRPOP without a deadline. redis-py >= 8 reads with a 5 s socket
+    timeout by default, and taskiq-redis catches only ConnectionError: an idle worker process crashed every
+    few seconds and was restarted, taking the running task with it. No read timeout here; TCP keepalive
+    finds dead connections."""
+    broker = ListQueueBroker(url=redis_url, queue_name=queue_name, socket_timeout=None, socket_keepalive=True)
+    broker.with_result_backend(RedisAsyncResultBackend(redis_url=redis_url, result_ex_time=24 * 3600))
+    return broker
+
+
+broker = make_broker(_settings.redis_url)
 
 scheduler = TaskiqScheduler(broker=broker, sources=[LabelScheduleSource(broker)])
 
