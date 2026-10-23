@@ -4,6 +4,8 @@
 пользователя, отвечает на уточняющие вопросы и ранжирует ленту. Работает строго по контрактам
 [`../contracts/`](../contracts/README.md): бэкенд вызывает сервис, сервис ходит в Tools API и LLM Gateway бэкенда.
 
+> **Что делать дальше (подключение LLM, бюджет, проверка, сдача) — [`NEXT_STEPS.md`](NEXT_STEPS.md).**
+
 | Что | Где |
 |---|---|
 | Архитектура агента, шаги, трассировка | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
@@ -76,7 +78,7 @@ uv run python -m eval.real_profiles --data-dir ../data/raw       # реальн�
 
 Переменные окружения (все необязательны): `ML_SERVICE_TOKEN`, `ML_LLM_ENABLED`, `ML_LLM_PLANNER`,
 `ML_LLM_CRITIC`, `ML_MODEL_PLANNER|ANALYST|CRITIC|CHAT` (алиасы из `GET /internal/llm/models`),
-`ML_MAX_ITERATIONS`, `ML_SKIP_THRESHOLD`, `ML_LLM_TIMEOUT_S`, `CONTRACTS_DIR`. См. `../.env.example`.
+`ML_MAX_ITERATIONS` (1), `ML_SKIP_THRESHOLD` (0,35), `ML_LLM_MIN_SCORE` (0,5 — ниже пишет rules@1, экономия бюджета), `ML_LLM_TIMEOUT_S`, `CONTRACTS_DIR`. См. `../.env.example`.
 
 ## Модели
 

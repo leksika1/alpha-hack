@@ -195,7 +195,11 @@ async def test_llm_draft_is_sanitised(backend, backend_validator, llm_script: LL
     assert ins["impact"]["quantitative"]  # numbers come from the deterministic calculation
 
 
-async def test_critic_revision_round(backend, llm_script: LLMScript) -> None:  # type: ignore[no-untyped-def]
+async def test_critic_revision_round(backend, llm_script: LLMScript, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("ML_MAX_ITERATIONS", "2")
+    from alfa_ml.config import get_settings
+
+    get_settings.cache_clear()
     verdicts = iter(
         [
             {
@@ -248,3 +252,15 @@ async def test_trace_steps_written(backend) -> None:  # type: ignore[no-untyped-
     types = [s["step_type"] for s in backend]
     assert types[0] == "plan" and types[-1] == "final"
     assert "self_check" in types and "retrieval" in types
+
+
+async def test_budget_guard_uses_rules_for_background_events(
+    backend, llm_script: LLMScript, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("ML_LLM_MIN_SCORE", "0.99")
+    from alfa_ml.config import get_settings
+
+    get_settings.cache_clear()
+    res = await Agent(generate_request(RATE_EVENT["event_id"])).run()
+    assert res.status == "completed" and llm_script.calls == []
+    assert any(t["name"] == "llm_budget_guard" for t in res.trace)

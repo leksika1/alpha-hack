@@ -186,7 +186,8 @@ services:
       ML_MODEL_ANALYST: ${ML_MODEL_ANALYST:-qwen3.6-35b-a3b}
       ML_MODEL_CRITIC: ${ML_MODEL_CRITIC:-glm-5.3-flash}
       ML_MODEL_CHAT: ${ML_MODEL_CHAT:-qwen3.6-35b-a3b}
-      ML_MAX_ITERATIONS: ${ML_MAX_ITERATIONS:-2}
+      ML_MAX_ITERATIONS: ${ML_MAX_ITERATIONS:-1}
+      ML_LLM_MIN_SCORE: ${ML_LLM_MIN_SCORE:-0.5}
     ports: ["${ML_PORT:-8200}:8200"]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8200/health"]
