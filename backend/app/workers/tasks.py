@@ -8,6 +8,7 @@ import httpx
 from app.core.config import get_settings
 from app.core.pg import pg_connection
 from app.integrations.generators import get_generator
+from app.services.analytics_run import run_analytics_ingest
 from app.services.generation import generate_pending
 from app.services.news_run import run_news_collection
 from app.workers.broker import broker, log
@@ -69,3 +70,12 @@ async def poll_news_task(source_ids: list[str] | None = None) -> dict[str, objec
     summary = result.as_dict()
     log.info("news_poll_done", **{k: v for k, v in summary.items() if k != "sources"})
     return summary
+
+
+@broker.task(task_name="analytics.ingest")
+async def ingest_analytics_task(force: bool = False) -> list[dict[str, object]]:
+    """Ingest bank analytics PDFs (organizers' or synthetic); OCR results are cached in S3."""
+    settings = get_settings()
+    async with pg_connection() as conn:
+        outcomes = await run_analytics_ingest(conn, settings, force=force)
+    return [o.__dict__ for o in outcomes]

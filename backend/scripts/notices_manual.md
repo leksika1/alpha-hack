@@ -8,11 +8,17 @@
 | `pgsty/minio` (сборка MinIO от Pigsty, включает `mc`) | RELEASE.2026-08-04T00-00-00Z | AGPL-3.0 | S3-совместимое хранилище и создание бакетов (ADR-004) |
 | `tesseract-ocr`, `tesseract-ocr-rus` (Debian) | 5.x | Apache-2.0 | OCR аналитики банка (ADR-005) |
 
+## Шрифты
+
+| Шрифт | Лицензия | Назначение |
+|---|---|---|
+| Roboto Regular (`backend/data/reference/fonts/Roboto-Regular.ttf`, Google) | Apache-2.0 | генерация синтетических PDF-материалов (`make synthetic`) |
+
 ## Модели
 
 | Модель | Назначение | Лицензия / условия | Статус |
 |---|---|---|---|
-| `intfloat/multilingual-e5-small` (по умолчанию, ONNX через fastembed) | эмбеддинги новостей и аналитики | MIT | планируется (фаза 4), согласовать с ML |
+| `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (по умолчанию для `EMBEDDING_PROVIDER=local`, ONNX через fastembed, 384) | эмбеддинги аналитики банка | Apache-2.0 | используется с фазы 4; скачивается при первом запуске из Hugging Face |
 | Gemma 4 26B A4B, GLM-5.3-Flash, Qwen3.6 35B A3B, DeepSeek-V4.1-Flash, Qwen3-VL-30B-A3B-Instruct, Kimi-K2.6 | генеративные LLM — только через LLM Gateway | условия провайдера организаторов кейса | белый список (кейс, прил. 3) |
 
 ## Датасеты

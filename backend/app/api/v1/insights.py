@@ -103,7 +103,7 @@ async def source_click(
     insight_id: uuid.UUID, body: SourceClickIn, user: User, conn: Conn, settings: SettingsDep
 ) -> SourceClickOut:
     row, _ = await _load(conn, user, insight_id, settings)
-    src = await svc.resolve_source(conn, row, body.source_id)
+    src = await svc.resolve_source(conn, row, body.source_id, settings)
     if src is None:
         raise ProblemError(404, "not-found", "Source not found in this insight", body.source_id)
     await svc.log_action(

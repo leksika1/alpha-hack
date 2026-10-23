@@ -26,7 +26,8 @@
 | «На чём основано» / трассировка | `GET /insights/{id}/trace` |
 | Открыть/скрыть/сохранить | `POST /insights/{id}/state` |
 | Полезно/бесполезно | `POST /insights/{id}/feedback` |
-| Перейти к источнику | `POST /insights/{id}/source-click` → URL новости или presigned URL PDF с `#page=N` |
+| Перейти к источнику | `POST /insights/{id}/source-click` → URL новости или presigned URL PDF с `#page=N` (живёт 15 минут — запрашивать по клику, не кэшировать); `note` — показать подсказку |
+| Материалы аналитики | `GET /analytics/documents` (название, дата, темы, страницы, метод извлечения), `GET /analytics/documents/{id}/download?page=N` → presigned URL |
 | CTA (менеджер, звонок, заявка) | `POST /insights/{id}/actions` |
 | Вопрос к аналитике | `POST /insights/{id}/ask`, `POST /ask` (SSE) |
 | Профиль компании (что мы знаем, полнота) и анкета | `GET /companies/{id}/profile`, `PATCH /companies/{id}/profile` |
@@ -38,3 +39,5 @@
 `statements[].kind`: `fact` — «Факт», `bank_analytics` — «Аналитика Альфа-Банка», `model_inference` — «Вывод модели»,
 `hypothesis` — «Гипотеза». Если `bank_view.model_disagrees_with_bank = true` — показать предупреждение с `disagreement_note`.
 Дисклеймеры из `disclaimers[]` выводить всегда.
+Синтетические демо-материалы: название начинается с «ДЕМО (синтетика)», `sources[].publisher` — «Демо-материал (синтетика),
+не аналитика Альфа-Банка» — показывать как есть, не подменять на «Аналитика Альфа-Банка».

@@ -28,6 +28,7 @@ def _reset_caches() -> None:
     db_module.get_engine.cache_clear()
     db_module.get_sessionmaker.cache_clear()
     s3_module.get_s3_client.cache_clear()
+    s3_module.get_public_s3_client.cache_clear()
 
 
 @pytest.fixture(scope="session")

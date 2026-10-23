@@ -80,6 +80,19 @@ FINANCE_ROLES = {"cfo", "treasurer", "chief_accountant"}
 DISCLAIMER_TEXT = "Материал носит информационный характер и не является инвестиционной рекомендацией."
 
 
+def is_demo_material(hit: dict[str, Any]) -> bool:
+    return str(hit.get("doc_title", "")).startswith("ДЕМО")
+
+
+def analytics_publisher(hit: dict[str, Any]) -> str:
+    """Synthetic demo PDFs must never be presented as real Alfa-Bank analytics."""
+    return "Демо-материал (синтетика), не аналитика Альфа-Банка" if is_demo_material(hit) else "Альфа-Банк"
+
+
+def analytics_position_label(hit: dict[str, Any]) -> str:
+    return "Позиция из демо-материала (синтетика)" if is_demo_material(hit) else "Позиция Альфа-Банка по теме"
+
+
 def _fv(features: dict[str, Any], path: str, default: Any = None) -> Any:
     f = features.get(path)
     return f.get("value", default) if isinstance(f, dict) else default
@@ -209,7 +222,7 @@ def build_insight(
                 "ref_id": h["chunk_id"],
                 "url": None,
                 "title": h["doc_title"],
-                "publisher": "Альфа-Банк",
+                "publisher": analytics_publisher(h),
                 "published_at": None,
                 "page": h["page"],
             }
@@ -341,10 +354,10 @@ def build_insight(
     positions = []
     for sid, h in analytics_refs:
         quote = _clip(h["text"], 300)
-        d.stmt(f"Аналитики Альфа-Банка: {quote}", "bank_analytics", 0.9, [sid])
+        d.stmt(f"{analytics_publisher(h)}: {quote}", "bank_analytics", 0.9, [sid])
         positions.append(
             {
-                "text": f"Позиция Альфа-Банка по теме: {_clip(h['text'], 400)}",
+                "text": f"{analytics_position_label(h)}: {_clip(h['text'], 400)}",
                 "quote": quote,
                 "analytics_chunk_id": h["chunk_id"],
                 "document_id": h["document_id"],

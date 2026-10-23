@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### Добавлено (фаза 4 — аналитика банка)
+- Загрузка PDF аналитики: S3 по sha256, текстовый слой или OCR Tesseract (rus+eng) с кэшем результатов в S3,
+  чанкинг по разделам со страницами, метаданные (название, дата, темы).
+- Эмбеддинги за `EmbeddingProvider` (`fake`, `local` — fastembed MiniLM-L12 multilingual, `remote`) и переиндексация.
+- Гибридный поиск (pgvector HNSW + полнотекстовый `russian` + RRF) с цитатами страниц для Tools API `search_bank_analytics`.
+- `GET /api/v1/analytics/documents`, `GET /api/v1/analytics/documents/{id}/download` (presigned URL с `#page=N`);
+  переход к источнику `bank_analytics` ведёт на страницу PDF.
+- Синтетические демо-PDF (помечены «ДЕМО (синтетика)»), `make ingest-analytics`, задача воркера `analytics.ingest`.
+
 ### Добавлено (фаза 3 — новости)
 - Каталог из 16 проверенных RSS (ЦБ, Интерфакс, РБК, Ведомости, Прайм, РИА, РГ, BFM, Forbes, Газета.ru, Retail.ru,
   New Retail, Zerno.ru, Финмаркет) с резервными источниками; `docs/SOURCES.md`.

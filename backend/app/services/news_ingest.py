@@ -11,36 +11,15 @@ import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
+from app.core.s3 import ObjectStore, S3ObjectStore
 from app.integrations.news.connectors import SourceInfo, connector_for
 from app.integrations.news.http import FetchResult, PoliteFetcher
 from app.services.news_store import FIXTURE_SOURCE_ID, StoreResult, store_news
 
 HEALTHY_OUTCOMES = {"ok", "not_modified", "unchanged"}
-
-
-class ObjectStore(Protocol):
-    def put(self, key: str, body: bytes, content_type: str | None) -> None: ...
-
-    def get(self, key: str) -> bytes: ...
-
-
-class S3ObjectStore:
-    """boto3 adapter for the news-raw bucket (calls are made via asyncio.to_thread)."""
-
-    def __init__(self, client: Any, bucket: str) -> None:
-        self.client = client
-        self.bucket = bucket
-
-    def put(self, key: str, body: bytes, content_type: str | None) -> None:
-        self.client.put_object(
-            Bucket=self.bucket, Key=key, Body=body, ContentType=content_type or "application/octet-stream"
-        )
-
-    def get(self, key: str) -> bytes:
-        data: bytes = self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
-        return data
+__all__ = ["ObjectStore", "S3ObjectStore", "poll", "reprocess_raw", "sync_sources"]
 
 
 @dataclass

@@ -17,8 +17,9 @@ x-app-env: &app-env
   INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:8000}
   ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:-dev-only-ml-token}
   INSIGHT_GENERATOR: ${INSIGHT_GENERATOR:-stub}
-  EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-fake}
-  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
+  EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local}
+  FASTEMBED_CACHE_PATH: /home/appuser/.cache/fastembed
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
   EMBEDDING_DIM: ${EMBEDDING_DIM:-384}
   OCR_PROVIDER: ${OCR_PROVIDER:-tesseract}
   SCORER_PROVIDER: ${SCORER_PROVIDER:-baseline}
@@ -39,6 +40,7 @@ x-app: &app
   environment: *app-env
   volumes:
     - ./data/raw:/app/data/raw:ro
+    - models:/home/appuser/.cache
   restart: unless-stopped
 
 services:
@@ -158,5 +160,6 @@ services:
 
 volumes:
   pgdata:
+  models:
   redisdata:
   miniodata:

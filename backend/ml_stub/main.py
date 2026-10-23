@@ -19,7 +19,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 from app.domain.contracts import CONTRACTS_DIR
 from ml_stub import __version__
-from ml_stub.builder import build_insight
+from ml_stub.builder import analytics_publisher, build_insight
 
 app = FastAPI(title="ml-stub", version=__version__)
 
@@ -281,12 +281,14 @@ async def chat(request: Request, authorization: str | None = Header(None)) -> An
                         "ref_id": h["chunk_id"],
                         "url": None,
                         "title": h["doc_title"],
-                        "publisher": "Альфа-Банк",
+                        "publisher": analytics_publisher(h),
                         "published_at": None,
                         "page": h["page"],
                     }
                 )
-                parts.append(f"Аналитика Альфа-Банка ({h['doc_title']}, с. {h['page']}): {h['text'][:300]}")
+                parts.append(
+                    f"{analytics_publisher(h)} ({h['doc_title']}, с. {h['page']}): {h['text'][:300]}"
+                )
                 statements.append(
                     {
                         "id": f"st{len(statements) + 1}",

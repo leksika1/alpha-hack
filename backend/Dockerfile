@@ -28,7 +28,9 @@ FROM base AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-rus curl \
     && rm -rf /var/lib/apt/lists/*
-RUN useradd --create-home --uid 10001 appuser
+# model cache dir owned by appuser, so the named volume mounted there is writable
+RUN useradd --create-home --uid 10001 appuser \
+    && mkdir -p /home/appuser/.cache/fastembed && chown -R appuser /home/appuser/.cache
 COPY --from=builder /app/.venv /app/.venv
 COPY backend/app ./app
 COPY backend/ml_stub ./ml_stub

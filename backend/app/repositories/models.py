@@ -5,13 +5,16 @@ Schemas: ``staging`` — raw CSV rows as text (COPY target); ``core`` — cleane
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Computed,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -26,7 +29,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 NAMING = {
@@ -38,6 +41,8 @@ NAMING = {
 }
 
 Money = Numeric(20, 2)
+# Dimension of stored embeddings; changing it = migration + re-indexing (ADR-006).
+EMBEDDING_DIM = 384
 
 
 class Base(DeclarativeBase):
@@ -746,4 +751,81 @@ class CrmRequest(Base):
     preferred_time: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), server_default="new")
     external_ref: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = _now()
+
+
+# ---------------------------------------------------------------- core: bank analytics (phase 4)
+
+
+class AnalyticsDocument(Base):
+    __tablename__ = "analytics_documents"
+    __table_args__ = {"schema": "core"}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
+    )
+    sha256: Mapped[str] = mapped_column(String(64), unique=True)
+    file_name: Mapped[str] = mapped_column(Text)
+    s3_key: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(Text)
+    doc_date: Mapped[date | None] = mapped_column(Date, index=True)
+    topics: Mapped[list[str]] = mapped_column(server_default="{}")
+    origin: Mapped[str] = mapped_column(String(16))  # organizers | synthetic | upload
+    pages: Mapped[int] = mapped_column(Integer, server_default="0")
+    extraction: Mapped[str | None] = mapped_column(
+        String(24)
+    )  # text_layer | ocr_tesseract | mixed | ocr_fake
+    ocr_confidence: Mapped[float | None] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(
+        String(16), server_default="processing"
+    )  # processing | ready | failed
+    error: Mapped[str | None] = mapped_column(Text)
+    embedding_model: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _now()
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AnalyticsPage(Base):
+    __tablename__ = "analytics_pages"
+    __table_args__ = {"schema": "core"}
+
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("core.analytics_documents.id", ondelete="CASCADE"), primary_key=True
+    )
+    page: Mapped[int] = mapped_column(Integer, primary_key=True)
+    text: Mapped[str] = mapped_column(Text)
+    method: Mapped[str] = mapped_column(String(24))
+    confidence: Mapped[float | None] = mapped_column(Float)
+    chars: Mapped[int] = mapped_column(Integer)
+
+
+class AnalyticsChunk(Base):
+    __tablename__ = "analytics_chunks"
+    __table_args__ = (
+        Index("ix_analytics_chunks_tsv", "tsv", postgresql_using="gin"),
+        Index(
+            "ix_analytics_chunks_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+        Index("ix_analytics_chunks_document_id_page", "document_id", "page"),
+        {"schema": "core"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
+    )
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("core.analytics_documents.id", ondelete="CASCADE")
+    )
+    page: Mapped[int] = mapped_column(Integer)
+    chunk_index: Mapped[int] = mapped_column(Integer)
+    section: Mapped[str | None] = mapped_column(Text)
+    text: Mapped[str] = mapped_column(Text)
+    tsv: Mapped[Any] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('russian'::regconfig, coalesce(section, '') || ' ' || text)", persisted=True),
+    )
+    embedding: Mapped[Any] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     created_at: Mapped[datetime] = _now()

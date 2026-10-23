@@ -35,8 +35,9 @@ migrate: ## alembic upgrade head (inside compose)
 seed: ## Reference data, demo users, pre-generated insights
 	$(COMPOSE) run --rm seed
 
-synthetic: ## Regenerate data/synthetic (deterministic)
+synthetic: ## Regenerate data/synthetic (deterministic CSV + demo analytics PDFs)
 	$(RUN) python scripts/make_synthetic.py
+	$(RUN) python scripts/make_synthetic_analytics.py
 
 ingest-companies: ## Load companies CSV (DATA_DIR) -> staging -> core -> graph -> context
 	$(APP_EXEC) python scripts/ingest.py companies
@@ -44,7 +45,7 @@ ingest-companies: ## Load companies CSV (DATA_DIR) -> staging -> core -> graph -
 ingest-news: ## Poll news sources once (live RSS + fixtures), queue generation for new matches
 	$(APP_EXEC) python scripts/ingest.py news --enqueue
 
-ingest-analytics: ## Load bank analytics PDFs (OCR -> chunks -> embeddings)
+ingest-analytics: ## Load bank analytics PDFs (text layer or OCR -> chunks -> embeddings)
 	$(APP_EXEC) python scripts/ingest.py analytics
 
 format: ## Auto-format
