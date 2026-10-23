@@ -15,7 +15,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode; resetKey?: s
   render() {
     if (this.state.error) {
       return (
-        <div className="flex flex-col items-start gap-2 rounded-card border-l-4 border-accent bg-white p-6" role="alert">
+        <div className="flex flex-col items-start gap-2 rounded-card border border-accent/40 bg-white p-6" role="alert">
           <div className="font-bold">Не удалось показать экран</div>
           <div>{this.state.error.message}</div>
           <button className="p-0 text-info hover:underline" onClick={() => this.setState({ error: null })}>

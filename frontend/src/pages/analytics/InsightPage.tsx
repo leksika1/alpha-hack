@@ -1,6 +1,6 @@
 // Карточка инсайта: шесть блоков кейса — что произошло, почему важно вам, последствия, что сделать, позиция банка,
 // на чём основан вывод — плюс вопрос к аналитике, действие и отзыв.
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '@alfalab/core-components/button';
 import { ArrowLeftMIcon } from '@alfalab/icons-glyph/ArrowLeftMIcon';
@@ -8,13 +8,13 @@ import { BookmarkMIcon } from '@alfalab/icons-glyph/BookmarkMIcon';
 import { BookmarkLineMIcon } from '@alfalab/icons-glyph/BookmarkLineMIcon';
 import { EyeOffMIcon } from '@alfalab/icons-glyph/EyeOffMIcon';
 import { EyeMIcon } from '@alfalab/icons-glyph/EyeMIcon';
-import { TelescopeMIcon } from '@alfalab/icons-glyph/TelescopeMIcon';
 import { ExclamationCircleMIcon } from '@alfalab/icons-glyph/ExclamationCircleMIcon';
-import { useBankProducts, useInsight, useInsightState, useTrace } from '../../api/hooks';
+import { useBankProducts, useInsight, useInsightState, useTrace, useTrack } from '../../api/hooks';
 import type { InsightBody, StatementKind } from '../../api/types';
 import { useSession } from '../../auth/session';
 import {
   ACTION_TYPES,
+  cleanTitle,
   COVERAGE,
   EVENT_TYPES,
   featureLabel,
@@ -26,9 +26,9 @@ import {
   isDemoStatement,
   PLAUSIBILITY,
   ROLE_LABELS,
-  STATEMENT_KIND,
+  stripDemoPrefix,
 } from '../../lib/format';
-import { actionTypeClass, CardSkeleton, Disclaimers, ErrorBox, Flag, ImpactMeter, KindBadge, LinkButton, Note, Pill, PolarityStatus, UrgentStatus } from '../../components/ui';
+import { actionLabelClass, CardSkeleton, Disclaimers, ErrorBox, Flag, ImpactMeter, KindBadge, LinkButton, Note, Pill, PolarityStatus, UrgentStatus } from '../../components/ui';
 import { SourceList, SourceRefs, SourcesProvider } from '../../components/insight/sources';
 import { FeatureChip, RelevanceBreakdown, TracePanel } from '../../components/insight/TracePanel';
 import { AskPanel } from '../../components/insight/AskPanel';
@@ -52,32 +52,75 @@ const NAV = [
 
 type Statement = InsightBody['statements'][number];
 
-function Block({ id, num, title, bank = false, children }: { id: string; num?: number; title: string; bank?: boolean; children: ReactNode }) {
+function Block({ id, num, title, children }: { id: string; num?: number; title: string; children: ReactNode }) {
   return (
-    <section id={id} className={cn('card mt-3 scroll-mt-[130px] p-6', bank && 'border-l-4 border-accent')}>
-      <h2 className="mb-3.5 flex items-center gap-2.5 text-xl">
+    <section
+      id={id}
+      style={{ '--i': num ?? 7 } as CSSProperties}
+      className="stagger card mt-3 scroll-mt-32.5 p-6"
+    >
+      <h2 className={`mb-3.5 flex items-center gap-2.5 text-xl ${title == 'Позиция Альфа-Банка' ? 'text-accent' : 'text-black'}`} >
         {num !== undefined && (
-          <span className={cn('inline-flex size-7 shrink-0 items-center justify-center rounded-full text-sm text-white', bank ? 'bg-accent' : 'bg-night')}>
+          <span className={`inline-flex size-7 shrink-0 items-center justify-center rounded-full text-sm text-white ${title == 'Позиция Альфа-Банка' ? 'bg-accent' : 'bg-night'}`}>
             {num}
           </span>
         )}
         {title}
       </h2>
       {children}
-    </section>
+    </section >
   );
 }
 
 const SubTitle = ({ children }: { children: ReactNode }) => <h3 className="mt-5 mb-2.5 text-base">{children}</h3>;
 
-function StatementRow({ kind, demo, children }: { kind: StatementKind; demo?: boolean; children: ReactNode }) {
+const KIND_DOT: Record<StatementKind, string> = {
+  fact: 'bg-[#b8b9c0]',
+  bank_analytics: 'bg-accent',
+  model_inference: 'bg-purple',
+  hypothesis: 'bg-att-dot',
+};
+
+const KIND_GROUP: Record<StatementKind, { title: string; hint?: string }> = {
+  fact: { title: 'Факты', hint: 'подтверждены источниками' },
+  bank_analytics: { title: 'Аналитика Альфа-Банка', hint: 'позиция из материалов банка' },
+  model_inference: { title: 'Выводы AI' },
+  hypothesis: { title: 'Гипотезы' },
+};
+
+// Утверждение в рамке; тип задаёт заголовок группы, а не отдельная плашка.
+function StatementItem({ text, refs, confidence }: { text: string; refs?: string[]; confidence?: number }) {
   return (
-    <div className="flex items-baseline gap-2.5 border-b border-line py-2 last:border-b-0">
-      <KindBadge kind={kind} demo={demo} />
-      <span>{children}</span>
+    <div className="rounded-xl border border-line px-3.5 py-2.5">
+      <p className="mb-0">{stripDemoPrefix(text)}</p>
+      {(!!refs?.length || confidence !== undefined) && (
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-3">
+          <SourceRefs ids={refs} />
+          {confidence !== undefined && <span>уверенность {Math.round(confidence * 100)}%</span>}
+        </div>
+      )}
     </div>
   );
 }
+
+function StatementGroup({ kind, demo, count, children }: { kind: StatementKind; demo: boolean; count: number; children: ReactNode }) {
+  const g = KIND_GROUP[kind];
+  return (
+    <div className="mt-5 first:mt-0">
+      <div className="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className={cn('size-2 rounded-full', KIND_DOT[kind])} />
+        <h3 className="text-[15px]">{demo && kind === 'bank_analytics' ? 'Материалы банка' : g.title}</h3>
+        <span className="text-[13px] text-ink-3">{count}</span>
+        <span className="ml-1 text-nowrap text-[13px] text-ink-2">{demo && kind === 'bank_analytics' ? 'демо-материал (синтетика), не аналитика Альфа-Банка' : g.hint}</span>
+      </div>
+      <div className="flex flex-col gap-2">{children}</div>
+    </div>
+  );
+}
+
+// Источник перехода для метрик воронки; API принимает только фиксированный набор значений.
+const VIA = new Set(['feed', 'widget', 'digest', 'notification', 'search', 'other']);
+const viaParam = (via: string | null) => (via && VIA.has(via) ? via : 'other');
 
 export function InsightPage() {
   const { id } = useParams();
@@ -85,10 +128,11 @@ export function InsightPage() {
   const navigate = useNavigate();
   const { companies, company, setCompanyId } = useSession();
   const positionParam = params.get('position');
-  const insightQ = useInsight(id, params.get('via') ?? 'direct', positionParam ? Number(positionParam) : undefined);
+  const insightQ = useInsight(id, viaParam(params.get('via')), positionParam ? Number(positionParam) : undefined);
   const traceQ = useTrace(id, !!insightQ.data);
   const products = useBankProducts();
   const state = useInsightState(id ?? '');
+  const track = useTrack(id ?? '');
   const toast = useToast();
   const [draft, setDraft] = useState<ActionDraft | null>(null);
 
@@ -105,6 +149,15 @@ export function InsightPage() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [id]);
+
+  // Открытие инсайта = прочитан: бэкенд отмечает это отдельным действием open, после него лента и счётчики обновятся.
+  const markedOpen = useRef<string | null>(null);
+  useEffect(() => {
+    if (data && !data.state.opened && markedOpen.current !== data.insight_id) {
+      markedOpen.current = data.insight_id;
+      state.mutate('open');
+    }
+  }, [data, state]);
 
   const featureMap = useMemo(
     () => (traceQ.data?.company_features ?? {}) as Record<string, { value: unknown; source: string; note?: string | null }>,
@@ -130,18 +183,19 @@ export function InsightPage() {
   const otherActions = ins.actions.filter((a) => !CTA_TYPES.has(a.type));
   const openDraft = (type: string, productId: string | null) => setDraft({ type: type as ActionDraft['type'], productId, reason: firstWhy });
 
-  const doState = (action: 'save' | 'unsave' | 'hide' | 'unhide' | 'watch') =>
+  const doState = (action: 'hide' | 'unhide') =>
     state.mutate(action, {
-      onSuccess: () => {
-        const msg: Record<string, string> = {
-          save: 'Инсайт сохранён',
-          unsave: 'Убрано из сохранённых',
-          hide: 'Инсайт скрыт из ленты',
-          unhide: 'Инсайт возвращён в ленту',
-          watch: 'Вы наблюдаете за событием — сообщим об обновлениях',
-        };
-        toast.show({ title: msg[action], tone: 'positive', ttl: 3500 });
-      },
+      onSuccess: () => toast.show({ title: action === 'hide' ? 'Инсайт скрыт из ленты' : 'Инсайт возвращён в ленту', tone: 'positive', ttl: 3500 }),
+    });
+
+  const toggleTrack = () =>
+    track.mutate(!st.saved, {
+      onSuccess: () =>
+        toast.show(
+          st.saved
+            ? { title: 'Больше не отслеживается', ttl: 3500 }
+            : { title: 'Отслеживается', body: 'Инсайт в фильтре «Отслеживаемые», об обновлениях события сообщим.', tone: 'positive', ttl: 4500 },
+        ),
     });
 
   const suggestions = ['Как это повлияет на наши финансы в ближайший квартал?', 'А если смотреть на другое юрлицо нашей группы?', 'Что об этом пишет аналитика банка?'];
@@ -162,11 +216,11 @@ export function InsightPage() {
                 {ins.urgent && <UrgentStatus />}
                 <PolarityStatus polarity={ins.polarity} />
                 <span className="text-ink-2">
-                  {EVENT_TYPES[ins.event.event_type] ?? ins.event.event_type} · {formatDate(ins.event.occurred_at, true)}
+                  {EVENT_TYPES[ins.event.event_type] ?? ins.event.event_type}, {formatDate(ins.event.occurred_at, true)}
                 </span>
                 {st.updated && <Flag tone="orange">Обновлено</Flag>}
               </div>
-              <h1 className="mt-3 mb-2.5 text-[26px] leading-tight">{ins.title}</h1>
+              <h1 className="mt-3 mb-2.5 text-[26px] leading-tight">{cleanTitle(ins.title)}</h1>
               <p className="text-base">{ins.summary}</p>
               {!data.role_match && (
                 <Note>
@@ -175,11 +229,8 @@ export function InsightPage() {
                 </Note>
               )}
               <div className="mt-4 flex flex-wrap gap-2">
-                <Button view="secondary" size={40} leftAddons={st.saved ? <BookmarkMIcon /> : <BookmarkLineMIcon />} onClick={() => doState(st.saved ? 'unsave' : 'save')}>
-                  {st.saved ? 'Сохранено' : 'Сохранить'}
-                </Button>
-                <Button view="secondary" size={40} leftAddons={<TelescopeMIcon />} onClick={() => doState('watch')}>
-                  Наблюдать
+                <Button view="secondary" size={40} loading={track.isPending} leftAddons={st.saved ? <BookmarkMIcon /> : <BookmarkLineMIcon />} onClick={toggleTrack}>
+                  {st.saved ? 'Отслеживается' : 'Отслеживать'}
                 </Button>
                 <Button view="secondary" size={40} leftAddons={st.hidden ? <EyeMIcon /> : <EyeOffMIcon />} onClick={() => doState(st.hidden ? 'unhide' : 'hide')}>
                   {st.hidden ? 'Вернуть в ленту' : 'Скрыть'}
@@ -206,11 +257,9 @@ export function InsightPage() {
             <Block id="what" num={1} title="Что произошло">
               <h3 className="mb-1.5 text-[17px]">{ins.event.title}</h3>
               <p>{ins.event.summary}</p>
-              <div className="mt-3">
+              <div className="mt-3 flex flex-col gap-3">
                 {ins.event.key_facts.map((f, i) => (
-                  <StatementRow key={i} kind="fact">
-                    {f.text} <SourceRefs ids={f.source_refs} />
-                  </StatementRow>
+                  <StatementItem key={i} text={f.text} refs={f.source_refs} />
                 ))}
               </div>
               {ins.event.participants?.length > 0 && <p className="text-[13px] text-ink-2">Участники: {ins.event.participants.map((p) => p.name).join(', ')}</p>}
@@ -267,9 +316,9 @@ export function InsightPage() {
               {ins.consequences.scenarios.length > 0 && (
                 <>
                   <SubTitle>Сценарии</SubTitle>
-                  <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
+                  <div className="flex w-full flex-col gap-3 md:flex-row">
                     {ins.consequences.scenarios.map((s, i) => (
-                      <div key={i} className={cn('rounded-xl border p-3.5', s.plausibility === 'high' ? 'border-[#c9ccd3]' : 'border-line')}>
+                      <div key={i} className={cn('flex-1 rounded-xl border p-4', s.plausibility === 'high' ? 'border-[#c9ccd3]' : 'border-line')}>
                         <div className="mb-1.5 flex justify-between gap-2">
                           <b>{s.name}</b>
                           <span className="text-xs whitespace-nowrap text-ink-2">{PLAUSIBILITY[s.plausibility] ?? s.plausibility}</span>
@@ -285,13 +334,13 @@ export function InsightPage() {
             </Block>
 
             <Block id="actions" num={4} title="Что можно сделать">
-              <ul>
+              <ul className="divide-y divide-line">
                 {ins.actions.map((a, i) => (
-                  <li key={i} className="flex items-center gap-3 border-b border-line py-3 last:border-b-0">
-                    <span className={actionTypeClass(a.type)}>{ACTION_TYPES[a.type] ?? a.type}</span>
-                    <div className="flex flex-1 flex-col">
-                      <span>{a.text}</span>
-                      {a.product_id && productName(a.product_id) && <span className="text-[13px] text-ink-2">Продукт: {productName(a.product_id)}</span>}
+                  <li key={i} className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0">
+                    <div className="min-w-0 flex-1">
+                      <div className={actionLabelClass(a.type)}>{ACTION_TYPES[a.type] ?? a.type}</div>
+                      <div>{a.text}</div>
+                      {a.product_id && productName(a.product_id) && <div className="text-[13px] text-ink-2">Продукт: {productName(a.product_id)}</div>}
                     </div>
                     {CTA_TYPES.has(a.type) && (
                       <Button view="primary" size={32} onClick={() => openDraft(a.type, a.product_id)}>
@@ -299,8 +348,8 @@ export function InsightPage() {
                       </Button>
                     )}
                     {a.type === 'monitor' && (
-                      <Button view="secondary" size={32} onClick={() => doState('watch')}>
-                        Наблюдать
+                      <Button view="secondary" size={32} disabled={st.saved} onClick={toggleTrack}>
+                        {st.saved ? 'Отслеживается' : 'Отслеживать'}
                       </Button>
                     )}
                     {a.type === 'read_source' && a.source_ref && <SourceRefs ids={[a.source_ref]} />}
@@ -312,7 +361,7 @@ export function InsightPage() {
               )}
             </Block>
 
-            <Block id="bank" num={5} title="Позиция Альфа-Банка" bank>
+            <Block id="bank" num={5} title="Позиция Альфа-Банка">
               <p className="text-ink-2">{COVERAGE[ins.bank_view.coverage] ?? ins.bank_view.coverage}</p>
               {ins.bank_view.model_disagrees_with_bank && (
                 <Note tone="warning">
@@ -323,9 +372,9 @@ export function InsightPage() {
                 </Note>
               )}
               {ins.bank_view.positions.map((p, i) => (
-                <figure key={i} className="my-3 rounded-xl bg-[#fff7f6] px-4 py-3.5">
+                <figure key={i} className="my-3 rounded-xl border border-line px-4 py-3.5">
                   <p className="font-medium">{p.text}</p>
-                  {p.quote && <blockquote className="my-2 border-l-[3px] border-accent pl-3 text-ink-2 italic">«{p.quote}»</blockquote>}
+                  {p.quote && <blockquote className="my-2 text-ink-2 italic">«{p.quote}»</blockquote>}
                   <figcaption>
                     <SourceRefs ids={[p.source_ref]} />
                   </figcaption>
@@ -337,27 +386,15 @@ export function InsightPage() {
             </Block>
 
             <Block id="basis" num={6} title="На чём основан вывод">
-              <div className="mb-2 flex flex-wrap gap-x-4 gap-y-2 rounded-xl bg-muted px-3 py-2.5">
-                {KIND_ORDER.map((k) => (
-                  <span key={k}>
-                    <KindBadge kind={k} /> <span className="text-[13px] text-ink-2">{STATEMENT_KIND[k].hint}</span>
-                  </span>
-                ))}
-              </div>
               {KIND_ORDER.map((kind) => {
                 const list = ins.statements.filter((s) => s.kind === kind);
                 if (!list.length) return null;
                 return (
-                  <div key={kind} className="mt-2">
+                  <StatementGroup key={kind} kind={kind} count={list.length} demo={list.every(demo)}>
                     {list.map((s) => (
-                      <StatementRow key={s.id} kind={s.kind} demo={demo(s)}>
-                        {s.text} <SourceRefs ids={s.source_refs} />
-                        <span className="ml-1.5 text-xs text-ink-3" title="Уверенность">
-                          {Math.round(s.confidence * 100)}%
-                        </span>
-                      </StatementRow>
+                      <StatementItem key={s.id} text={s.text} refs={s.source_refs} confidence={s.confidence} />
                     ))}
-                  </div>
+                  </StatementGroup>
                 );
               })}
               <SubTitle>Источники</SubTitle>
@@ -365,7 +402,7 @@ export function InsightPage() {
               <RelevanceBreakdown breakdown={ins.relevance.breakdown} score={ins.relevance.score} />
               {traceQ.data && <TracePanel trace={traceQ.data} />}
               <p className="text-[13px] text-ink-2">
-                Модели: {ins.models_used.map((m) => `${m.name} (${m.purpose})`).join(', ')} · сформировано {formatDate(ins.generated_at, true)} · актуально до{' '}
+                Модели: {ins.models_used.map((m) => `${m.name} (${m.purpose})`).join(', ')}. Сформировано {formatDate(ins.generated_at, true)}, актуально до{' '}
                 {formatDate(ins.expires_at)}
               </p>
             </Block>

@@ -66,11 +66,11 @@ export function AdminPage() {
       {metrics.data && (
         <>
           <section className="rounded-card bg-night p-6 text-white">
-            <div className="text-xs font-bold tracking-[0.06em] text-lime uppercase">North star · 7 дней</div>
+            <div className="text-xs font-bold tracking-[0.06em] text-lime uppercase">North star, 7 дней</div>
             <div className="text-[44px] font-bold">{fmt(metrics.data.north_star.value)}</div>
             <div className="mb-1.5 text-base">{metrics.data.north_star.metric}</div>
             <div className="text-[13px] text-white/60">
-              Сессий: {metrics.data.sessions} · пользователей: {metrics.data.users} · медиана до первого полезного инсайта:{' '}
+              Сессий: {metrics.data.sessions}, пользователей: {metrics.data.users}, медиана до первого полезного инсайта:{' '}
               {metrics.data.speed.median_s_to_first_useful != null ? `${metrics.data.speed.median_s_to_first_useful} с` : '—'}
             </div>
           </section>
@@ -141,10 +141,10 @@ export function AdminPage() {
                 <span className={cn('size-2.5 rounded-full', HEALTH_DOT[s.health_status] ?? 'bg-ink-3')} />
                 <span>
                   {s.name}
-                  {s.fallback_for && <span className="text-[13px] text-ink-2"> · резерв для {s.fallback_for}</span>}
+                  {s.fallback_for && <span className="ml-1.5 text-[13px] text-ink-2">резерв для {s.fallback_for}</span>}
                 </span>
                 <span className="text-[13px] text-ink-2">
-                  {s.items_24h} за 24 ч{s.last_success_at ? ` · ${formatRelative(s.last_success_at)}` : ''}
+                  {s.items_24h} за 24 ч{s.last_success_at ? `, ${formatRelative(s.last_success_at)}` : ''}
                 </span>
               </div>
             ))}

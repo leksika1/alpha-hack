@@ -1,11 +1,11 @@
 // Лента инсайтов (CJM 03): ранжирование по значимости для компании и роли, фильтры, период.
 import { useSearchParams } from 'react-router-dom';
 import { Tag } from '@alfalab/core-components/tag';
-import { useFeed } from '../../api/hooks';
+import { useFeedAll } from '../../api/hooks';
 import type { FeedFilter } from '../../api/types';
 import { useSession } from '../../auth/session';
 import { InsightCardView } from '../../components/InsightCardView';
-import { CardSkeleton, EmptyState, ErrorBox, selectClass } from '../../components/ui';
+import { CardSkeleton, EmptyState, ErrorBox, Select, SortToggle, sortInsights, type SortMode } from '../../components/ui';
 import { ROLE_LABELS } from '../../lib/format';
 import { cn } from '../../lib/cn';
 
@@ -14,7 +14,7 @@ const FILTERS: { key: FeedFilter; label: string }[] = [
   { key: 'urgent', label: 'Срочные' },
   { key: 'risks', label: 'Риски' },
   { key: 'opportunities', label: 'Возможности' },
-  { key: 'saved', label: 'Сохранённые' },
+  { key: 'saved', label: 'Отслеживаемые' },
   { key: 'hidden', label: 'Скрытые' },
 ];
 
@@ -30,7 +30,7 @@ const EMPTY: Record<FeedFilter, string> = {
   urgent: 'Срочных событий нет — можно выдохнуть.',
   risks: 'Рисков за выбранный период не найдено.',
   opportunities: 'Возможностей за выбранный период не найдено.',
-  saved: 'Сохраняйте инсайты значком закладки, чтобы вернуться к ним позже.',
+  saved: 'Отмечайте инсайты значком закладки — они появятся здесь, а об обновлениях событий придут уведомления.',
   hidden: 'Скрытых инсайтов нет.',
 };
 
@@ -39,16 +39,17 @@ export function FeedPage() {
   const [params, setParams] = useSearchParams();
   const filter = (params.get('filter') as FeedFilter) || 'all';
   const period = params.get('period') || 'all';
-  const feed = useFeed(company?.company_id, filter, period);
+  const sort = (params.get('sort') as SortMode) || 'importance';
+  const feed = useFeedAll(company?.company_id, period, filter);
 
   const set = (k: string, v: string) => {
     const next = new URLSearchParams(params);
-    if ((k === 'filter' && v === 'all') || (k === 'period' && v === 'all')) next.delete(k);
+    if ((k === 'filter' && v === 'all') || (k === 'period' && v === 'all') || (k === 'sort' && v === 'importance')) next.delete(k);
     else next.set(k, v);
     setParams(next, { replace: true });
   };
 
-  const items = feed.data?.items ?? [];
+  const items = sortInsights(feed.data ?? [], sort);
 
   return (
     <div>
@@ -60,19 +61,23 @@ export function FeedPage() {
             </Tag>
           ))}
         </div>
-        <select className={cn(selectClass, 'bg-white')} value={period} onChange={(e) => set('period', e.target.value)} aria-label="Период">
+        <div className="flex items-center gap-3 [&>div]:mb-0">
+          <SortToggle value={sort} onChange={(v) => set('sort', v)} />
+        <Select className="bg-white" value={period} onChange={(e) => set('period', e.target.value)} aria-label="Период">
           {PERIODS.map((p) => (
             <option key={p.key} value={p.key}>
               {p.label}
             </option>
           ))}
-        </select>
+        </Select>
+        </div>
       </div>
 
       {company && (
         <p className="my-3 text-[13px] text-ink-2">
-          Отсортировано по значимости для компании и роли «{ROLE_LABELS[company.role]}»: отрасль, контрагенты, страны ВЭД, продукты банка и свежесть
-          события.
+          {sort === 'importance'
+            ? `Сначала самое значимое для компании и роли «${ROLE_LABELS[company.role]}»: отрасль, контрагенты, страны ВЭД, продукты банка и свежесть события.`
+            : 'Сначала самые свежие события.'}
         </p>
       )}
 
@@ -80,11 +85,16 @@ export function FeedPage() {
       {feed.isError && <ErrorBox error={feed.error} onRetry={() => feed.refetch()} />}
       {!feed.isLoading && !feed.isError && items.length === 0 && <EmptyState title="Пусто" text={EMPTY[filter]} />}
 
-      <div className={cn('flex flex-col gap-3 transition-opacity', feed.isFetching && !feed.isLoading && 'opacity-60')}>
-        {items.map((it, i) => (
-          <InsightCardView key={it.insight_id} item={it} position={i + 1} />
-        ))}
-      </div>
+      {items.length > 0 && (
+        <div
+          key={`${company?.company_id}-${filter}-${period}-${sort}`}
+          className={cn('card divide-y divide-line overflow-hidden transition-opacity duration-300', feed.isFetching && !feed.isLoading && 'opacity-60')}
+        >
+          {items.map((it, i) => (
+            <InsightCardView key={it.insight_id} item={it} position={i + 1} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

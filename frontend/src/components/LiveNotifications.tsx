@@ -19,12 +19,26 @@ export function LiveNotifications() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    const ctrl = new AbortController();
     let stopped = false;
+    let ctrl = new AbortController();
+    let wake: (() => void) | null = null;
+
+    // Поток держит соединение на сервере, поэтому в скрытой вкладке закрываем его;
+    // при возврате переподключаемся, пропущенное придёт по Last-Event-ID.
+    const onVisibility = () => {
+      if (document.hidden) ctrl.abort();
+      else wake?.();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    const untilVisible = () =>
+      document.hidden ? new Promise<void>((r) => (wake = () => ((wake = null), r()))) : Promise.resolve();
 
     const run = async () => {
       let backoff = 1000;
       while (!stopped) {
+        await untilVisible();
+        if (stopped) return;
+        ctrl = new AbortController();
         try {
           await streamSse('/notifications/stream', {
             signal: ctrl.signal,
@@ -64,7 +78,8 @@ export function LiveNotifications() {
             },
           });
         } catch (e) {
-          if (ctrl.signal.aborted) return;
+          if (stopped) return;
+          if (ctrl.signal.aborted) continue; // вкладку скрыли — ждём, пока её снова откроют
           if (e instanceof Error && 'status' in e && (e as { status: number }).status === 401) return;
         }
         if (stopped) return;
@@ -75,7 +90,9 @@ export function LiveNotifications() {
     run();
     return () => {
       stopped = true;
+      document.removeEventListener('visibilitychange', onVisibility);
       ctrl.abort();
+      wake?.();
     };
   }, [isAuthenticated, qc]);
 

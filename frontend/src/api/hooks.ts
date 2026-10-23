@@ -61,6 +61,26 @@ export function useFeed(companyId: string | undefined, filter: FeedFilter, perio
   });
 }
 
+// Все инсайты периода (лента отдаёт до 50 за раз — догружаем страницы по курсору).
+export function useFeedAll(companyId: string | undefined, period: string, filter: FeedFilter = 'all') {
+  return useQuery({
+    queryKey: ['feed', companyId ?? '', 'all-pages', period, filter],
+    queryFn: async () => {
+      const items: Feed['items'] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 10; page++) {
+        const res: Feed = await get<Feed>(`/feed${qs({ company_id: companyId, filter, period, limit: 50, cursor })}`);
+        items.push(...res.items);
+        if (!res.next_cursor) break;
+        cursor = res.next_cursor;
+      }
+      return items;
+    },
+    enabled: !!companyId,
+    placeholderData: keepPreviousData,
+  });
+}
+
 export function useInsight(id: string | undefined, via?: string, position?: number) {
   return useQuery({
     queryKey: keys.insight(id ?? ''),
@@ -144,6 +164,27 @@ export function useInsightState(insightId: string) {
       qc.invalidateQueries({ queryKey: keys.insight(insightId) });
       qc.invalidateQueries({ queryKey: keys.feedAll });
       qc.invalidateQueries({ queryKey: keys.summary });
+      qc.invalidateQueries({ queryKey: ['digest'] });
+      qc.invalidateQueries({ queryKey: keys.notifications });
+    },
+  });
+}
+
+// «Отслеживать» = сохранить в списке и наблюдать за обновлениями события (save + watch); снятие — unsave.
+export function useTrack(insightId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (on: boolean) => {
+      if (on) {
+        await post(`/insights/${insightId}/state`, { action: 'save' });
+        await post(`/insights/${insightId}/state`, { action: 'watch' });
+      } else {
+        await post(`/insights/${insightId}/state`, { action: 'unsave' });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.insight(insightId) });
+      qc.invalidateQueries({ queryKey: keys.feedAll });
     },
   });
 }

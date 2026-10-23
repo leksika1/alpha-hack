@@ -7,7 +7,7 @@ import { get } from '../../api/client';
 import { streamSse } from '../../api/sse';
 import { keys, useAnalyticsDocuments, useAskHistory, useInsightQuestions } from '../../api/hooks';
 import type { ChatFinal, QaMessage, QuestionIntent, Source, Statement } from '../../api/types';
-import { formatDate, isDemoStatement, SOURCE_TYPES } from '../../lib/format';
+import { formatDate, isDemoStatement, sourceLabel } from '../../lib/format';
 import { Chip, KindBadge, Note } from '../ui';
 import { NewsModal, srcRefClass } from './sources';
 import { useToast } from '../Toasts';
@@ -273,8 +273,7 @@ function ChatSources({ sources }: { sources: Source[] }) {
       <span className="text-[13px] text-ink-2">Источники:</span>
       {sources.map((s) => (
         <button key={s.id} type="button" className={srcRefClass(s.type)} onClick={() => open(s)} title={s.title}>
-          {SOURCE_TYPES[s.type] ?? s.type}: {s.title.length > 48 ? `${s.title.slice(0, 46)}…` : s.title}
-          {s.page ? `, с. ${s.page}` : ''}
+          {sourceLabel(s)}
         </button>
       ))}
       <NewsModal path={newsPath} onClose={() => setNewsPath(null)} />

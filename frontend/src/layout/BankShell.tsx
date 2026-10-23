@@ -6,6 +6,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 
 export function BankShell() {
   const location = useLocation();
+  const section = location.pathname.startsWith('/analytics/insight') ? location.pathname : location.pathname.split('/')[1];
   return (
     <div className="min-h-screen">
       <TopBar />
@@ -13,7 +14,9 @@ export function BankShell() {
         <Sidebar />
         <main className="max-w-[1240px] min-w-0 flex-1 px-4 pb-16 md:pr-8 md:pl-4">
           <ErrorBoundary resetKey={location.pathname}>
-            <Outlet />
+            <div key={section} className="motion-safe:animate-fade-up">
+              <Outlet />
+            </div>
           </ErrorBoundary>
         </main>
       </div>

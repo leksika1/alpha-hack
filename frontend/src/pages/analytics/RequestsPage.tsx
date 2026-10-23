@@ -1,4 +1,5 @@
 // Мои заявки из инсайтов и их статусы в мок-CRM (CJM 07).
+import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { useRequests } from '../../api/hooks';
 import { CardSkeleton, EmptyState, ErrorBox, Pill } from '../../components/ui';
@@ -30,8 +31,8 @@ export function RequestsPage() {
           </tr>
         </thead>
         <tbody className="[&_tr:last-child_td]:border-b-0">
-          {requests.data.map((r) => (
-            <tr key={r.request_id}>
+          {requests.data.map((r, i) => (
+            <tr key={r.request_id} style={{ '--i': Math.min(i + 1, 12) } as CSSProperties} className="stagger transition-colors duration-200 hover:bg-[#f8f8f9]">
               <td className={td}>
                 <b>{ACTION_TYPES[r.request_type] ?? r.request_type}</b>
                 <div className="text-[13px] text-ink-2">{r.external_ref}</div>

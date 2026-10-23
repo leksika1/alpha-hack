@@ -47,7 +47,7 @@ export const iconBtn =
   'relative inline-flex size-10 items-center justify-center rounded-full text-ink-2 hover:bg-muted-2 hover:text-ink [&_svg]:size-[22px]';
 
 function Popover({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cn('absolute top-[calc(100%+8px)] right-0 z-50 rounded-tile bg-white p-3 shadow-pop', className)}>{children}</div>;
+  return <div className={cn('absolute top-[calc(100%+8px)] right-0 z-50 origin-top-right rounded-tile bg-white p-3 shadow-pop motion-safe:animate-pop-in', className)}>{children}</div>;
 }
 
 const popTitle = 'px-2 pt-1 pb-2 text-[13px] font-bold text-ink-2';
@@ -61,19 +61,19 @@ function CompanySwitcher() {
 
   return (
     <div className="relative" ref={ref}>
-      <button className="flex max-w-[360px] items-center gap-2.5 rounded-[14px] px-2.5 py-1.5 text-left hover:bg-muted-2" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+      <button className="flex max-w-[520px] items-center gap-2.5 rounded-[14px] px-2.5 py-1.5 text-left hover:bg-muted-2" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <CompanyAvatar title={company.title} index={idx} />
         <span className="hidden min-w-0 flex-col md:flex">
-          <span className="truncate text-sm font-semibold">{companyShortName(company.title)}</span>
+          <span className="text-sm leading-tight font-semibold">{companyShortName(company.title)}</span>
           <span className="truncate text-xs text-ink-2">
-            {ROLE_LABELS[company.role]} · {me?.display_name?.replace(/^Демо:\s*/, '')}
+            {ROLE_LABELS[company.role]}, {me?.display_name?.replace(/^Демо:\s*/, '')}
           </span>
         </span>
         <ChevronDownMIcon className="size-[18px] shrink-0 text-ink-3" />
       </button>
       {open && (
-        <Popover className="w-[400px]">
-          <div className={popTitle}>Мои компании · {companies.length}</div>
+        <Popover className="w-[460px]">
+          <div className={popTitle}>Мои компании ({companies.length})</div>
           {companies.map((c, i) => {
             const active = c.company_id === company.company_id;
             return (
@@ -88,9 +88,9 @@ function CompanySwitcher() {
               >
                 <CompanyAvatar title={c.title} index={i} size={32} />
                 <span className="flex min-w-0 flex-col">
-                  <span className="truncate text-sm font-semibold">{companyShortName(c.title)}</span>
+                  <span className="text-sm leading-tight font-semibold">{companyShortName(c.title)}</span>
                   <span className="truncate text-xs text-ink-2">
-                    {c.region} · {ROLE_LABELS[c.role]}
+                    {c.region}, {ROLE_LABELS[c.role].toLowerCase()}
                   </span>
                 </span>
                 {active && <CheckmarkMIcon className="ml-auto shrink-0 text-accent" />}

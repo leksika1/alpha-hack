@@ -35,7 +35,7 @@ const STUB_ITEMS: { label: string; icon: Icon; badge?: string }[] = [
 ];
 
 const ITEM =
-  'flex w-full items-center gap-3 rounded-xl px-2.5 py-[9px] text-left text-sm text-ink hover:bg-muted-2 hover:no-underline [&_svg]:size-[22px] [&_svg]:shrink-0 [&_svg]:text-ink-2';
+  'pressable flex w-full items-center gap-3 rounded-xl px-2.5 py-[9px] text-left text-sm text-ink hover:bg-muted-2 hover:no-underline [&_svg]:size-[22px] [&_svg]:shrink-0 [&_svg]:text-ink-2';
 const ACTIVE = 'bg-white font-semibold shadow-card hover:bg-white';
 const ACCENT_ICON = '[&_svg]:text-accent';
 

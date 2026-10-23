@@ -37,8 +37,13 @@
   --shadow-lift: 0 6px 24px rgba(0, 0, 0, 0.08);
   --shadow-pop: 0 8px 40px rgba(0, 0, 0, 0.16);
 
+  --ease-alfa: cubic-bezier(0.25, 0.1, 0.25, 1);
   --animate-blink: blink 0.8s steps(2) infinite;
-  --animate-toast-in: toast-in 0.2s ease-out;
+  --animate-toast-in: toast-in 0.35s var(--ease-alfa) both;
+  --animate-toast-out: toast-out 0.22s var(--ease-alfa) both;
+  --animate-fade-up: fade-up 0.45s var(--ease-alfa) both;
+  --animate-fade-in: fade-in 0.3s var(--ease-alfa) both;
+  --animate-pop-in: pop-in 0.18s var(--ease-alfa) both;
 
   @keyframes blink {
     to {
@@ -48,7 +53,34 @@
 
   @keyframes toast-in {
     from {
-      transform: translateY(8px);
+      transform: translateX(32px) scale(0.98);
+      opacity: 0;
+    }
+  }
+
+  @keyframes toast-out {
+    to {
+      transform: translateX(32px);
+      opacity: 0;
+    }
+  }
+
+  @keyframes fade-up {
+    from {
+      transform: translateY(12px);
+      opacity: 0;
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes pop-in {
+    from {
+      transform: translateY(-4px) scale(0.97);
       opacity: 0;
     }
   }
@@ -74,6 +106,15 @@
   button:not(:disabled) {
     @apply cursor-pointer;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
 /* Повторяющиеся блоки интерфейса. */
@@ -87,6 +128,20 @@
 
 @utility label-caps {
   @apply text-xs font-bold tracking-[0.04em] text-ink-2 uppercase;
+}
+
+/* Появление элементов списка по очереди: задержка из --i (порядковый номер, задаётся в style). */
+@utility stagger {
+  @apply motion-safe:animate-fade-up;
+  animation-delay: calc(var(--i, 0) * 35ms);
+}
+
+/* Интерактивный элемент: плавные наведение и сдвиг, при нажатии — лёгкое «проседание». */
+@utility pressable {
+  transition-property: scale, translate, background-color, border-color, box-shadow, color, opacity;
+  transition-duration: 200ms;
+  transition-timing-function: var(--ease-alfa);
+  @apply active:scale-[0.98];
 }
 
 @utility field-input {
