@@ -9,6 +9,16 @@ from dataclasses import dataclass, field
 from typing import Any
 
 GENERIC_TAGS = frozenset({"trade", "manufacturing", "services", "finance"})
+# "оптовые цены" makes the tagger add `wholesale` to any price news: too broad for counterparty/industry matching
+MATCH_GENERIC_TAGS = GENERIC_TAGS | {"wholesale"}
+# second-order effects (through counterparties of the affected industry) are discounted vs own exposure
+SECOND_ORDER_DISCOUNT = 0.6
+FX_COUNTRY_TYPES = frozenset({"fx", "sanctions"})
+COUNTRY_CURRENCY = {
+    "КИТАЙ": "CNY", "ГОНКОНГ": "CNY", "ТУРЦИЯ": "TRY", "ОАЭ": "AED", "ИНДИЯ": "INR", "КАЗАХСТАН": "KZT",
+    "БЕЛАРУСЬ": "BYN", "США": "USD", "ГЕРМАНИЯ": "EUR", "ИТАЛИЯ": "EUR", "ФРАНЦИЯ": "EUR", "НИДЕРЛАНДЫ": "EUR",
+    "ЮЖНАЯ КОРЕЯ": "KRW", "ЯПОНИЯ": "JPY", "УЗБЕКИСТАН": "UZS", "ИРАН": "IRR", "ЕГИПЕТ": "EGP",
+}  # fmt: skip
 CONSUMER_TAGS = frozenset({"retail", "consumer_goods", "food", "hospitality"})
 RATE_PRODUCTS = ("loan", "leasing", "factoring")
 
@@ -119,11 +129,20 @@ def event_tags(event: dict[str, Any]) -> dict[str, set[str]]:
     }
 
 
+def _cp_tags(features: dict[str, Any], min_share: float = COUNTERPARTY_MIN_SHARE) -> set[str]:
+    out = set()
+    for path in features:
+        if path.startswith("counterparties.industry_share_"):
+            share = fv(features, path)
+            if isinstance(share, int | float) and share >= min_share:
+                out.add(path.rsplit(".", 1)[-1])
+    return out
+
+
 def compute_exposure(features: dict[str, Any], event: dict[str, Any], company_id: str) -> ExposureResult:
     res = ExposureResult()
     tags = event_tags(event)
     etype = str(event.get("event_type") or "other")
-    specific = tags["industry_tags"] - GENERIC_TAGS
     products = set(products_of(features))
     paths = set(features)
 
@@ -141,36 +160,65 @@ def compute_exposure(features: dict[str, Any], event: dict[str, Any], company_id
                 [f"counterparties.top_{d}"],
                 "Событие касается одного из крупнейших контрагентов компании.",
             )
-    for tag in sorted(specific):
+    match_tags = tags["industry_tags"] - MATCH_GENERIC_TAGS
+    for tag in sorted(match_tags):
         for d, who in (("in", "покупателей"), ("out", "поставщиков")):
             path = f"counterparties.industry_share_{d}.{tag}"
             share = fv(features, path)
-            strength = counterparty_strength(share)
+            strength = counterparty_strength(share) * SECOND_ORDER_DISCOUNT
+            if d == "in" and etype == "commodities":
+                strength *= 0.5  # a price move of the customers' goods barely changes what they buy from you
             if isinstance(share, int | float) and strength > 0:
                 res.offer(
                     "counterparty",
-                    strength,
+                    round(strength, 4),
                     [path],
                     f"{float(share) * 100:.0f}% платежей {who} компании приходится на затронутую отрасль.",
                 )
 
     industry = set(fv(features, "industry_tags", []) or [])
-    if specific & industry:
+    if match_tags & industry:
         res.offer("industry", 1.0, ["industry_tags", "okved.code"], "Событие касается отрасли компании.")
 
     fts = {str(c).upper() for c in (fv(features, "fts_countries", []) or [])}
     countries = {c.upper() for c in tags["countries"]} - {"РОССИЯ"}
-    if countries & fts:
+    own_ccy = {COUNTRY_CURRENCY[c] for c in fts if c in COUNTRY_CURRENCY}
+    own_ccy |= {str(x).upper() for x in (fv(features, "user_provided.currencies", []) or [])} - {"RUB"}
+    ev_ccy = {c.upper() for c in tags["currencies"]}
+    overlap_countries = countries & fts
+    # trade with the event's country matters for FX/sanctions/logistics news; for a commodity or tax story
+    # about that country only together with an own exposure (industry, commodity, counterparty)
+    trade_type = (
+        etype in FX_COUNTRY_TYPES
+        or (etype == "trade_logistics" and not match_tags)
+        or (etype == "trade_logistics" and bool(match_tags & (industry | _cp_tags(features))))
+    )
+    if overlap_countries and trade_type:
         res.offer(
             "fx_country",
             1.0,
             ["fts_countries"],
-            "Компания ведёт ВЭД со страной события: " + ", ".join(sorted(countries & fts)) + ".",
+            "Компания ведёт ВЭД со страной события: " + ", ".join(sorted(overlap_countries)) + ".",
         )
-    elif etype in {"fx", "sanctions"} and fv(features, "sensitivities.fx_sensitive"):
+    elif ev_ccy and ev_ccy & own_ccy:
         res.offer(
             "fx_country",
-            0.7,
+            0.9,
+            ["fts_countries"] if fts else ["user_provided.currencies"],
+            "Событие касается валюты расчётов по ВЭД компании: " + ", ".join(sorted(ev_ccy & own_ccy)) + ".",
+        )
+    elif overlap_countries:
+        res.offer(
+            "fx_country",
+            0.35,
+            ["fts_countries"],
+            "Событие касается страны ВЭД компании: " + ", ".join(sorted(overlap_countries)) + " (косвенно).",
+        )
+    elif etype in FX_COUNTRY_TYPES and fv(features, "sensitivities.fx_sensitive"):
+        broad = not countries and not ev_ccy  # a general FX/sanctions story vs. one about other countries
+        res.offer(
+            "fx_country",
+            0.7 if broad else 0.3,
             ["sensitivities.fx_sensitive"],
             "У компании есть внешнеторговые операции — она чувствительна к курсу и условиям расчётов.",
         )
@@ -229,7 +277,14 @@ def compute_exposure(features: dict[str, Any], event: dict[str, Any], company_id
 
     region = fv(features, "region")
     if region and region in tags["regions"]:
-        res.offer("region", 1.0, ["region"], f"Событие затрагивает регион работы компании: {region}.")
+        # the region alone is background (the event happens where the company works); with another exposure
+        # it strengthens the case (logistics, regional demand)
+        res.offer(
+            "region",
+            1.0 if res.items else 0.5,
+            ["region"],
+            f"Событие затрагивает регион работы компании: {region}.",
+        )
     # Keep only references that really exist in this company's context (validator rule unknown_feature_ref).
     for e in list(res.items.values()):
         e.features = [f for f in e.features if feature_known(f, paths)]

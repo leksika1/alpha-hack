@@ -102,17 +102,14 @@ def check_insight(insight: dict[str, Any], ev: Evidence) -> CheckResult:
 
     # --- quality (case risks) --------------------------------------------------------------------------
     news_text = " ".join(f"{n.title} {n.text}" for n in ev.news)
-    retell = (
-        max(overlap(insight["summary"], news_text), overlap(insight["title"], news_text))
-        if news_text
-        else 0.0
-    )
+    # the title names the event on purpose ("<event>: <effect for the company>"); retelling is judged on the summary
+    retell = overlap(insight["summary"], news_text) if news_text else 0.0
     res.metrics["retelling_overlap"] = round(retell, 3)
     if retell > 0.8:
         res.add(
             False,
             "retelling",
-            "summary/title mostly repeat the news text — explain the effect on the company",
+            "summary mostly repeats the news text — explain the effect on the company",
         )
     feats = {f for item in insight["why_it_matters"] for f in item["feature_refs"]}
     res.metrics["personal_features"] = float(len(feats))

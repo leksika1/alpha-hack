@@ -10,8 +10,17 @@ from typing import Any
 
 from alfa_ml.agent.draft import Action, BankPosition, Claim, Consequence, Draft, Fact, Quant, Reason, Scenario
 from alfa_ml.agent.evidence import Evidence, is_demo_material
-from alfa_ml.agent.textutil import best_sentences, clip, first_sentences, fmt_pct, rate_change_pp, stems
+from alfa_ml.agent.textutil import (
+    best_sentences,
+    clip,
+    first_sentences,
+    fmt_pct,
+    rate_change_pp,
+    sentences,
+    stems,
+)
 from alfa_ml.profile import GENERIC_TAGS, PRODUCT_LABELS, fv, products_of
+from alfa_ml.ranker import ROLE_MULTIPLIERS
 
 TAG_LABELS = {
     "metals": "металлы и металлопрокат",
@@ -176,7 +185,14 @@ def _company_reasons(w: _Writer, news_refs: list[str]) -> None:
     ev = w.ev
     feats = ev.features
     order = ROLE_ORDER.get(ev.role, list(ev.exposure.items))
-    items = sorted(ev.exposure.ordered(), key=lambda e: order.index(e.name) if e.name in order else 50)
+    mult = ROLE_MULTIPLIERS.get(ev.role, {})
+    items = sorted(
+        ev.exposure.ordered(),
+        key=lambda e: (
+            -round(e.weight * mult.get(e.name, 1.0), 2),
+            order.index(e.name) if e.name in order else 50,
+        ),
+    )
     okved_name = fv(feats, "okved.name") or "основной вид деятельности"
     ev_tags = ev.event.get("tags") or {}
     for e in items:
@@ -259,7 +275,7 @@ def _company_reasons(w: _Writer, news_refs: list[str]) -> None:
                         r.features.append(feature)
     # group context
     g = ev.group
-    if g and g.get("size", 0) > 1:
+    if g and g.get("size", 0) > 1 and ev.role in {"owner", "ceo"}:
         tags = set(ev_tags.get("industry_tags") or []) - GENERIC_TAGS
         members = [m for m in g.get("members") or [] if m.get("company_id") != ev.company_id]
         if tags and members:
@@ -504,7 +520,47 @@ def _consequences(w: _Writer, news_refs: list[str]) -> str:
         return "risk"
 
     comm_label = _commodity_label(comm) or "продукцию отрасли"
-    if t == "regulation_tax":
+    fts_overlap = sorted(
+        {str(c).upper() for c in tags.get("countries") or []}
+        & {str(c).upper() for c in fv(ev.features, "fts_countries", []) or []}
+    )
+    if (
+        t == "regulation_tax"
+        and down
+        and (comm or seller)
+        and (
+            "export" in str(e.get("summary", "")).lower()
+            or "экспорт" in str(e.get("summary", "")).lower() + str(e.get("title", "")).lower()
+        )
+    ):
+        w.head("экспорт компании становится выгоднее")
+        w.opp(
+            f"Снижение экспортной нагрузки на {comm_label} повышает выручку компании с каждой тонны экспорта и конкурентоспособность поставок.",
+            "months",
+            ["вступление решения в силу", "мировые цены", "курс рубля"],
+            basis,
+        )
+        if fts_overlap:
+            w.opp(
+                f"Рост закупок со стороны {', '.join(c.title() for c in fts_overlap)} — ваших направлений ВЭД — поддержит спрос на экспорт компании.",
+                "months",
+                ["объёмы закупок импортёров", "условия оплаты"],
+                [*basis, "sc"],
+            )
+        w.risk(
+            "Рост экспорта может обострить конкуренцию за логистику (порты, вагоны) и поднять ставки перевозки.",
+            "weeks",
+            ["загрузка портов", "ставки фрахта"],
+            basis,
+            0.5,
+        )
+        w.action("analyze", "Пересчитать экономику экспортных контрактов с учётом новой пошлины.")
+        w.action(
+            "contact_manager",
+            "Обсудить финансирование экспортных поставок и валютные расчёты.",
+            "ved_support",
+        )
+    elif t == "regulation_tax":
         if down:
             w.head("нагрузка на компанию снижается")
             w.opp(
@@ -550,6 +606,66 @@ def _consequences(w: _Writer, news_refs: list[str]) -> str:
             ["ситуация на рынке труда", "индексация зарплат"],
             basis,
         )
+    elif "ипотек" in _event_text(ev).lower() and {"construction", "developer", "real_estate"} & set(
+        fv(ev.features, "industry_tags", []) or []
+    ):
+        w.head("продажи жилья и денежный поток компании под давлением")
+        w.risk(
+            "Ужесточение ипотеки снизит спрос на жильё: продажи и поступления на эскроу замедлятся, а при проектном финансировании растёт срок и стоимость долга.",
+            "quarters",
+            ["темп продаж", "ставки по ипотеке", "условия проектного финансирования"],
+            basis + analytics_ref,
+        )
+        if has_debt:
+            w.risk(
+                "Если продажи отстанут от графика, нагрузка по кредитам компании вырастет относительно выручки.",
+                "quarters",
+                ["покрытие долга выручкой", "ковенанты"],
+                basis,
+                0.55,
+            )
+        w.opp(
+            "Компании с запасом ликвидности смогут предложить покупателям собственные программы рассрочки и забрать долю рынка.",
+            "months",
+            ["ликвидность", "действия конкурентов"],
+            basis,
+            0.45,
+        )
+        w.action(
+            "analyze",
+            "Пересчитать график продаж и потребность в финансировании по проектам при снижении темпа продаж.",
+        )
+        w.action(
+            "contact_manager",
+            "Обсудить с менеджером условия проектного финансирования и запас ликвидности.",
+            "loan_working_capital",
+        )
+    elif t == "industry" and seller:
+        if down:
+            w.head("спрос и цены в отрасли компании снижаются")
+            w.risk(
+                "Ухудшение условий в отрасли может снизить спрос и цены на продукцию компании.",
+                "quarters",
+                ["спрос клиентов", "действия конкурентов"],
+                basis,
+            )
+        elif up:
+            w.head("условия в отрасли компании улучшаются")
+            w.opp(
+                "Улучшение условий в отрасли поддержит спрос и цены на продукцию компании.",
+                "quarters",
+                ["спрос клиентов"],
+                basis,
+            )
+        else:
+            w.risk(
+                "Изменения в отрасли могут повлиять на спрос и условия работы компании.",
+                "months",
+                ["развитие ситуации в отрасли"],
+                basis,
+                0.5,
+            )
+        w.action("analyze", "Оценить влияние на план продаж и цены на ближайший квартал.")
     elif "demand" in names and not comm:
         if up:
             w.head("спрос на продукцию компании растёт")
@@ -566,6 +682,10 @@ def _consequences(w: _Writer, news_refs: list[str]) -> str:
                 "quarters",
                 ["реальные доходы населения", "инфляция", "ставки по потребкредитам"],
                 basis,
+            )
+            w.action(
+                "analyze",
+                "Пересмотреть план продаж, закупок и запасов на квартал с учётом замедления спроса.",
             )
     else:
         if up:
@@ -648,13 +768,16 @@ def _bank_view(w: _Writer) -> None:
     ev = w.ev
     etype = str(ev.event.get("event_type") or "other")
     query = f"{ev.event.get('title', '')} {FACTOR_KEYWORDS.get(etype, '')}"
-    q_stems = stems(query)
-    for a in ev.analytics[:3]:
-        text = str(a.hit.get("text") or "")
+    topic = stems(f"{ev.event.get('title', '')} {ev.event.get('summary', '')}") | stems(
+        FACTOR_KEYWORDS.get(etype, "")
+    )
+    for a in ev.analytics[:4]:
+        text = " ".join(s for s in sentences(str(a.hit.get("text") or "")) if "ДЕМО (синтетика)" not in s)
         best = best_sentences(text, query, n=2)
         if not best:
             continue
-        if not (stems(" ".join(best)) & q_stems):
+        # the RAG always returns top-k: keep a chunk only if it speaks about the event's topic (2+ shared stems)
+        if len(stems(" ".join(best)) & topic) < 3:
             continue
         quote = clip(" ".join(best), 300)
         label = "Демо-материал (синтетика)" if is_demo_material(a.hit) else "Аналитики Альфа-Банка"

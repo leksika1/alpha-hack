@@ -8,6 +8,7 @@ x-test-env: &test-env
   NEWS_FIXTURES_ENABLED: "true"
   NEWS_LIVE_SOURCES_ENABLED: "true"   # only the e2e catalog above: nothing leaves the stack
   INSIGHT_GENERATOR: stub
+  ML_SERVICE_URL: http://ml-stub:8100  # e2e scenarios are written against the deterministic stub
   EMBEDDING_PROVIDER: fake
   OCR_PROVIDER: fake
   LLM_BASE_URL: ""
