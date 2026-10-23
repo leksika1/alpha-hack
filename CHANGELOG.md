@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-10-23
+
+Первая версия бэкенда для сдачи: фазы 0–8 (`docs/REPORT.md`).
+
 ### Добавлено (фаза 8 — сдача)
 - README со сценарием проверки для жюри; `scripts/demo_check.py` проходит путь пользователя по API.
 - `docs/ARCHITECTURE.md`, `docs/API.md`, `docs/RUNBOOK.md`, `docs/REPORT.md`; live smoke (`make smoke-live`).
