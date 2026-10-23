@@ -18,6 +18,7 @@ from app.core.security import issue_run_token
 from app.domain.contracts.insight import Insight, Role
 from app.domain.insight_validator import ValidationContext, ValidationResult, validate_insight
 from app.domain.ports import GenerationRequest, InsightGenerator, ScoreResult
+from app.services.llm_gateway import budget
 
 log = get_logger(__name__)
 
@@ -222,6 +223,7 @@ async def generate_one(
             }
         },
     )
+    llm_budget = await budget(conn, settings)  # exhausted -> the agent works without LLM (NFR-9)
     req = GenerationRequest(
         request_id=request_id,
         company_id=company_id,
@@ -230,6 +232,7 @@ async def generate_one(
         run_id=run_id,
         candidate=score,
         tools=tools_access(settings, run_id, company_id),
+        allow_llm=not llm_budget.exhausted,
     )
     started = time.perf_counter()
     outcome = await generator.generate(req)

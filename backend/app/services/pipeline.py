@@ -5,7 +5,7 @@ from typing import Any
 
 from app.core.config import Settings
 from app.services.company_context import rebuild_contexts
-from app.services.matching import match
+from app.services.matching import match, match_events
 
 Enqueue = Callable[[list[str]], Awaitable[None]]
 
@@ -26,25 +26,22 @@ async def rematch_company(
 
 
 async def match_new_events(conn: Any, settings: Settings, event_ids: list[str]) -> list[str]:
-    """After a news poll: score new/updated events against companies that have users.
-    Returns companies with candidates waiting for generation (to enqueue)."""
+    """After a news poll: pre-filter + score new/updated events (MATCH_SCOPE: companies with users or the
+    whole client base). Returns companies with users that have candidates waiting for generation."""
     if not event_ids:
         return []
-    company_ids = [r["company_id"] for r in await conn.fetch(
-        "SELECT DISTINCT company_id FROM core.user_company_access ORDER BY company_id"
-    )]  # fmt: skip
-    if not company_ids:
-        return []
-    await match(
+    await match_events(
         conn,
-        company_ids,
-        event_ids=event_ids,
+        event_ids,
+        settings.match_scope,
+        settings.eligible_client_types,
         min_score=settings.match_min_score,
         max_per_company=settings.match_max_per_company,
     )
     rows = await conn.fetch(
-        """SELECT DISTINCT company_id FROM core.candidate_matches
-           WHERE status = 'pending' AND company_id = ANY($1::text[]) ORDER BY company_id""",
-        company_ids,
+        """SELECT DISTINCT m.company_id FROM core.candidate_matches m
+           WHERE m.status = 'pending'
+             AND EXISTS (SELECT 1 FROM core.user_company_access a WHERE a.company_id = m.company_id)
+           ORDER BY m.company_id"""
     )
     return [r["company_id"] for r in rows]

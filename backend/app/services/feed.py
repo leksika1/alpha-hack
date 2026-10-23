@@ -185,6 +185,12 @@ async def trace(conn: Any, row: Any) -> dict[str, Any]:
            FROM core.tool_audit_log WHERE run_id = $1 ORDER BY id""",
         run_id,
     )
+    llm_calls = await conn.fetch(
+        """SELECT model, purpose, status, cache_hit, tokens_in, tokens_out, cost_rub, latency_ms,
+                  prompt_preview, created_at
+           FROM core.llm_usage WHERE run_id = $1 ORDER BY id""",
+        run_id,
+    )
     feats_raw = await conn.fetchval(
         "SELECT features FROM core.company_context WHERE company_id = $1", row["company_id"]
     )
@@ -232,6 +238,21 @@ async def trace(conn: Any, row: Any) -> dict[str, Any]:
                 "created_at": c["created_at"],
             }
             for c in calls
+        ],
+        "llm_calls": [
+            {
+                "model": c["model"],
+                "purpose": c["purpose"],
+                "status": c["status"],
+                "cache_hit": c["cache_hit"],
+                "tokens_in": c["tokens_in"],
+                "tokens_out": c["tokens_out"],
+                "cost_rub": float(c["cost_rub"]),
+                "latency_ms": c["latency_ms"],
+                "prompt_preview": c["prompt_preview"],
+                "created_at": c["created_at"],
+            }
+            for c in llm_calls
         ],
         "company_features": referenced,
         "candidate": None

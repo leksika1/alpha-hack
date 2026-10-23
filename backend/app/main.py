@@ -8,13 +8,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.api import health
+from app.api.internal import llm as internal_llm
 from app.api.internal import tools as internal_tools
 from app.api.v1 import router as v1_router
-from app.core.config import get_settings
+from app.core.config import get_settings, insecure_defaults
 from app.core.errors import install_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestContextMiddleware
 from app.core.pg import create_pool
+from app.core.ratelimit import RateLimiter, RateLimitMiddleware
 
 DESCRIPTION = """
 Бэкенд сервиса персонализированных бизнес-инсайтов «Альфа-Будущее» для интернет-банка «Альфа-Бизнес».
@@ -57,9 +59,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.exception("broker_unavailable")
     if not hasattr(app.state, "enqueue"):
         app.state.enqueue = _queue_generation
+    import redis.asyncio as aioredis
+
+    redis_client = aioredis.from_url(settings.redis_url, socket_timeout=0.5, socket_connect_timeout=0.5)
+    app.state.rate_limiter = RateLimiter(redis_client)
     try:
         yield
     finally:
+        await redis_client.aclose()
         if broker_started:
             await broker.shutdown()
         if app.state.pool is not None:
@@ -69,6 +76,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level, settings.log_json)
+    if settings.app_env == "prod" and (weak := insecure_defaults(settings)):
+        raise RuntimeError(f"APP_ENV=prod with development secrets: {', '.join(weak)} (set them in env)")
     app = FastAPI(
         title="Alfa Future — Business Insights API",
         version=__version__,
@@ -78,6 +87,7 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
         lifespan=lifespan,
     )
+    app.add_middleware(RateLimitMiddleware, settings=settings)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(
         CORSMiddleware,
@@ -91,6 +101,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(v1_router, prefix="/api/v1")
     app.include_router(internal_tools.router)
+    app.include_router(internal_llm.router)
     return app
 
 

@@ -24,6 +24,19 @@
 - **LLM Gateway** (`contracts/llm-gateway.openapi.yaml`): OpenAI-совместимый `chat/completions`, только 6 моделей из белого списка, бюджет, кэш.
 - В каждом запросе — `tools.token` (run-scoped) и `tools.run_id`. Передавайте их в `Authorization: Bearer` и `X-Run-Id`.
 
+## LLM Gateway — как пользоваться
+
+- Адрес — `tools.llm_base_url` из запроса (`http://api:8000/internal/llm`), авторизация та же: `Authorization: Bearer <tools.token>`
+  и `X-Run-Id: <tools.run_id>` — тогда вызовы попадут в трассировку инсайта. Без запуска (отладка) — `ML_SERVICE_TOKEN`.
+- `X-Purpose: planning|generation|self_check|chat|ocr|other` — для отчёта по расходу.
+- `GET /models` — алиасы и цены, `GET /budget` — остаток дня. Модель вне списка → 403 `model-not-allowed`.
+- Бюджет: каждый вызов резервирует оценку по `max_tokens`, поэтому задавайте `max_tokens` поменьше — это и дешевле, и реже 429.
+  429 `budget-exhausted` — не ошибка агента: продолжайте без LLM. Если в запросе `options.allow_llm=false`, бюджет уже
+  исчерпан — не вызывайте Gateway.
+- `temperature: 0` без `stream` — ответ кэшируется (`X-Cache: hit`, бесплатно).
+- ID физлиц, e-mail, телефоны и ИНН-подобные числа Gateway заменит на `[PERSON]`, `[EMAIL]`, `[PHONE]`, `[ID]` — не рассчитывайте на них в ответе.
+- 502/504 — ошибка или таймаут провайдера; один повтор Gateway уже сделал.
+
 ## Требования к результату (проверяет наш валидатор)
 
 1. JSON Schema `insight.schema.json` (строго, `additionalProperties: false`).

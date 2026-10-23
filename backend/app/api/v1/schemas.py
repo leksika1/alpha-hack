@@ -225,6 +225,9 @@ class TraceOut(_Model):
     run: dict[str, Any] | None
     steps: list[dict[str, Any]]
     tool_calls: list[dict[str, Any]]
+    llm_calls: list[dict[str, Any]] = Field(
+        description="Вызовы LLM через Gateway (модель, токены, ₽, кэш; превью промпта — после маскирования)"
+    )
     company_features: dict[str, Any] = Field(
         description="Значения признаков компании, на которые ссылается инсайт"
     )

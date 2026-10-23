@@ -1167,6 +1167,62 @@
           }
         }
       }
+    },
+    "/api/v1/admin/llm-usage": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Расход LLM: бюджет дня и вызовы по дням, моделям, целям и статусам (ok, cached, refused, error)",
+        "operationId": "llm_usage_api_v1_admin_llm_usage_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "default": 7,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmUsageOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2151,6 +2207,132 @@
         ],
         "title": "InsightState"
       },
+      "LlmBudgetOut": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "limit_rub": {
+            "type": "number",
+            "title": "Limit Rub"
+          },
+          "spent_rub": {
+            "type": "number",
+            "title": "Spent Rub"
+          },
+          "remaining_rub": {
+            "type": "number",
+            "title": "Remaining Rub"
+          },
+          "tokens_in": {
+            "type": "integer",
+            "title": "Tokens In"
+          },
+          "tokens_out": {
+            "type": "integer",
+            "title": "Tokens Out"
+          },
+          "exhausted": {
+            "type": "boolean",
+            "title": "Exhausted"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "date",
+          "limit_rub",
+          "spent_rub",
+          "remaining_rub",
+          "tokens_in",
+          "tokens_out",
+          "exhausted"
+        ],
+        "title": "LlmBudgetOut"
+      },
+      "LlmUsageOut": {
+        "properties": {
+          "budget": {
+            "$ref": "#/components/schemas/LlmBudgetOut"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/LlmUsageRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "budget",
+          "rows"
+        ],
+        "title": "LlmUsageOut"
+      },
+      "LlmUsageRow": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          },
+          "tokens_in": {
+            "type": "integer",
+            "title": "Tokens In"
+          },
+          "tokens_out": {
+            "type": "integer",
+            "title": "Tokens Out"
+          },
+          "cost_rub": {
+            "type": "number",
+            "title": "Cost Rub"
+          },
+          "avg_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Latency Ms"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "date",
+          "model",
+          "purpose",
+          "status",
+          "calls",
+          "tokens_in",
+          "tokens_out",
+          "cost_rub",
+          "avg_latency_ms"
+        ],
+        "title": "LlmUsageRow"
+      },
       "LoginIn": {
         "properties": {
           "login": {
@@ -2816,6 +2998,15 @@
             "type": "array",
             "title": "Tool Calls"
           },
+          "llm_calls": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Llm Calls",
+            "description": "Вызовы LLM через Gateway (модель, токены, ₽, кэш; превью промпта — после маскирования)"
+          },
           "company_features": {
             "additionalProperties": true,
             "type": "object",
@@ -2863,6 +3054,7 @@
           "run",
           "steps",
           "tool_calls",
+          "llm_calls",
           "company_features",
           "candidate",
           "sources",
