@@ -10,7 +10,7 @@ from app.api.v1.schemas import CompanySummary, FeedOut, FeedSummaryOut, InsightC
 from app.core.errors import ProblemError
 from app.domain.contracts.insight import Role
 from app.services import feed as svc
-from app.services import users
+from app.services import interactions, users
 
 router = APIRouter(tags=["feed"])
 
@@ -40,6 +40,15 @@ async def get_feed(
         )
     except (ValueError, KeyError) as exc:
         raise ProblemError(422, "validation", "Invalid cursor") from exc
+    if cursor is None:  # one view per opened feed, not per page
+        await interactions.log_action(
+            conn,
+            user.id,
+            company_id,
+            None,
+            "feed_view",
+            {"filter": filter, "period": period, "items": len(items)},
+        )
     return FeedOut(
         company_id=company_id,
         role=Role(effective_role),
@@ -67,5 +76,9 @@ async def feed_summary(user: User, conn: Conn, settings: SettingsDep) -> FeedSum
                 urgent=s["urgent"],
                 top=InsightCard(**s["top"]) if s["top"] else None,
             )
+        )
+    if out:  # the widget on the main page was shown (CJM 01)
+        await interactions.log_action(
+            conn, user.id, out[0].company_id, None, "summary_view", {"unread": sum(c.unread for c in out)}
         )
     return FeedSummaryOut(unread=sum(c.unread for c in out), urgent=sum(c.urgent for c in out), companies=out)

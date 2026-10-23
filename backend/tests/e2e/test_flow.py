@@ -1,6 +1,7 @@
 """E2E against the compose stack (`make e2e`): seed -> queued pre-generation in the worker -> ml-stub calls
 the Tools API -> validated insights in the feed. Remaining scenarios of SPEC §11.2 are added in phase 7."""
 
+import json
 import os
 import time
 from typing import Any
@@ -116,3 +117,62 @@ def test_agent_llm_calls_are_traced(api: httpx.Client, auth: dict[str, str]) -> 
     tr = api.get(f"/api/v1/insights/{card['insight_id']}/trace", headers=auth).json()
     assert tr["llm_calls"] and tr["llm_calls"][-1]["status"] in {"ok", "cached"}
     assert all("F_77" not in (c["prompt_preview"] or "") for c in tr["llm_calls"])
+
+
+def _sse(text: str) -> list[tuple[str, Any]]:
+    out = []
+    for block in text.strip().split("\n\n"):
+        lines = [x for x in block.splitlines() if x and not x.startswith(":")]
+        event = next((x[6:].strip() for x in lines if x.startswith("event:")), None)
+        data = "\n".join(x[5:].strip() for x in lines if x.startswith("data:"))
+        if event:
+            out.append((event, json.loads(data) if data else None))
+    return out
+
+
+def test_scenario_8_question_gets_sse_answer_with_sources(api: httpx.Client, auth: dict[str, str]) -> None:
+    card = wait_feed(api, auth, METALS)[0]
+    resp = api.post(
+        f"/api/v1/insights/{card['insight_id']}/ask",
+        headers=auth,
+        json={"question": "Как это повлияет на наши кредиты?"},
+        timeout=120,
+    )
+    events = _sse(resp.text)
+    assert events[0][0] == "run" and events[-1][0] == "done", [e for e, _ in events]
+    final = events[-1][1]
+    assert final["answer"] and final["sources"]
+    assert any(d["code"] == "not_investment_advice" for d in final["disclaimers"])
+
+
+def test_notifications_stream_and_digest(api: httpx.Client, auth: dict[str, str]) -> None:
+    wait_feed(api, auth, METALS)
+    listed = api.get("/api/v1/notifications", headers=auth).json()
+    assert listed["items"] and listed["items"][0]["kind"] == "urgent_insight"
+    stream = api.get(
+        "/api/v1/notifications/stream",
+        headers={**auth, "Last-Event-ID": "0"},
+        params={"max_s": 2},
+        timeout=30,
+    )
+    events = _sse(stream.text)
+    assert events[0][0] == "ready" and any(e == "notification" for e, _ in events)
+    digest = api.get("/api/v1/digest", headers=auth, params={"company_id": METALS, "period": "week"}).json()
+    assert digest["counts"]["new"] > 0 and digest["top"]
+
+
+def test_scenario_5_feedback_is_visible_in_admin_metrics(api: httpx.Client, auth: dict[str, str]) -> None:
+    card = wait_feed(api, auth, RETAIL)[-1]
+    fb = api.post(
+        f"/api/v1/insights/{card['insight_id']}/feedback",
+        headers=auth,
+        json={"useful": False, "reason": "irrelevant"},
+    ).json()
+    assert fb["hidden"] is True
+    admin = api.post("/api/v1/auth/login", json={"login": "admin", "password": "admin12345"}).json()
+    m = api.get(
+        "/api/v1/admin/metrics",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        params={"days": 1},
+    ).json()
+    assert m["cjm"]["08_return"]["not_useful_reasons"].get("irrelevant", 0) >= 1

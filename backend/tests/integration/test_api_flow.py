@@ -3,6 +3,7 @@ Tools API with a run-scoped token exactly as in docker-compose). Covers SPEC §1
 
 import json
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,9 @@ from app.services.analytics_run import run_analytics_ingest
 from app.services.generation import generate_pending
 from app.services.ingest_companies import ingest_companies
 from app.services.matching import affected_companies, event_profile, load_profiles, match_events
-from app.services.seed import DEMO_PASSWORD, seed_demo
+from app.services.metrics import snapshot_day
+from app.services.notifications import create_digests, notify_insight
+from app.services.seed import ADMIN_PASSWORD, DEMO_PASSWORD, seed_demo
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio(loop_scope="session")]
 
@@ -38,6 +41,7 @@ async def env(infra: dict[str, str]) -> AsyncIterator[dict[str, Any]]:
     app = create_app()
     app.state.llm_provider = FakeLlmProvider()  # gateway calls in the test act as the agent's
     stub.TOOLS_TRANSPORT = httpx.ASGITransport(app=app)
+    app.state.ml_transport = httpx.ASGITransport(app=stub.app)  # questions -> ml-stub in-process
     generator = get_generator(gen_settings, transport=httpx.ASGITransport(app=stub.app))
     stats: list[dict[str, int]] = []
 
@@ -60,6 +64,7 @@ async def env(infra: dict[str, str]) -> AsyncIterator[dict[str, Any]]:
                 "url": infra["DATABASE_URL"],
                 "summary": summary,
                 "stats": stats,
+                "app": app,
                 "settings": settings,
             }
     stub.TOOLS_TRANSPORT = None
@@ -402,3 +407,219 @@ async def test_full_base_scope_scores_companies_without_users(env: dict[str, Any
         assert (
             await conn.fetchval("SELECT count(DISTINCT company_id) FROM core.candidate_matches") > users_only
         )
+
+
+def sse_events(text: str) -> list[tuple[str, Any]]:
+    out = []
+    for block in text.strip().split("\n\n"):
+        lines = [x for x in block.splitlines() if x and not x.startswith(":")]
+        event = next((x[6:].strip() for x in lines if x.startswith("event:")), None)
+        data = "\n".join(x[5:].strip() for x in lines if x.startswith("data:"))
+        if event:
+            out.append((event, json.loads(data) if data else None))
+    return out
+
+
+async def admin_headers(client: httpx.AsyncClient) -> dict[str, str]:
+    resp = await client.post("/api/v1/auth/login", json={"login": "admin", "password": ADMIN_PASSWORD})
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
+async def test_cards_explain_priority_and_why_for_you(env: dict[str, Any]) -> None:
+    c = env["client"]
+    h = await login(c)
+    summary = (await c.get("/api/v1/feed/summary", headers=h)).json()
+    top = summary["companies"][0]["top"]
+    assert top["why_for_you"] and top["priority_reasons"], top
+    assert "updated" in top["state"]
+
+
+async def test_urgent_insights_notify_once_and_stream(env: dict[str, Any]) -> None:
+    c = env["client"]
+    h = await login(c)
+    data = (await c.get("/api/v1/notifications", headers=h)).json()
+    assert data["items"] and {n["kind"] for n in data["items"]} == {"urgent_insight"}, data
+    unread = data["unread"]
+    async with pg_connection(env["url"]) as conn:
+        insight_id = data["items"][0]["insight_id"]
+        assert await notify_insight(conn, insight_id) == 0  # dedup per user and event
+        last = await conn.fetchval("SELECT max(id) FROM core.notifications")
+        await conn.execute("UPDATE core.insights SET created_at = now()")
+        assert await create_digests(conn, "day", datetime.now(UTC)) > 0
+        assert await create_digests(conn, "day", datetime.now(UTC)) == 0
+    first = data["items"][0]
+    assert (await c.post(f"/api/v1/notifications/{first['id']}/read", headers=h)).status_code == 204
+    after = (await c.get("/api/v1/notifications", headers=h, params={"unread_only": True})).json()
+    assert after["unread"] >= unread  # + digest, - the one read
+    assert all(n["id"] != first["id"] for n in after["items"])
+    resp = await c.get(
+        "/api/v1/notifications/stream", headers={**h, "Last-Event-ID": str(last)}, params={"max_s": 1}
+    )
+    assert resp.status_code == 200 and resp.headers["content-type"].startswith("text/event-stream")
+    events = sse_events(resp.text)
+    assert events[0][0] == "ready"
+    digests = [d for e, d in events if e == "notification" and d["kind"] == "digest"]
+    assert digests and digests[0]["title"].startswith("Дайджест за день")
+    assert (await c.post("/api/v1/notifications/read-all", headers=h)).status_code == 204
+    assert (await c.get("/api/v1/notifications", headers=h)).json()["unread"] == 0
+
+
+async def test_digest(env: dict[str, Any]) -> None:
+    c = env["client"]
+    h = await login(c)
+    d = (await c.get("/api/v1/digest", headers=h, params={"company_id": METALS, "period": "week"})).json()
+    assert d["counts"]["new"] > 0 and 0 < len(d["top"]) <= 5
+    assert d["counts"]["risks"] + d["counts"]["opportunities"] >= 1
+    assert all(step["text"] and step["insight_title"] for step in d["next_steps"])
+    forbidden = await c.get("/api/v1/digest", headers=h, params={"company_id": AGRO})
+    assert forbidden.status_code == 403
+
+
+async def test_question_to_insight_streams_checked_answer_and_keeps_history(env: dict[str, Any]) -> None:
+    c = env["client"]
+    h = await login(c)
+    card = (await feed(c, h, METALS))["items"][0]
+    resp = await c.post(
+        f"/api/v1/insights/{card['insight_id']}/ask",
+        headers=h,
+        json={"question": "Что будет с нашим кредитом, если ставка не снизится?", "intent": "clarify"},
+    )
+    assert resp.status_code == 200, resp.text
+    events = sse_events(resp.text)
+    names = [e for e, _ in events]
+    assert names[0] == "run" and names[-1] == "done" and "token" in names, names
+    final = events[-1][1]
+    assert final["answer"] and any(d["code"] == "not_investment_advice" for d in final["disclaimers"])
+    run_id = events[0][1]["run_id"]
+    history = (await c.get(f"/api/v1/insights/{card['insight_id']}/questions", headers=h)).json()
+    assert [m["role"] for m in history[-2:]] == ["user", "assistant"] and history[-1]["status"] == "ok"
+    async with pg_connection(env["url"]) as conn:
+        run = await conn.fetchrow("SELECT kind, status, outcome FROM core.agent_runs WHERE id = $1", run_id)
+        tools = await conn.fetchval("SELECT count(*) FROM core.tool_audit_log WHERE run_id = $1", run_id)
+    assert (run["kind"], run["status"], run["outcome"]) == ("chat", "ok", "answered") and tools > 0
+    company = await c.post(
+        "/api/v1/ask", headers=h, json={"company_id": METALS, "question": "Что с ключевой ставкой?"}
+    )
+    assert sse_events(company.text)[-1][0] == "done"
+    assert len((await c.get("/api/v1/ask/history", headers=h, params={"company_id": METALS})).json()) == 2
+
+
+async def test_question_when_ml_is_down_is_an_error_event(env: dict[str, Any]) -> None:
+    c, app_transport = env["client"], env["app"].state.ml_transport
+    env["app"].state.ml_transport = httpx.MockTransport(lambda _: httpx.Response(503))
+    try:
+        h = await login(c)
+        resp = await c.post("/api/v1/ask", headers=h, json={"company_id": METALS, "question": "Курс юаня?"})
+    finally:
+        env["app"].state.ml_transport = app_transport
+    events = sse_events(resp.text)
+    assert events[-1][0] == "error" and events[-1][1]["type"].endswith("/ml-unavailable")
+    history = (await c.get("/api/v1/ask/history", headers=h, params={"company_id": METALS})).json()
+    assert history[-1]["status"] == "error"
+
+
+async def test_feedback_is_acknowledged_and_watch_is_a_next_step(env: dict[str, Any]) -> None:
+    c = env["client"]
+    h = await login(c)
+    items = (await feed(c, h, RETAIL))["items"]
+    useful, irrelevant = items[0], items[1]
+    ok = (
+        await c.post(f"/api/v1/insights/{useful['insight_id']}/feedback", headers=h, json={"useful": True})
+    ).json()
+    assert ok["hidden"] is False and ok["applied"][0].startswith("Отзыв сохранён")
+    assert (
+        await c.post(f"/api/v1/insights/{useful['insight_id']}/state", headers=h, json={"action": "watch"})
+    ).status_code == 204
+    no = (
+        await c.post(
+            f"/api/v1/insights/{irrelevant['insight_id']}/feedback",
+            headers=h,
+            json={"useful": False, "reason": "irrelevant"},
+        )
+    ).json()
+    assert no["hidden"] is True and len(no["applied"]) == 2
+    visible = {i["insight_id"] for i in (await feed(c, h, RETAIL))["items"]}
+    assert irrelevant["insight_id"] not in visible
+    saved = {i["insight_id"] for i in (await feed(c, h, RETAIL, filter="saved"))["items"]}
+    assert useful["insight_id"] in saved
+
+
+async def test_request_status_is_visible_and_notified(env: dict[str, Any]) -> None:
+    c = env["client"]
+    h = await login(c)
+    card = (await feed(c, h, METALS))["items"][0]
+    created = (
+        await c.post(
+            f"/api/v1/insights/{card['insight_id']}/actions", headers=h, json={"type": "contact_manager"}
+        )
+    ).json()
+    mine = (await c.get("/api/v1/me/requests", headers=h)).json()
+    assert mine[0]["external_ref"] == created["external_ref"] and mine[0]["insight_title"] == card["title"]
+    ah = await admin_headers(c)
+    patched = await c.patch(
+        f"/api/v1/admin/crm-requests/{created['request_id']}", headers=ah, json={"status": "done"}
+    )
+    assert patched.status_code == 200 and patched.json()["notified"] == 1
+    assert (
+        await c.patch(
+            f"/api/v1/admin/crm-requests/{created['request_id']}", headers=h, json={"status": "done"}
+        )
+    ).status_code == 403
+    mine = (await c.get("/api/v1/me/requests", headers=h)).json()
+    assert mine[0]["status"] == "done" and mine[0]["updated_at"]
+    notes = (await c.get("/api/v1/notifications", headers=h, params={"unread_only": True})).json()["items"]
+    assert any(n["kind"] == "request_update" and created["external_ref"] in n["title"] for n in notes)
+
+
+async def test_ui_events_and_admin_metrics_follow_the_cjm(env: dict[str, Any]) -> None:
+    c = env["client"]
+    h = await login(c)
+    card = (await feed(c, h, METALS))["items"][0]
+    for event in ("widget_shown", "widget_click"):
+        r = await c.post("/api/v1/events", headers=h, json={"type": event, "company_id": METALS})
+        assert r.status_code == 204
+    assert (
+        await c.post("/api/v1/events", headers=h, json={"type": "hack", "company_id": METALS})
+    ).status_code == 422
+    assert (
+        await c.post("/api/v1/events", headers=h, json={"type": "widget_click", "company_id": AGRO})
+    ).status_code == 403
+    await c.get(f"/api/v1/insights/{card['insight_id']}", headers=h, params={"via": "feed", "position": 1})
+    await c.post(f"/api/v1/insights/{card['insight_id']}/feedback", headers=h, json={"useful": True})
+    await c.post(f"/api/v1/insights/{card['insight_id']}/actions", headers=h, json={"type": "callback"})
+    ah = await admin_headers(c)
+    m = (await c.get("/api/v1/admin/metrics", headers=ah, params={"days": 1})).json()
+    assert m["sessions"] > 0 and m["north_star"]["value"] > 0
+    stages = ["01_notice", "02_context", "03_select", "04_understand", "05_verify", "06_clarify", "07_act"]
+    assert set(m["cjm"]) == {*stages, "08_return"}
+    assert m["cjm"]["01_notice"]["value"] > 0 and m["cjm"]["03_select"]["value"] is not None
+    assert m["cjm"]["05_verify"]["value"] == 1.0  # the validator lets no unsourced key statement through
+    assert m["cjm"]["06_clarify"]["questions"] >= 2 and m["quality"]["feedback"] > 0
+    assert m["generation"]["completed"] > 0
+    assert (await c.get("/api/v1/admin/metrics", headers=h)).status_code == 403
+    async with pg_connection(env["url"]) as conn:
+        snap = await snapshot_day(conn, datetime.now(UTC).date())
+    assert snap["sessions"] > 0
+    m = (await c.get("/api/v1/admin/metrics", headers=ah, params={"days": 2})).json()
+    assert m["daily"] and m["daily"][-1]["sessions"] > 0
+
+
+async def test_admin_operations(env: dict[str, Any]) -> None:
+    c = env["client"]
+    ah = await admin_headers(c)
+    dq = (await c.get("/api/v1/admin/data-quality", headers=ah)).json()
+    assert dq["run"]["status"] and dq["checks"]
+    health = (await c.get("/api/v1/admin/sources/health", headers=ah)).json()
+    assert any(s["is_fixture"] for s in health)
+    queued = await c.post("/api/v1/admin/ingest/news", headers=ah)
+    assert queued.status_code == 202 and queued.json()["task_id"]
+    assert (await c.post("/api/v1/admin/ingest/companies", headers=ah)).status_code == 422
+    before = len(env["stats"])
+    regen = await c.post(
+        "/api/v1/admin/insights/regenerate",
+        headers=ah,
+        json={"company_ids": [LOGISTICS], "only_failed": False},
+    )
+    assert regen.status_code == 202 and regen.json()["candidates"] > 0
+    assert len(env["stats"]) == before + 1  # app.state.enqueue ran the generation

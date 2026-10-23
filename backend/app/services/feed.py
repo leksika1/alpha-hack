@@ -20,7 +20,7 @@ WITH variants AS (
       AND ($4::timestamptz IS NULL OR e.first_seen_at >= $4)
     ORDER BY i.event_id, (i.role_variant = $3) DESC, i.created_at DESC
 )
-SELECT v.*, s.seen_at, s.opened_at, s.saved_at, s.hidden_at
+SELECT v.*, s.seen_at, s.opened_at, s.saved_at, s.hidden_at, s.last_insight_id
 FROM variants v
 LEFT JOIN core.user_insight_state s ON s.user_id = $1 AND s.company_id = v.company_id AND
     s.event_id = v.event_id
@@ -46,8 +46,39 @@ def decode_cursor(cursor: str) -> tuple[float, uuid.UUID]:
     return float(data["s"]), uuid.UUID(data["id"])
 
 
+# Readable labels of scoring components for "why this is higher in your feed" (CJM stage 03).
+PRIORITY_LABELS = {
+    "group": "событие касается вашей группы компаний",
+    "counterparty": "затрагивает ваших контрагентов",
+    "industry": "ваша отрасль",
+    "fx_country": "страны ВЭД и валюта ваших расчётов",
+    "rate": "ставка и ваши кредитные продукты",
+    "commodity": "сырьё и материалы, от которых вы зависите",
+    "user_provided": "данные, которые вы указали в профиле",
+    "demand": "потребительский спрос",
+    "regulation": "регулирование вашей деятельности",
+    "region": "ваш регион",
+    "bank_analytics": "есть аналитика Альфа-Банка по теме",
+}
+MAX_PRIORITY_REASONS = 2
+
+
+def priority_reasons(breakdown: dict[str, Any]) -> list[str]:
+    parts = sorted(
+        (
+            (k, float(v))
+            for k, v in breakdown.items()
+            if k != "recency" and isinstance(v, int | float) and v > 0
+        ),
+        key=lambda kv: -kv[1],
+    )
+    return [PRIORITY_LABELS.get(k, k) for k, _ in parts[:MAX_PRIORITY_REASONS]]
+
+
 def card(r: Any) -> dict[str, Any]:
     payload = json.loads(r["payload"])
+    reasons = payload.get("why_it_matters") or [{}]
+    last_seen = r.get("last_insight_id")
     return {
         "insight_id": r["id"],
         "event_id": r["event_id"],
@@ -65,11 +96,15 @@ def card(r: Any) -> dict[str, Any]:
         "published_at": r["first_seen_at"],
         "sources_count": len(payload.get("sources", [])),
         "bank_view_coverage": payload.get("bank_view", {}).get("coverage", "none"),
+        "why_for_you": reasons[0].get("text"),
+        "priority_reasons": priority_reasons((payload.get("relevance") or {}).get("breakdown") or {}),
         "state": {
             "seen": r["seen_at"] is not None,
             "opened": r["opened_at"] is not None,
             "saved": r["saved_at"] is not None,
             "hidden": r["hidden_at"] is not None,
+            # regenerated after the user saw it (event got new news, profile changed): "обновлено"
+            "updated": r["seen_at"] is not None and last_seen is not None and last_seen != r["id"],
         },
     }
 
@@ -120,6 +155,52 @@ async def company_summary(conn: Any, user_id: uuid.UUID, company_id: str, role: 
     pool = urgent or unread or cards
     top = pool[0] if pool else None
     return {"unread": len(unread), "urgent": len(urgent), "top": top}
+
+
+DIGEST_TOP = 5
+
+
+async def digest(conn: Any, user_id: uuid.UUID, company_id: str, role: str, period: str) -> dict[str, Any]:
+    """Day/week digest (CJM 08): what is new for the company, the most relevant insights, risks and
+    opportunities, and the next steps the insights themselves propose. No generated text."""
+    now = datetime.now(UTC)
+    since = now - PERIODS[period]
+    rows = await conn.fetch(_FEED_SQL, user_id, company_id, role, since, "all", None, None, 500)
+    hidden = await conn.fetchval(
+        """SELECT count(*) FROM core.user_insight_state s JOIN core.events e ON e.id = s.event_id
+           WHERE s.user_id = $1 AND s.company_id = $2 AND s.hidden_at IS NOT NULL
+             AND e.first_seen_at >= $3""",
+        user_id,
+        company_id,
+        since,
+    )
+    cards = [card(r) for r in rows]
+    payloads = {r["id"]: json.loads(r["payload"]) for r in rows}
+    next_steps = []
+    for c in cards[:DIGEST_TOP]:
+        for action in (payloads[c["insight_id"]].get("actions") or [])[:1]:
+            next_steps.append({"insight_id": c["insight_id"], "insight_title": c["title"], **action})
+    return {
+        "company_id": company_id,
+        "role": role,
+        "period": period,
+        "since": since,
+        "until": now,
+        "counts": {
+            "new": len(cards),
+            "unread": sum(1 for c in cards if not c["state"]["opened"]),
+            "urgent": sum(1 for c in cards if c["urgent"]),
+            "risks": sum(1 for c in cards if c["polarity"] in ("risk", "mixed")),
+            "opportunities": sum(1 for c in cards if c["polarity"] in ("opportunity", "mixed")),
+            "updated": sum(1 for c in cards if c["state"]["updated"]),
+            "hidden": hidden,
+            "with_bank_analytics": sum(1 for c in cards if c["bank_view_coverage"] != "none"),
+        },
+        "top": cards[:DIGEST_TOP],
+        "risks": [c for c in cards if c["polarity"] in ("risk", "mixed")][:3],
+        "opportunities": [c for c in cards if c["polarity"] in ("opportunity", "mixed")][:3],
+        "next_steps": next_steps,
+    }
 
 
 async def insight_row(conn: Any, insight_id: uuid.UUID, user_id: uuid.UUID) -> Any | None:
