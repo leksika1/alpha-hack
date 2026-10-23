@@ -1155,7 +1155,7 @@
         "tags": [
           "analytics"
         ],
-        "summary": "Временная ссылка на PDF (presigned S3), с переходом к странице `#page=N`",
+        "summary": "Временная ссылка на PDF (15 минут), с переходом к странице `#page=N`",
         "operationId": "download_api_v1_analytics_documents__document_id__download_get",
         "security": [
           {
@@ -1210,6 +1210,61 @@
           },
           "422": {
             "description": "Нет такой страницы"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/documents/{document_id}/file": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "PDF по ссылке из `download` и `source-click`: токен в адресе, без заголовка Authorization",
+        "operationId": "file_api_v1_analytics_documents__document_id__file_get",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PDF",
+            "content": {
+              "application/pdf": {}
+            }
+          },
+          "401": {
+            "description": "Ссылка недействительна или устарела"
+          },
+          "404": {
+            "description": "Документ не найден"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         }
       }

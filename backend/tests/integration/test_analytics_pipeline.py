@@ -1,5 +1,5 @@
 """Bank analytics on Postgres+pgvector and MinIO: PDF -> S3 -> pages (text layer / OCR) -> chunks ->
-embeddings + tsvector -> hybrid search with page citations -> presigned link to the page."""
+embeddings + tsvector -> hybrid search with page citations -> link to the page served by the API."""
 
 import asyncio
 import io
@@ -8,7 +8,7 @@ import subprocess
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pypdfium2 as pdfium
@@ -21,6 +21,7 @@ from app.core.s3 import S3ObjectStore, get_s3_client
 from app.domain.ports import OcrPage
 from app.integrations.embeddings import EmbeddingUnavailableError, FakeEmbedding
 from app.integrations.ocr import FakeOcr, TesseractOcr
+from app.main import create_app
 from app.services.analytics_docs import download_link, list_documents
 from app.services.analytics_ingest import ingest_directory, ingest_pdf, reembed
 from app.services.analytics_search import hybrid_search
@@ -260,18 +261,35 @@ async def test_vectors_of_another_model_are_ignored_until_reembed(env: dict[str,
     await reembed(conn, emb)
 
 
-async def test_presigned_download_link_points_to_page(env: dict[str, Any]) -> None:
+async def test_download_link_serves_the_pdf_page_through_the_api(env: dict[str, Any]) -> None:
     conn, settings = env["conn"], env["settings"]
-    doc = next(d for d in await list_documents(conn) if d["file_name"] == "demo_key_rate_outlook.pdf")
+    docs = await list_documents(conn)
+    doc = next(d for d in docs if d["file_name"] == "demo_key_rate_outlook.pdf")
+    other = next(d for d in docs if d["document_id"] != doc["document_id"])
     link = await download_link(conn, settings, doc["document_id"], 2)
     assert link and link["url"].endswith("#page=2") and link["expires_in"] == 900
-    # The public endpoint equals the internal one in tests: the presigned URL must be downloadable.
-    parsed = urlparse(link["url"])
-    async with httpx.AsyncClient() as http:
-        resp = await http.get(link["url"].split("#", 1)[0])
-    assert resp.status_code == 200 and resp.content.startswith(b"%PDF"), parsed.netloc
+    # Relative and same-origin: works through the frontend's nginx; S3 is never exposed to browsers (ADR-033).
+    path = link["url"].split("#", 1)[0]
+    assert path.startswith(f"/api/v1/analytics/documents/{doc['document_id']}/file?token=")
     with pytest.raises(ValueError, match="page"):
         await download_link(conn, settings, doc["document_id"], 99)
+
+    app = create_app()
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client,
+    ):
+        resp = await client.get(path)  # no Authorization header: the token in the link is the access
+        assert resp.status_code == 200 and resp.content.startswith(b"%PDF")
+        assert resp.headers["content-type"] == "application/pdf"
+        assert "demo_key_rate_outlook.pdf" in resp.headers["content-disposition"]
+        token = parse_qs(urlparse(path).query)["token"][0]
+        foreign = await client.get(
+            f"/api/v1/analytics/documents/{other['document_id']}/file", params={"token": token}
+        )
+        assert foreign.status_code == 401, "a link token opens only its own document"
+        assert (await client.get(path[:-3] + "xyz")).status_code == 401
+        assert (await client.get(f"/api/v1/analytics/documents/{doc['document_id']}/file")).status_code == 422
 
 
 async def test_scanned_pdf_goes_through_ocr_with_s3_cache(env: dict[str, Any]) -> None:

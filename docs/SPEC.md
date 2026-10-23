@@ -159,7 +159,7 @@
 - **FR-A3** Чанкинг: ~800 токенов с перекрытием, не через границы разделов; чанк хранит `doc_title`, `doc_date`, `page`, `section`, `text`.
 - **FR-A4** Эмбеддинги → `vector(EMBEDDING_DIM)` (HNSW, cosine); `tsv` = `to_tsvector('russian', ...)` (GIN).
 - **FR-A5** Гибридный поиск: вектор top-k + BM25 (`ts_rank_cd`) top-k → Reciprocal Rank Fusion; фильтры по дате/тегам; ответ с цитатой, страницей, ID чанка.
-- **FR-A6** Ссылка на первоисточник: presigned URL на PDF + `#page=N`.
+- **FR-A6** Ссылка на первоисточник: ссылка на PDF через API (токен на документ, 15 минут) + `#page=N` (ADR-033).
 
 ### 5.4 Матчинг, скоринг, генерация (FR-M)
 

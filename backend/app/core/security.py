@@ -79,6 +79,11 @@ def issue_user_tokens(settings: Settings, user_id: str, platform_role: str) -> T
     )
 
 
+def issue_document_token(settings: Settings, document_id: str, ttl_s: int) -> str:
+    """Link token for one analytics PDF: the browser opens it in a new tab, without Authorization."""
+    return _encode(settings, {"sub": "doc", "typ": "doc", "doc": document_id}, timedelta(seconds=ttl_s))
+
+
 def issue_run_token(settings: Settings, run_id: str, company_id: str, ttl_s: int) -> str:
     """Agent token scoped to one run and one company (Tools API, LLM Gateway)."""
     claims = {"sub": "service:ml", "typ": "run", "run_id": run_id, "company_id": company_id}
