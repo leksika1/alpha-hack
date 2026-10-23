@@ -11,9 +11,9 @@
 
 Путь пользователя построен по CJM финансового директора — от значимого события до обоснованного решения.
 
-Репозиторий команды: бэкенд (`backend/`, эта зона), ML-сервис (`ml/`) и фронтенд (`frontend/`). Пока ML-сервис не
-подключён, его роль играет `ml-stub` — детерминированная реализация того же контракта. Весь сценарий работает без
-внешних ключей.
+Репозиторий команды: бэкенд (`backend/`, эта зона), ML-сервис (`ml/`) и фронтенд (`frontend/`). Одна команда
+поднимает все три части. Без ключа LLM ML-сервис пишет инсайты на правилах (`rules@1`), весь сценарий работает без
+внешних ключей. `ml-stub` — детерминированная реализация того же контракта для e2e.
 
 ## Быстрый старт
 
@@ -24,17 +24,19 @@ cp .env.example .env
 docker compose up -d --build        # или: make up
 ```
 
-Первая сборка образов — 5–10 минут; дальше стенд поднимается примерно за минуту, первые инсайты появляются через
-30–60 секунд после старта. На Windows, если `make` нет, команды из `Makefile` запускаются как есть.
+Первая сборка образов — 5–10 минут; при первом старте бэкенд скачивает модель эмбеддингов (~0,5 ГБ, кэшируется в
+томе). Дальше стенд поднимается примерно за минуту, первые инсайты появляются через 30–60 секунд после старта. На Windows, если `make` нет, команды из `Makefile` запускаются как есть.
 
 | Что | Где |
 |---|---|
 | Интерфейс «Альфа-Бизнес» с разделом «Аналитика» | http://localhost:3000 (сценарий — [`frontend/README.md`](frontend/README.md)) |
 | Swagger | http://localhost:8000/docs |
+| ML-сервис (health) | http://localhost:8200/health |
 | Готовность | http://localhost:8000/ready |
 | Консоль MinIO | http://localhost:9001 (`minioadmin` / `minioadmin`) |
 
-Порты меняются в `.env`: `API_PORT`, `POSTGRES_PORT` и т.д.
+Порты меняются в `.env`: `API_PORT`, `FRONTEND_PORT`, `ML_PORT`, `POSTGRES_PORT` и т.д. Деплой на сервер (Dokploy:
+бэкенд, ML и фронтенд — отдельные сервисы, автодеплой из CI) — [`docs/RUNBOOK.md`](docs/RUNBOOK.md), «Деплой».
 
 ## Сценарий проверки для жюри
 
@@ -81,9 +83,10 @@ docker compose exec api python scripts/demo_check.py
 
 ## Архитектура
 
-FastAPI (`api`), Taskiq (`worker`, `scheduler`), PostgreSQL 16 + pgvector, Redis, MinIO (S3), `ml-stub`.
-Подробно — [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), решения — [`docs/DECISIONS.md`](docs/DECISIONS.md)
-(ADR-001…031).
+Бэкенд: FastAPI (`api`), Taskiq (`worker`, `scheduler`), PostgreSQL 16 + pgvector, Redis, MinIO (S3), `ml-stub`.
+ML-сервис (`ml`) и фронтенд (nginx, `frontend`) — свои compose-файлы в своих папках, корневой `docker-compose.yml`
+подключает все три. Подробно — [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), решения —
+[`docs/DECISIONS.md`](docs/DECISIONS.md) (ADR-001…033).
 
 ```mermaid
 flowchart LR
@@ -93,7 +96,7 @@ flowchart LR
   W["worker"] --> PG
   SCH["scheduler"] -->|"Redis"| W
   W -->|"RSS"| NEWS["Источники"]
-  API -->|"контракт ML"| ML["ML-сервис / ml-stub"]
+  API -->|"контракт ML"| ML["ML-сервис (ml-stub в e2e)"]
   ML -->|"Tools API, LLM Gateway"| API
   API -->|"белый список, бюджет"| LLM["LLM"]
 ```
@@ -101,7 +104,7 @@ flowchart LR
 - **Компании:** CSV → очистка и отчёт качества → граф связей → контекст компании (признаки с источником, полнота).
 - **Новости:** вежливый сбор → сырьё в S3 → теги, срочность, защита от prompt injection → дедупликация → события.
 - **Аналитика банка:** PDF → текст или OCR → фрагменты со страницами → гибридный поиск (векторы + BM25).
-- **Генерация:** матчинг события с компаниями → агент (ML или `ml-stub`) через Tools API и LLM Gateway →
+- **Генерация:** матчинг события с компаниями → агент ML-сервиса через Tools API и LLM Gateway →
   валидатор → инсайт.
 - **Доставка:** лента, виджет, уведомления (SSE), дайджест, вопросы (SSE), действия, метрики по CJM.
 
@@ -112,9 +115,9 @@ flowchart LR
 | Переменная | Зачем |
 |---|---|
 | `DATA_DIR` | `data/synthetic` (по умолчанию) или `data/raw` |
-| `INSIGHT_GENERATOR`, `ML_SERVICE_URL` | `stub` (ml-stub) или `remote` (ML-сервис команды) |
+| `INSIGHT_GENERATOR`, `ML_SERVICE_URL` | `remote` (ML-сервис, по умолчанию) или `stub` (ml-stub) |
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_DAILY_BUDGET_RUB` | LLM организаторов только через Gateway; жёсткий дневной бюджет |
-| `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL` | эмбеддинги аналитики; модель выбирает ML-команда, по умолчанию `fake` |
+| `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL` | эмбеддинги аналитики: `local` (fastembed, модель выбрала ML-команда); офлайн — `fake` |
 | `NEWS_LIVE_SOURCES_ENABLED`, `NEWS_FIXTURES_ENABLED` | реальные RSS и синтетическая демо-лента |
 | `JWT_SECRET`, `SERVICE_TOKEN`, `ML_SERVICE_TOKEN` | секреты; с `APP_ENV=prod` dev-значения запрещены |
 
@@ -122,18 +125,18 @@ flowchart LR
 
 | Команда | Что |
 |---|---|
-| `make check` | lint + типы + unit (272) + integration (67, testcontainers) |
+| `make check` | lint + типы + unit (273) + integration (68, testcontainers) |
 | `make e2e` | весь стек в профиле `test`, все 12 сценариев SPEC §11.2 (23 теста) — `docs/TESTING.md` |
 | `make smoke-live` | один реальный RSS и один реальный вызов LLM через Gateway (нужны ключи; вне CI) |
 
-CI (GitHub Actions) запускает lint, типы, unit, integration и e2e на каждый push в `dev` и `main`.
+CI (GitHub Actions) на каждый push в `dev` и `main` запускает lint, типы, unit, integration и e2e бэкенда, тесты ML
+и сборку фронтенда; после зелёных заданий деплоит в Dokploy (`dev` → dev, `main` → prod).
 
 ## Интеграция команд
 
 - **ML:**
   - [`docs/INTEGRATION_ML.md`](docs/INTEGRATION_ML.md), контракты [`contracts/`](contracts/README.md);
-  - Tools API и LLM Gateway готовы;
-  - подключение — `INSIGHT_GENERATOR=remote` и `ML_SERVICE_URL`.
+  - Tools API и LLM Gateway готовы, ML-сервис подключён (`INSIGHT_GENERATOR=remote`); его документация — [`ml/README.md`](ml/README.md).
 - **Фронтенд:**
   - [`docs/INTEGRATION_FRONTEND.md`](docs/INTEGRATION_FRONTEND.md) (экраны → эндпоинты, SSE);
   - [`docs/API.md`](docs/API.md), [`docs/openapi.json`](docs/openapi.json).
