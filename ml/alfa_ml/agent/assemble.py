@@ -83,7 +83,10 @@ def assemble(
             if not bank_refs:
                 kind = "model_inference"
                 notes.append(f"{c.id}: bank_analytics without analytics source -> model_inference")
-            elif any(is_demo_material(ev.analytics_by_sid(s) or {}) for s in bank_refs):
+            elif (
+                any(is_demo_material(ev.analytics_by_sid(s) or {}) for s in bank_refs)
+                and "демо" not in text.lower()
+            ):
                 text = clip("Демо-материал (не аналитика Альфа-Банка): " + text, 600)
         if kind == "fact" and not source_refs:
             kind = "model_inference"

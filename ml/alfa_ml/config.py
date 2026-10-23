@@ -37,7 +37,7 @@ class Settings(BaseModel):
     # Agent budget per run (backend generate timeout is 60 s).
     ml_max_iterations: int = Field(default=2, ge=0, le=4)
     ml_deadline_margin_ms: int = 6000
-    ml_skip_threshold: float = 0.08
+    ml_skip_threshold: float = 0.35
     ml_max_news: int = 5
     ml_max_analytics_hits: int = 4
 
@@ -59,7 +59,7 @@ def get_settings() -> Settings:
         ml_model_chat=_env("ML_MODEL_CHAT", "qwen3.6-35b-a3b"),
         ml_max_iterations=int(_env("ML_MAX_ITERATIONS", "2")),
         ml_deadline_margin_ms=int(_env("ML_DEADLINE_MARGIN_MS", "6000")),
-        ml_skip_threshold=float(_env("ML_SKIP_THRESHOLD", "0.08")),
+        ml_skip_threshold=float(_env("ML_SKIP_THRESHOLD", "0.35")),
         ml_max_news=int(_env("ML_MAX_NEWS", "5")),
         ml_max_analytics_hits=int(_env("ML_MAX_ANALYTICS_HITS", "4")),
     )
