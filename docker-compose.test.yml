@@ -39,6 +39,8 @@ services:
   scheduler:
     environment: *test-env
     volumes: !reset []
+  ml:
+    ports: !reset []
   ml-stub:
     ports: !reset []
     environment: *test-env
