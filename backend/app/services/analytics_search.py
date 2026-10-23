@@ -5,10 +5,15 @@ Output follows contracts/tools-api.openapi.yaml#/components/schemas/AnalyticsHit
 from datetime import date
 from typing import Any, Protocol
 
-from app.integrations.embeddings import to_pgvector
+import httpx
+
+from app.core.logging import get_logger
+from app.domain.vectors import EmbeddingResponseError
+from app.integrations.embeddings import EmbeddingUnavailableError, to_pgvector
 
 RRF_K = 60
 CANDIDATES = 50
+log = get_logger(__name__)
 
 
 class QueryEmbedder(Protocol):
@@ -32,10 +37,10 @@ q AS (
                 ELSE replace(plainto_tsquery('russian', $2)::text, '&', '|')::tsquery END AS tsq
 ),
 vec AS (
-    SELECT c.id, row_number() OVER (ORDER BY c.embedding <=> $1::vector) AS rnk
+    SELECT c.id, row_number() OVER (ORDER BY c.embedding <=> $1::vector, c.id) AS rnk
     FROM core.analytics_chunks c JOIN docs d ON d.id = c.document_id
-    WHERE c.embedding IS NOT NULL AND d.embedding_model = $7
-    ORDER BY c.embedding <=> $1::vector
+    WHERE $1::vector IS NOT NULL AND c.embedding IS NOT NULL AND d.embedding_model = $7
+    ORDER BY c.embedding <=> $1::vector, c.id
     LIMIT {CANDIDATES}
 ),
 fts AS (
@@ -74,9 +79,13 @@ async def hybrid_search(
     tags: list[str] | None = None,
     document_ids: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    vector = await embedder.embed_query(query)
+    try:
+        vector: str | None = to_pgvector(await embedder.embed_query(query))
+    except (EmbeddingUnavailableError, EmbeddingResponseError, httpx.HTTPError) as exc:
+        log.warning("analytics_lexical_fallback", model=embedder.name, error=type(exc).__name__)
+        vector = None
     rows = await conn.fetch(
-        _SQL, to_pgvector(vector), query, date_from, tags or [], document_ids or [], limit, embedder.name
+        _SQL, vector, query, date_from, tags or [], document_ids or [], limit, embedder.name
     )
     return [
         {

@@ -21,6 +21,8 @@ x-app-env: &app-env
   FASTEMBED_CACHE_PATH: /home/appuser/.cache/fastembed
   EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
   EMBEDDING_DIM: ${EMBEDDING_DIM:-384}
+  EMBEDDING_REMOTE_URL: ${EMBEDDING_REMOTE_URL:-}
+  EMBEDDING_REMOTE_KEY: ${EMBEDDING_REMOTE_KEY:-}
   OCR_PROVIDER: ${OCR_PROVIDER:-tesseract}
   SCORER_PROVIDER: ${SCORER_PROVIDER:-baseline}
   LLM_BASE_URL: ${LLM_BASE_URL:-}

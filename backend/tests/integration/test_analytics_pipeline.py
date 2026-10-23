@@ -19,7 +19,7 @@ from app.core.config import get_settings
 from app.core.pg import pg_connection
 from app.core.s3 import S3ObjectStore, get_s3_client
 from app.domain.ports import OcrPage
-from app.integrations.embeddings import FakeEmbedding
+from app.integrations.embeddings import EmbeddingUnavailableError, FakeEmbedding
 from app.integrations.ocr import FakeOcr, TesseractOcr
 from app.services.analytics_docs import download_link, list_documents
 from app.services.analytics_ingest import ingest_directory, ingest_pdf, reembed
@@ -229,6 +229,20 @@ async def test_search_filters(env: dict[str, Any]) -> None:
     assert await hybrid_search(conn, emb, "ключевая ставка", tags=["gold"]) == []
     future = docs["demo_key_rate_outlook.pdf"]["doc_date"].replace(year=2099)
     assert await hybrid_search(conn, emb, "ключевая ставка", date_from=future) == []
+
+
+@pytest.mark.parametrize("error", [EmbeddingUnavailableError("offline"), httpx.ConnectError("offline")])
+async def test_search_keeps_lexical_results_when_embeddings_are_unavailable(
+    env: dict[str, Any], error: Exception
+) -> None:
+    class OfflineEmbedding(FakeEmbedding):
+        async def embed_query(self, text: str) -> list[float]:
+            raise error
+
+    hits = await hybrid_search(env["conn"], OfflineEmbedding(), "ключевая ставка")
+    assert hits and all(hit["score_breakdown"]["vector_rank"] is None for hit in hits)
+    assert all(hit["score_breakdown"]["bm25_rank"] is not None for hit in hits)
+    assert await hybrid_search(env["conn"], OfflineEmbedding(), "несуществующийтермин") == []
 
 
 async def test_vectors_of_another_model_are_ignored_until_reembed(env: dict[str, Any]) -> None:
