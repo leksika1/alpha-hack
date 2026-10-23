@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.domain.company_context import CompanyFacts, Counterparty, DirectionStats, build_context
+from app.domain.scoring import scoring_features
 
 BATCH = 5000
 
@@ -197,7 +198,8 @@ def facts_from_row(r: Any) -> CompanyFacts:
 
 
 _CTX_COLUMNS = [
-    "company_id", "features", "completeness", "client_type", "okved_section", "region", "segment",
+    "company_id", "features", "completeness", "scoring_features", "client_type", "okved_section", "region",
+    "segment",
     "industry_tags", "counterparty_tags", "fts_countries", "commodities", "products", "rate_sensitive",
     "fx_sensitive", "completeness_score",
 ]  # fmt: skip
@@ -220,7 +222,8 @@ async def rebuild_contexts(conn: Any, company_ids: list[str] | None) -> dict[str
         else:
             ids = list(company_ids)
         await conn.execute(
-            "CREATE TEMP TABLE tmp_ctx (company_id text, features text, completeness text, client_type text,"
+            "CREATE TEMP TABLE tmp_ctx (company_id text, features text, completeness text,"
+            " scoring_features text, client_type text,"
             " okved_section text, region text, segment text, industry_tags text[], counterparty_tags text[],"
             " fts_countries text[], commodities text[], products text[], rate_sensitive bool,"
             " fx_sensitive bool,"
@@ -238,6 +241,7 @@ async def rebuild_contexts(conn: Any, company_ids: list[str] | None) -> dict[str
                         r["id"],
                         json.dumps(res.features, ensure_ascii=False),
                         json.dumps(res.completeness, ensure_ascii=False),
+                        json.dumps(scoring_features(res.features), ensure_ascii=False),
                         ix["client_type"], ix["okved_section"], ix["region"], ix["segment"],
                         ix["industry_tags"], ix["counterparty_tags"], ix["fts_countries"], ix["commodities"],
                         ix["products"], ix["rate_sensitive"], ix["fx_sensitive"], ix["completeness_score"],
@@ -252,7 +256,8 @@ async def rebuild_contexts(conn: Any, company_ids: list[str] | None) -> dict[str
         # column lists are module constants, never user input
         await conn.execute(
             f"""INSERT INTO core.company_context ({", ".join(_CTX_COLUMNS)})
-                SELECT company_id, features::jsonb, completeness::jsonb, {", ".join(_CTX_COLUMNS[3:])}
+                SELECT company_id, features::jsonb, completeness::jsonb, scoring_features::jsonb,
+                       {", ".join(_CTX_COLUMNS[4:])}
                 FROM tmp_ctx
                 ON CONFLICT (company_id) DO UPDATE SET
                     context_version = core.company_context.context_version + 1,

@@ -31,6 +31,12 @@ x-app-env: &app-env
   LLM_BASE_URL: ${LLM_BASE_URL:-}
   LLM_API_KEY: ${LLM_API_KEY:-}
   LLM_DAILY_BUDGET_RUB: ${LLM_DAILY_BUDGET_RUB:-450}
+  LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+  LLM_MODEL_MAP: ${LLM_MODEL_MAP:-}
+  LLM_PRICES: ${LLM_PRICES:-}
+  LLM_DAILY_TOKEN_LIMIT: ${LLM_DAILY_TOKEN_LIMIT:-3000000}
+  MATCH_SCOPE: ${MATCH_SCOPE:-users}
+  RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
   DATA_DIR: ${DATA_DIR:-data/synthetic}
   NEWS_FIXTURES_ENABLED: ${NEWS_FIXTURES_ENABLED:-true}
   NEWS_LIVE_SOURCES_ENABLED: ${NEWS_LIVE_SOURCES_ENABLED:-true}
@@ -157,6 +163,7 @@ services:
       TOOLS_BASE_URL: http://api:8000/internal/tools
       LLM_GATEWAY_URL: http://api:8000/internal/llm
       ML_STUB_USE_LLM: ${ML_STUB_USE_LLM:-false}
+      ML_STUB_LLM_MODEL: ${ML_STUB_LLM_MODEL:-glm-5.3-flash}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8100/health"]
       interval: 5s

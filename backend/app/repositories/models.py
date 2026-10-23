@@ -329,6 +329,8 @@ class CompanyContext(Base):
     features: Mapped[dict[str, Any]] = mapped_column()
     completeness: Mapped[dict[str, Any]] = mapped_column()
     user_provided: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    # the scorer's subset of features (values only) — read by matching instead of the full context
+    scoring_features: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
     # denormalized columns for candidate matching (inverted index)
     client_type: Mapped[str | None] = mapped_column(String(16), index=True)
     okved_section: Mapped[str | None] = mapped_column(String(1), index=True)
@@ -595,6 +597,52 @@ class ToolAuditLog(Base):
     status_code: Mapped[int] = mapped_column(Integer)
     latency_ms: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = _now()
+
+
+class LlmUsage(Base):
+    """Every LLM Gateway call (ADR-028), including refused and cached ones. A `pending` row is the budget
+    reservation of a call in flight (estimated cost); it is finalized with the provider's usage."""
+
+    __tablename__ = "llm_usage"
+    __table_args__ = (Index("ix_llm_usage_day_status", "day", "status"), {"schema": "core"})
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    day: Mapped[date] = mapped_column(Date)  # budget day (Moscow time)
+    run_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    caller: Mapped[str] = mapped_column(String(16))  # run | service
+    purpose: Mapped[str] = mapped_column(String(16), server_default="other")
+    model: Mapped[str] = mapped_column(String(64))  # alias from the allowlist
+    provider_model: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16))  # pending | ok | cached | error | refused
+    stream: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    cache_hit: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    tokens_in: Mapped[int] = mapped_column(Integer, server_default="0")
+    tokens_out: Mapped[int] = mapped_column(Integer, server_default="0")
+    estimated_cost_rub: Mapped[Decimal] = mapped_column(Numeric(12, 6), server_default="0")
+    cost_rub: Mapped[Decimal] = mapped_column(Numeric(12, 6), server_default="0")
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    request_hash: Mapped[str | None] = mapped_column(String(64))
+    prompt_preview: Mapped[str | None] = mapped_column(Text)  # masked, <= 500 chars
+    masked: Mapped[dict[str, Any]] = mapped_column(server_default=text("'{}'::jsonb"))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _now()
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LlmCache(Base):
+    """Responses to deterministic requests (temperature=0), keyed by a hash of the masked request."""
+
+    __tablename__ = "llm_cache"
+    __table_args__ = {"schema": "core"}
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    model: Mapped[str] = mapped_column(String(64))
+    response: Mapped[dict[str, Any]] = mapped_column()
+    tokens_in: Mapped[int] = mapped_column(Integer, server_default="0")
+    tokens_out: Mapped[int] = mapped_column(Integer, server_default="0")
+    hits: Mapped[int] = mapped_column(Integer, server_default="0")
+    created_at: Mapped[datetime] = _now()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class Insight(Base):

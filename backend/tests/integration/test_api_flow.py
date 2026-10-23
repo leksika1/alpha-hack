@@ -13,11 +13,14 @@ import ml_stub.main as stub
 from app.core.config import get_settings
 from app.core.pg import pg_connection
 from app.core.security import issue_run_token
+from app.domain.scoring import profile_from_context, score_candidate
 from app.integrations.generators import get_generator
+from app.integrations.llm import FakeLlmProvider
 from app.main import create_app
 from app.services.analytics_run import run_analytics_ingest
 from app.services.generation import generate_pending
 from app.services.ingest_companies import ingest_companies
+from app.services.matching import affected_companies, event_profile, load_profiles, match_events
 from app.services.seed import DEMO_PASSWORD, seed_demo
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio(loop_scope="session")]
@@ -33,7 +36,9 @@ async def env(infra: dict[str, str]) -> AsyncIterator[dict[str, Any]]:
     settings = get_settings().model_copy(update={"news_fixtures_enabled": True})
     gen_settings = settings.model_copy(update={"internal_api_url": "http://backend"})
     app = create_app()
+    app.state.llm_provider = FakeLlmProvider()  # ml-stub's LLM call goes through the real gateway path
     stub.TOOLS_TRANSPORT = httpx.ASGITransport(app=app)
+    stub.USE_LLM = True
     generator = get_generator(gen_settings, transport=httpx.ASGITransport(app=stub.app))
     stats: list[dict[str, int]] = []
 
@@ -59,6 +64,7 @@ async def env(infra: dict[str, str]) -> AsyncIterator[dict[str, Any]]:
                 "settings": settings,
             }
     stub.TOOLS_TRANSPORT = None
+    stub.USE_LLM = False
 
 
 async def login(client: httpx.AsyncClient, user: str = "demo") -> dict[str, str]:
@@ -303,3 +309,86 @@ async def test_bank_analytics_source_links_to_pdf_page(env: dict[str, Any]) -> N
         await c.get(f"/api/v1/analytics/documents/{doc_id}/download", headers=h, params={"page": 999})
     ).status_code == 422
     assert (await c.get("/api/v1/analytics/documents")).status_code == 401
+
+
+async def test_llm_call_through_gateway_is_traced(env: dict[str, Any]) -> None:
+    c = env["client"]
+    h = await login(c)
+    card = (await feed(c, h, METALS))["items"][0]
+    full = (await c.get(f"/api/v1/insights/{card['insight_id']}", headers=h)).json()["insight"]
+    assert {"name": stub.LLM_MODEL, "purpose": "generation"} in full["models_used"]
+    assert full["why_it_matters"][0]["text"].startswith(f"[fake-llm:{stub.LLM_MODEL}]")
+    tr = (await c.get(f"/api/v1/insights/{card['insight_id']}/trace", headers=h)).json()
+    assert [x["status"] for x in tr["llm_calls"]] == ["ok"] and tr["llm_calls"][0]["model"] == stub.LLM_MODEL
+    assert tr["llm_calls"][0]["purpose"] == "generation" and tr["llm_calls"][0]["cost_rub"] > 0
+    assert any(s["step_type"] == "llm_call" and s["status"] == "ok" for s in tr["steps"])
+
+
+async def test_exhausted_budget_degrades_to_templates(env: dict[str, Any]) -> None:
+    settings = env["settings"].model_copy(
+        update={"llm_daily_budget_rub": 0.0, "internal_api_url": "http://backend"}
+    )
+    async with pg_connection(env["url"]) as conn:
+        await conn.execute(
+            "UPDATE core.candidate_matches SET status = 'pending' WHERE company_id = $1 AND role = 'ceo'",
+            METALS,
+        )
+        stats = await generate_pending(
+            conn, settings, get_generator(settings, transport=httpx.ASGITransport(app=stub.app)), [METALS]
+        )
+        assert stats.generated > 0 and stats.failed == 0
+        rows = await conn.fetch(
+            """SELECT r.id, (SELECT count(*) FROM core.llm_usage u WHERE u.run_id = r.id) AS calls
+               FROM core.agent_runs r WHERE r.company_id = $1 ORDER BY r.started_at DESC LIMIT $2""",
+            METALS,
+            stats.generated,
+        )
+    assert rows and all(r["calls"] == 0 for r in rows)  # allow_llm=false: the agent did not even try
+
+
+async def test_prefilter_is_a_superset_of_scored_candidates(env: dict[str, Any]) -> None:
+    settings = env["settings"]
+    async with pg_connection(env["url"]) as conn:
+        contexts = await conn.fetch(
+            "SELECT company_id, features FROM core.company_context WHERE client_type = ANY($1::text[])",
+            settings.eligible_client_types,
+        )
+        profiles = [profile_from_context(r["company_id"], json.loads(r["features"])) for r in contexts]
+        trimmed = await load_profiles(conn, [r["company_id"] for r in contexts])
+        assert {p.company_id: p for p in profiles} == {cid: prof for cid, (prof, _) in trimmed.items()}
+        events = await conn.fetch("SELECT * FROM core.events")
+        now = max(e["last_seen_at"] for e in events)
+        checked = 0
+        for event in events:
+            affected = set(await affected_companies(conn, event, settings.eligible_client_types))
+            ev = event_profile(event)
+            for prof in profiles:
+                best = max(
+                    score_candidate(prof, ev, role, now).score
+                    for role in ("owner", "ceo", "cfo", "chief_accountant", "treasurer", "other")
+                )
+                if best >= settings.match_min_score:
+                    checked += 1
+                    assert prof.company_id in affected, (str(event["id"]), prof.company_id, best)
+        assert checked > 0
+        assert len(affected) < len(profiles) or len(events) == 0
+
+
+async def test_full_base_scope_scores_companies_without_users(env: dict[str, Any]) -> None:
+    settings = env["settings"]
+    async with pg_connection(env["url"]) as conn:
+        event_ids = [str(r["id"]) for r in await conn.fetch("SELECT id FROM core.events")]
+        users_only = await conn.fetchval("SELECT count(DISTINCT company_id) FROM core.candidate_matches")
+        stats = await match_events(
+            conn, event_ids, "all", settings.eligible_client_types, settings.match_min_score
+        )
+        assert stats.candidates > 0
+        rows = await conn.fetch(
+            """SELECT DISTINCT m.company_id, m.role FROM core.candidate_matches m
+               WHERE NOT EXISTS (SELECT 1 FROM core.user_company_access a
+                                 WHERE a.company_id = m.company_id)"""
+        )
+        assert rows and {r["role"] for r in rows} == {"owner"}
+        assert (
+            await conn.fetchval("SELECT count(DISTINCT company_id) FROM core.candidate_matches") > users_only
+        )

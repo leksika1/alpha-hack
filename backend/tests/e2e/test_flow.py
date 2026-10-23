@@ -93,3 +93,22 @@ def test_bank_analytics_indexed_and_cited(api: httpx.Client, auth: dict[str, str
         full = api.get(f"/api/v1/insights/{card['insight_id']}", headers=auth).json()["insight"]
         cited += [s for s in full["sources"] if s["type"] == "bank_analytics"]
     assert cited and all(s["page"] and s["ref_id"] for s in cited)
+
+
+def test_scenario_11_llm_gateway_allowlist_and_budget(api: httpx.Client) -> None:
+    service = {"Authorization": f"Bearer {os.environ.get('E2E_ML_SERVICE_TOKEN', '')}"}
+    msg = {"messages": [{"role": "user", "content": "Проверка"}], "max_tokens": 20}
+    forbidden = api.post("/internal/llm/chat/completions", headers=service, json={"model": "gpt-4o", **msg})
+    assert forbidden.status_code == 403 and forbidden.json()["type"].endswith("/model-not-allowed")
+    ok = api.post("/internal/llm/chat/completions", headers=service, json={"model": "glm-5.3-flash", **msg})
+    assert ok.status_code == 200 and float(ok.headers["x-budget-remaining-rub"]) >= 0
+    budget = api.get("/internal/llm/budget", headers=service).json()
+    assert budget["limit_rub"] > 0 and budget["spent_rub"] > 0 and budget["exhausted"] is False
+    assert api.get("/internal/llm/models").status_code == 401
+
+
+def test_agent_llm_calls_are_traced(api: httpx.Client, auth: dict[str, str]) -> None:
+    card = wait_feed(api, auth, METALS)[0]
+    tr = api.get(f"/api/v1/insights/{card['insight_id']}/trace", headers=auth).json()
+    assert tr["llm_calls"] and tr["llm_calls"][0]["status"] in {"ok", "cached"}
+    assert all("F_" not in (c["prompt_preview"] or "") for c in tr["llm_calls"])

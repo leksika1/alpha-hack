@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from app.domain.company_context import COUNTERPARTY_TAG_MIN_SHARE
 from app.domain.ports import ScoreResult
 from app.domain.tagging import GENERIC_TAGS
 
@@ -97,6 +98,44 @@ def _feature_value(features: dict[str, Any], path: str, default: Any = None) -> 
     return feat.get("value", default) if isinstance(feat, dict) else default
 
 
+# Feature paths read by profile_from_context: matching loads only these (and only their values).
+PROFILE_FEATURE_KEYS = (
+    "industry_tags",
+    "fts_countries",
+    "region",
+    "sensitivities.commodity_exposure",
+    "sensitivities.rate_sensitive",
+    "sensitivities.rate_sensitive_industry",
+    "sensitivities.fx_sensitive",
+    "sensitivities.consumer_demand_dependent",
+    "counterparties.top_in",
+    "counterparties.top_out",
+    "user_provided.raw_materials",
+    "user_provided.currencies",
+)
+TOP_COUNTERPARTY_KEYS = ("counterparties.top_in", "counterparties.top_out")
+PROFILE_FEATURE_PREFIXES = (
+    "counterparties.industry_share_in.",
+    "counterparties.industry_share_out.",
+    "products.",
+)
+
+
+def scoring_features(features: dict[str, Any]) -> dict[str, Any]:
+    """Compact scorer view of a context, stored as company_context.scoring_features (~0.5 KB instead of
+    ~8 KB): profile_from_context(scoring_features(f)) == profile_from_context(f)."""
+    out: dict[str, Any] = {}
+    for k, v in features.items():
+        if k in PROFILE_FEATURE_KEYS or k.startswith(PROFILE_FEATURE_PREFIXES):
+            value = v.get("value") if isinstance(v, dict) else None
+            if k in TOP_COUNTERPARTY_KEYS and isinstance(value, list):  # only what the scorer reads
+                value = [
+                    {"counterparty_id": cp.get("counterparty_id"), "known": cp.get("known")} for cp in value
+                ]
+            out[k] = {"value": value}
+    return out
+
+
 def profile_from_context(company_id: str, features: dict[str, Any]) -> CompanyProfile:
     """Build the scorer's view of a company from ``company_context.features``."""
     shares: dict[str, tuple[float, str]] = {}
@@ -160,7 +199,10 @@ def components(company: CompanyProfile, event: EventProfile) -> dict[str, _Compo
     for tag in sorted(specific_tags):
         if tag in company.counterparty_shares:
             share, path = company.counterparty_shares[tag]
-            comp["counterparty"].offer(min(1.0, 2 * share), path)
+            if (
+                share >= COUNTERPARTY_TAG_MIN_SHARE
+            ):  # below it a counterparty industry is noise (and not indexed)
+                comp["counterparty"].offer(min(1.0, 2 * share), path)
 
     countries = event.countries & company.fts_countries
     if countries:
@@ -196,11 +238,15 @@ def components(company: CompanyProfile, event: EventProfile) -> dict[str, _Compo
             0.8 if event.industry_tags & CONSUMER_TAGS else 0.5, "sensitivities.consumer_demand_dependent"
         )
 
-    if event.event_type == "regulation_tax" and any(
-        c.value > 0 for n, c in comp.items() if n not in {"regulation", "region"}
-    ):
+    if event.event_type == "regulation_tax" and _supported(comp, exclude={"regulation", "region"}):
         comp["regulation"].offer(1.0)
     return comp
+
+
+def _supported(comp: dict[str, _Component], exclude: set[str]) -> bool:
+    """A boost (regulation, bank analytics) needs a reason grounded in company features; the bare rate
+    fallback for monetary policy has none."""
+    return any(c.value > 0 and c.features for n, c in comp.items() if n not in exclude)
 
 
 def recency(first_seen_at: datetime, now: datetime) -> float:
@@ -216,7 +262,7 @@ def score_candidate(
     has_bank_analytics: bool = False,
 ) -> ScoreResult:
     comp = components(company, event)
-    if has_bank_analytics and any(c.value > 0 for c in comp.values()):
+    if has_bank_analytics and _supported(comp, exclude={"bank_analytics"}):
         comp["bank_analytics"].offer(1.0)
     mult = ROLE_MULTIPLIERS.get(role, {})
     logs: dict[str, float] = {}
