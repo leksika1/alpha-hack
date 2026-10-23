@@ -4,6 +4,7 @@
 import asyncio
 import shutil
 from collections import defaultdict
+from contextlib import suppress
 
 from app.domain.ports import OcrPage
 
@@ -74,7 +75,14 @@ class TesseractOcr:
             raise OcrUnavailableError(
                 "tesseract binary not found (install tesseract-ocr tesseract-ocr-rus)"
             ) from exc
-        out, err = await asyncio.wait_for(proc.communicate(image_png), timeout=TESSERACT_TIMEOUT_S)
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(image_png), timeout=TESSERACT_TIMEOUT_S)
+        except BaseException:
+            if proc.returncode is None:
+                with suppress(ProcessLookupError):
+                    proc.kill()
+            await proc.communicate()
+            raise
         if proc.returncode != 0:
             raise OcrUnavailableError(f"tesseract failed: {err.decode(errors='replace')[:300]}")
         text, conf = tsv_to_text(out.decode("utf-8", errors="replace"))

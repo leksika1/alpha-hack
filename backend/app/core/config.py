@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     embedding_remote_key: SecretStr | None = None
     scorer_provider: Literal["baseline", "remote", "fake"] = "baseline"
     ocr_provider: Literal["tesseract", "vlm", "fake"] = "tesseract"
+    analytics_max_bytes: int = Field(default=50_000_000, ge=1024, le=200_000_000)
+    analytics_max_pages: int = Field(default=150, ge=1, le=1000)
+    analytics_max_render_pixels: int = Field(default=25_000_000, ge=1_000_000, le=100_000_000)
 
     # LLM Gateway
     llm_base_url: str | None = None

@@ -17,12 +17,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.s3 import ObjectStore
 from app.domain.chunking import chunk_pages, document_meta
 from app.domain.ports import OcrPage
 from app.integrations.embeddings import to_pgvector
-from app.integrations.pdf import page_texts, render_png
+from app.integrations.pdf import page_texts, read_pdf, render_png, validate_pdf
 
 log = get_logger(__name__)
 
@@ -67,7 +68,9 @@ async def _ocr_page(store: ObjectStore, ocr: Ocr, sha: str, data: bytes, page: i
         )
     except Exception as exc:  # cache miss (NoSuchKey) or unreadable cache -> recognize
         log.debug("ocr_cache_miss", key=key, reason=type(exc).__name__)
-    png = await asyncio.to_thread(render_png, data, page)
+    png = await asyncio.to_thread(
+        render_png, data, page, max_pixels=get_settings().analytics_max_render_pixels
+    )
     result = await ocr.recognize(png, page)
     body = json.dumps(
         {"text": result.text, "confidence": result.confidence, "method": result.method}, ensure_ascii=False
@@ -77,7 +80,10 @@ async def _ocr_page(store: ObjectStore, ocr: Ocr, sha: str, data: bytes, page: i
 
 
 async def extract_pages(store: ObjectStore, ocr: Ocr, sha: str, data: bytes) -> list[OcrPage]:
-    pages = await asyncio.to_thread(page_texts, data)
+    settings = get_settings()
+    pages = await asyncio.to_thread(
+        page_texts, data, max_pages=settings.analytics_max_pages, max_bytes=settings.analytics_max_bytes
+    )
     out: list[OcrPage] = []
     for p in pages:
         if len(p.text.strip()) >= MIN_TEXT_LAYER_CHARS:
@@ -101,6 +107,7 @@ async def ingest_pdf(
     origin: str,
     force: bool = False,
 ) -> IngestOutcome:
+    validate_pdf(data, get_settings().analytics_max_bytes)
     sha = hashlib.sha256(data).hexdigest()
     async with conn.transaction():
         await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "analytics:" + sha)
@@ -227,10 +234,20 @@ async def ingest_directory(
     force: bool = False,
 ) -> list[IngestOutcome]:
     outcomes = []
-    for path in sorted(await asyncio.to_thread(lambda: list(directory.glob("*.pdf")))):
-        data = await asyncio.to_thread(path.read_bytes)
-        outcomes.append(await ingest_pdf(conn, store, ocr, embedder, data, path.name, origin, force))
+    for path in await asyncio.to_thread(_pdf_paths, directory):
+        try:
+            data = await asyncio.to_thread(read_pdf, path, get_settings().analytics_max_bytes)
+            outcome = await ingest_pdf(conn, store, ocr, embedder, data, path.name, origin, force)
+        except (OSError, ValueError) as exc:
+            outcome = IngestOutcome("", path.name, "failed", error=str(exc)[:300])
+        outcomes.append(outcome)
     return outcomes
+
+
+def _pdf_paths(directory: Path) -> list[Path]:
+    if not directory.is_dir():
+        raise ValueError("Analytics directory does not exist")
+    return sorted(path for path in directory.iterdir() if path.is_file() and path.suffix.lower() == ".pdf")
 
 
 async def reembed(conn: Any, embedder: Embedder) -> int:

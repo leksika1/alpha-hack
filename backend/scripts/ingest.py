@@ -68,6 +68,8 @@ async def _analytics(directory: Path | None, force: bool, reembed_only: bool) ->
             return
         outcomes = await run_analytics_ingest(conn, settings, directory, "upload", force)
     _print([o.__dict__ for o in outcomes])
+    if any(o.status == "failed" for o in outcomes):
+        raise SystemExit(1)
 
 
 def main() -> None:
