@@ -109,6 +109,10 @@ def test_scenario_11_llm_gateway_allowlist_and_budget(api: httpx.Client) -> None
 
 def test_agent_llm_calls_are_traced(api: httpx.Client, auth: dict[str, str]) -> None:
     card = wait_feed(api, auth, METALS)[0]
+    run_id = api.get(f"/api/v1/insights/{card['insight_id']}/trace", headers=auth).json()["trace_id"]
+    service = {"Authorization": f"Bearer {os.environ.get('E2E_ML_SERVICE_TOKEN', '')}", "X-Run-Id": run_id}
+    msg = {"model": "glm-5.3-flash", "messages": [{"role": "user", "content": "тест F_77"}], "max_tokens": 20}
+    assert api.post("/internal/llm/chat/completions", headers=service, json=msg).status_code == 200
     tr = api.get(f"/api/v1/insights/{card['insight_id']}/trace", headers=auth).json()
-    assert tr["llm_calls"] and tr["llm_calls"][0]["status"] in {"ok", "cached"}
-    assert all("F_" not in (c["prompt_preview"] or "") for c in tr["llm_calls"])
+    assert tr["llm_calls"] and tr["llm_calls"][-1]["status"] in {"ok", "cached"}
+    assert all("F_77" not in (c["prompt_preview"] or "") for c in tr["llm_calls"])

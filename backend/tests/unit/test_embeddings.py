@@ -91,9 +91,19 @@ def test_configured_remote_key_is_used() -> None:
     settings = Settings(
         _env_file=None,
         embedding_provider="remote",
+        embedding_model="ml-team-model",
         embedding_remote_url="https://embedding.test",
         embedding_remote_key="configured-secret",
     )
     embedder = get_embedder(settings)
     assert isinstance(embedder, RemoteEmbedding)
     assert embedder.headers["Authorization"] == "Bearer configured-secret"
+
+
+def test_local_and_remote_need_a_model_chosen_by_ml() -> None:
+    for provider in ("local", "remote"):
+        settings = Settings(
+            _env_file=None, embedding_provider=provider, embedding_remote_url="https://e.test"
+        )
+        with pytest.raises(ValueError, match="EMBEDDING_MODEL is required"):
+            get_embedder(settings)

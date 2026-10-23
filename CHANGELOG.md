@@ -12,16 +12,11 @@
 - Rate limit (Redis token bucket) для `/api/v1` и `/internal`; запрет запуска `APP_ENV=prod` с dev-секретами.
 - Матчинг события по всей клиентской базе через предфильтр по индексу (`MATCH_SCOPE`), худшее событие на данных
   организаторов — 3,0 с.
-- ml-stub: `ML_STUB_USE_LLM` — один вызов LLM через Gateway с откатом на шаблон.
-
-### Изменено
-- Скорер: доля отрасли контрагентов учитывается от 5 %, бусты «регулирование» и «аналитика банка» — только при
-  опоре на признак компании.
 
 ### Добавлено (фаза 4 — аналитика банка)
 - Загрузка PDF аналитики: S3 по sha256, текстовый слой или OCR Tesseract (rus+eng) с кэшем результатов в S3,
   чанкинг по разделам со страницами, метаданные (название, дата, темы).
-- Эмбеддинги за `EmbeddingProvider` (`fake`, `local` — fastembed MiniLM-L12 multilingual, `remote`) и переиндексация.
+- Эмбеддинги за `EmbeddingProvider` (`fake`, `local` — fastembed, `remote`; модель выбирает ML-команда) и переиндексация.
 - Гибридный поиск (pgvector HNSW + полнотекстовый `russian` + RRF) с цитатами страниц для Tools API `search_bank_analytics`.
 - `GET /api/v1/analytics/documents`, `GET /api/v1/analytics/documents/{id}/download` (presigned URL с `#page=N`);
   переход к источнику `bank_analytics` ведёт на страницу PDF.

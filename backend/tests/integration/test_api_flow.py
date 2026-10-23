@@ -36,9 +36,8 @@ async def env(infra: dict[str, str]) -> AsyncIterator[dict[str, Any]]:
     settings = get_settings().model_copy(update={"news_fixtures_enabled": True})
     gen_settings = settings.model_copy(update={"internal_api_url": "http://backend"})
     app = create_app()
-    app.state.llm_provider = FakeLlmProvider()  # ml-stub's LLM call goes through the real gateway path
+    app.state.llm_provider = FakeLlmProvider()  # gateway calls in the test act as the agent's
     stub.TOOLS_TRANSPORT = httpx.ASGITransport(app=app)
-    stub.USE_LLM = True
     generator = get_generator(gen_settings, transport=httpx.ASGITransport(app=stub.app))
     stats: list[dict[str, int]] = []
 
@@ -64,7 +63,6 @@ async def env(infra: dict[str, str]) -> AsyncIterator[dict[str, Any]]:
                 "settings": settings,
             }
     stub.TOOLS_TRANSPORT = None
-    stub.USE_LLM = False
 
 
 async def login(client: httpx.AsyncClient, user: str = "demo") -> dict[str, str]:
@@ -311,39 +309,51 @@ async def test_bank_analytics_source_links_to_pdf_page(env: dict[str, Any]) -> N
     assert (await c.get("/api/v1/analytics/documents")).status_code == 401
 
 
-async def test_llm_call_through_gateway_is_traced(env: dict[str, Any]) -> None:
-    c = env["client"]
+async def test_agent_llm_call_through_gateway_is_traced(env: dict[str, Any]) -> None:
+    """The agent (ML) calls the gateway with its run token; the call shows up in the insight trace."""
+    c, settings = env["client"], env["settings"]
     h = await login(c)
     card = (await feed(c, h, METALS))["items"][0]
-    full = (await c.get(f"/api/v1/insights/{card['insight_id']}", headers=h)).json()["insight"]
-    assert {"name": stub.LLM_MODEL, "purpose": "generation"} in full["models_used"]
-    assert full["why_it_matters"][0]["text"].startswith(f"[fake-llm:{stub.LLM_MODEL}]")
+    run_id = (await c.get(f"/api/v1/insights/{card['insight_id']}/trace", headers=h)).json()["trace_id"]
+    token = issue_run_token(settings, run_id, METALS, 60)
+    resp = await c.post(
+        "/internal/llm/chat/completions",
+        headers={"Authorization": f"Bearer {token}", "X-Run-Id": run_id, "X-Purpose": "generation"},
+        json={
+            "model": "glm-5.3-flash",
+            "messages": [{"role": "user", "content": "тест F_123"}],
+            "max_tokens": 20,
+        },
+    )
+    assert resp.status_code == 200, resp.text
     tr = (await c.get(f"/api/v1/insights/{card['insight_id']}/trace", headers=h)).json()
-    assert [x["status"] for x in tr["llm_calls"]] == ["ok"] and tr["llm_calls"][0]["model"] == stub.LLM_MODEL
+    assert [x["status"] for x in tr["llm_calls"]] == ["ok"] and tr["llm_calls"][0]["model"] == "glm-5.3-flash"
     assert tr["llm_calls"][0]["purpose"] == "generation" and tr["llm_calls"][0]["cost_rub"] > 0
-    assert any(s["step_type"] == "llm_call" and s["status"] == "ok" for s in tr["steps"])
+    assert "F_123" not in tr["llm_calls"][0]["prompt_preview"]
 
 
-async def test_exhausted_budget_degrades_to_templates(env: dict[str, Any]) -> None:
+async def test_exhausted_budget_is_passed_to_the_agent(env: dict[str, Any]) -> None:
+    """NFR-9: with the daily budget spent the backend asks the agent to work without LLM (allow_llm=false)."""
     settings = env["settings"].model_copy(
         update={"llm_daily_budget_rub": 0.0, "internal_api_url": "http://backend"}
     )
+    inner = get_generator(settings, transport=httpx.ASGITransport(app=stub.app))
+    seen: list[bool] = []
+
+    class Recording:
+        name = inner.name
+
+        async def generate(self, request: Any) -> Any:
+            seen.append(request.allow_llm)
+            return await inner.generate(request)
+
     async with pg_connection(env["url"]) as conn:
         await conn.execute(
             "UPDATE core.candidate_matches SET status = 'pending' WHERE company_id = $1 AND role = 'ceo'",
             METALS,
         )
-        stats = await generate_pending(
-            conn, settings, get_generator(settings, transport=httpx.ASGITransport(app=stub.app)), [METALS]
-        )
-        assert stats.generated > 0 and stats.failed == 0
-        rows = await conn.fetch(
-            """SELECT r.id, (SELECT count(*) FROM core.llm_usage u WHERE u.run_id = r.id) AS calls
-               FROM core.agent_runs r WHERE r.company_id = $1 ORDER BY r.started_at DESC LIMIT $2""",
-            METALS,
-            stats.generated,
-        )
-    assert rows and all(r["calls"] == 0 for r in rows)  # allow_llm=false: the agent did not even try
+        stats = await generate_pending(conn, settings, Recording(), [METALS])
+    assert stats.generated > 0 and seen and not any(seen)
 
 
 async def test_prefilter_is_a_superset_of_scored_candidates(env: dict[str, Any]) -> None:

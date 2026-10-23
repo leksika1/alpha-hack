@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from app.domain.company_context import COUNTERPARTY_TAG_MIN_SHARE
 from app.domain.ports import ScoreResult
 from app.domain.tagging import GENERIC_TAGS
 
@@ -199,10 +198,7 @@ def components(company: CompanyProfile, event: EventProfile) -> dict[str, _Compo
     for tag in sorted(specific_tags):
         if tag in company.counterparty_shares:
             share, path = company.counterparty_shares[tag]
-            if (
-                share >= COUNTERPARTY_TAG_MIN_SHARE
-            ):  # below it a counterparty industry is noise (and not indexed)
-                comp["counterparty"].offer(min(1.0, 2 * share), path)
+            comp["counterparty"].offer(min(1.0, 2 * share), path)
 
     countries = event.countries & company.fts_countries
     if countries:
@@ -238,15 +234,11 @@ def components(company: CompanyProfile, event: EventProfile) -> dict[str, _Compo
             0.8 if event.industry_tags & CONSUMER_TAGS else 0.5, "sensitivities.consumer_demand_dependent"
         )
 
-    if event.event_type == "regulation_tax" and _supported(comp, exclude={"regulation", "region"}):
+    if event.event_type == "regulation_tax" and any(
+        c.value > 0 for n, c in comp.items() if n not in {"regulation", "region"}
+    ):
         comp["regulation"].offer(1.0)
     return comp
-
-
-def _supported(comp: dict[str, _Component], exclude: set[str]) -> bool:
-    """A boost (regulation, bank analytics) needs a reason grounded in company features; the bare rate
-    fallback for monetary policy has none."""
-    return any(c.value > 0 and c.features for n, c in comp.items() if n not in exclude)
 
 
 def recency(first_seen_at: datetime, now: datetime) -> float:
@@ -262,7 +254,7 @@ def score_candidate(
     has_bank_analytics: bool = False,
 ) -> ScoreResult:
     comp = components(company, event)
-    if has_bank_analytics and _supported(comp, exclude={"bank_analytics"}):
+    if has_bank_analytics and any(c.value > 0 for c in comp.values()):
         comp["bank_analytics"].offer(1.0)
     mult = ROLE_MULTIPLIERS.get(role, {})
     logs: dict[str, float] = {}
