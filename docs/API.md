@@ -1,0 +1,104 @@
+# API бэкенда
+
+Полная спецификация — [`docs/openapi.json`](openapi.json) (OpenAPI 3.1, `make openapi`); на работающем стенде —
+Swagger `http://localhost:8000/docs`. Внутренние API для ML описаны в [`contracts/`](../contracts/README.md).
+Гайд для фронтенда (экраны → эндпоинты, SSE) — [`INTEGRATION_FRONTEND.md`](INTEGRATION_FRONTEND.md).
+
+## Общие правила
+
+- **Префикс** `/api/v1`. Формат — JSON, время в ISO 8601 UTC.
+- **Авторизация.** `POST /auth/login` выдаёт пару токенов: access (30 мин) и refresh (7 дней). Дальше заголовок
+  `Authorization: Bearer <access>`; обновление — `POST /auth/refresh`. Данные компании доступны, только если она
+  есть в `user_company_access`, иначе 403. Admin-эндпоинты требуют `platform_role=admin`.
+- **Ошибки** — RFC 7807 `application/problem+json`: `type`, `title`, `status`, `detail`, `instance`, `trace_id`.
+  `trace_id` совпадает с заголовком `X-Trace-Id` и ищется в логах.
+- **Пагинация.** Лента — непрозрачным курсором `next_cursor`; уведомления — по `before_id`.
+- **Лимиты.** Token bucket на вызывающего (`RATE_LIMIT_PUBLIC_PER_MIN`); при превышении — 429 с `Retry-After`.
+- **SSE** (вопросы, уведомления) — `text/event-stream` с авторизацией заголовком, клиенту нужен `fetch` со
+  стримингом. События описаны ниже.
+
+## Публичное API
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| **Авторизация и профиль пользователя** | | |
+| POST | `/auth/login` | Вход по учётке |
+| POST | `/auth/refresh` | Обновить access-токен |
+| GET | `/me` | Пользователь, его компании и роли |
+| PUT | `/me/companies/{company_id}/role` | Сменить роль в компании; варианты инсайтов перегенерируются |
+| GET | `/me/requests` | Мои заявки после инсайтов и их статус |
+| **Компании** | | |
+| GET | `/companies` | Компании пользователя |
+| GET | `/companies/{id}/profile` | Что сервис знает о компании: признаки, источник каждого, полнота |
+| PATCH | `/companies/{id}/profile` | Дополнить профиль (поставщики, покупатели, сырьё, валюты, планы); пересчёт и перегенерация |
+| GET | `/companies/{id}/graph` | Группа, контрагенты, связи; гипотезы помечены и снабжены уверенностью |
+| **Лента** | | |
+| GET | `/feed/summary` | Виджет на главной: непрочитанные, срочные, главный инсайт по каждой компании |
+| GET | `/feed` | Лента компании: `role`, `filter` (all, urgent, risks, opportunities, saved, hidden), `period`, `limit`, `cursor` |
+| GET | `/digest` | Дайджест за день или неделю |
+| **Инсайт** | | |
+| GET | `/insights/{id}` | Полный инсайт (`contracts/insight.schema.json`); `via`, `position` — для метрик |
+| GET | `/insights/{id}/trace` | На чём основан вывод: признаки, источники, шаги агента, вызовы инструментов и LLM, скоринг, проверка |
+| POST | `/insights/{id}/state` | `open`, `hide`, `unhide`, `save`, `unsave`, `watch` |
+| POST | `/insights/{id}/feedback` | Полезно или бесполезно + причина; ответ — что сделано с отзывом |
+| POST | `/insights/{id}/source-click` | Ссылка на первоисточник: новость или страница PDF (presigned, 15 мин) |
+| POST | `/insights/{id}/actions` | Менеджер, обратный звонок, заявка → мок-CRM |
+| **Вопросы к аналитике** | | |
+| POST | `/insights/{id}/ask` | Вопрос к инсайту (SSE) |
+| POST | `/ask` | Вопрос по компании (SSE) |
+| GET | `/insights/{id}/questions`, `/ask/history` | История вопросов |
+| **Уведомления** | | |
+| GET | `/notifications` | Список (`unread_only`, `before_id`) |
+| POST | `/notifications/{id}/read`, `/notifications/read-all` | Отметить прочитанным |
+| GET | `/notifications/stream` | SSE |
+| **Справочники и первоисточники** | | |
+| GET | `/bank-products` | Каталог продуктов банка |
+| GET | `/news/{id}` | Новость: первоисточник события, флаги, теги |
+| GET | `/analytics/documents` | Материалы аналитики банка |
+| GET | `/analytics/documents/{id}/download` | Presigned-ссылка на PDF, `#page=N` |
+| POST | `/events` | События интерфейса для воронки (`widget_shown`, `widget_click`, `card_impression`, …) |
+| **Администрирование** (`admin`) | | |
+| GET | `/admin/metrics` | North star и метрики этапов CJM, генерация, ежедневные снимки (`docs/METRICS.md`) |
+| GET | `/admin/llm-usage` | Бюджет LLM и расход по дням, моделям, целям |
+| GET | `/admin/data-quality` | Отчёт качества последней загрузки компаний |
+| GET | `/admin/sources/health` | Здоровье источников новостей |
+| POST | `/admin/ingest/{kind}` | Поставить в очередь `news` или `analytics` |
+| POST | `/admin/news` | Ручная новость через общий конвейер |
+| POST | `/admin/insights/regenerate` | Перегенерировать инсайты компаний |
+| PATCH | `/admin/crm-requests/{id}` | Сменить статус заявки мок-CRM (пользователь получит уведомление) |
+
+Служебные эндпоинты (без префикса):
+- `GET /health` — процесс жив;
+- `GET /ready` — Postgres, Redis и бакеты S3 доступны;
+- `GET /metrics` — Prometheus.
+
+## SSE-события
+
+**Вопрос** (`/insights/{id}/ask`, `/ask`):
+
+| Событие | Данные |
+|---|---|
+| `run` | `run_id` (трассировка), `question_id` |
+| `step` | шаг агента `{type, name}` — для индикатора «ищет в аналитике…» |
+| `token` | `{delta}` — часть ответа |
+| `source` | источник (`insight.schema.json#/$defs/source`) |
+| `done` | `ChatFinal`: `answer`, `sources`, `statements` (`kind` — fact, bank_analytics, model_inference, hypothesis), `disclaimers` — после проверки бэкендом |
+| `error` | problem+json: `ml-unavailable` (503), `agent-timeout` (504), `invalid-answer` / `agent-no-answer` (502) |
+
+**Уведомления** (`/notifications/stream`):
+
+| Событие | Данные |
+|---|---|
+| `ready` | `unread`, `last_id` |
+| `notification` | уведомление (`id:` в заголовке события): `kind` — urgent_insight, digest или request_update; `title`, `body`, `company_id`, `insight_id`, `payload` |
+| `: ping` | комментарий раз в 15 с |
+
+Соединение закрывается через `max_s` (по умолчанию 300 с). Клиент переподключается с заголовком `Last-Event-ID`.
+
+## Внутренние API (для ML-агента)
+
+| Префикс | Контракт | Доступ |
+|---|---|---|
+| `/internal/tools/*` | [`contracts/tools-api.openapi.yaml`](../contracts/tools-api.openapi.yaml) | run-токен + `X-Run-Id`; только компания запуска; аудит |
+| `/internal/llm/*` | [`contracts/llm-gateway.openapi.yaml`](../contracts/llm-gateway.openapi.yaml) | run-токен или `ML_SERVICE_TOKEN`; белый список, бюджет, маскирование |
+| ML-сервис: `/v1/insights/generate`, `/v1/chat`, `/v1/score` | [`contracts/ml-service.openapi.yaml`](../contracts/ml-service.openapi.yaml) | бэкенд → ML, `ML_SERVICE_TOKEN` |
