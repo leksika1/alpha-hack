@@ -350,3 +350,29 @@ def test_ocr_table_rows_are_not_bank_positions() -> None:
     assert not _ocr_noise(
         "Если раньше мы ориентировались на ставку 13,5% на конец 2026 г., то теперь ожидаем её сохранения на 14,0%."
     )
+
+
+async def test_strong_ruble_is_a_risk_for_exporter(backend, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from tests import fakes
+
+    ev = {
+        **fakes.RATE_EVENT,
+        "event_id": "4b6f2c0e-3d7a-4c8e-9a51-6f1d2e3a4b05",
+        "title": "Рубль вырос и обновил максимум с начала августа в паре с юанем",
+        "summary": "Курс юаня опустился до 12,06 рубля.",
+        "event_type": "fx",
+        "direction": "up",
+        "tags": {**fakes.RATE_EVENT["tags"], "currencies": ["CNY"], "industry_tags": [], "commodities": []},
+    }
+    monkeypatch.setitem(fakes.EVENTS, ev["event_id"], ev)
+    orig = fakes.context_for
+
+    def exporter_ctx(cid: str) -> dict[str, Any]:
+        ctx = orig(cid)
+        ctx["features"]["sensitivities.export_oriented"] = {"value": True, "source": "derived"}
+        return ctx
+
+    monkeypatch.setattr(fakes, "context_for", exporter_ctx)
+    res = await Agent(generate_request(ev["event_id"], allow_llm=False)).run()
+    assert res.status == "completed", res.error
+    assert "выручка от экспорта снизится" in res.insight["title"]  # type: ignore[index]
