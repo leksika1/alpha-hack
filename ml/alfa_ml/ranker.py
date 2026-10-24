@@ -94,6 +94,17 @@ def score_exposure(
 def relevance_for(ev: "Evidence", impact_score: int | None = None) -> dict[str, Any]:
     """insight.relevance: ml-ranker@1 score, with the backend baseline kept in the breakdown for comparison."""
     res = score_exposure(ev.exposure, ev.event, ev.role, has_bank_analytics=bool(ev.analytics))
+    if ev.learned:  # ml-ranker@2: the learned probability orders the feed; the rule breakdown explains it
+        score = float(ev.learned["score"])
+        total = sum(v for k, v in res["breakdown"].items() if k != "recency") or 1.0
+        res = {
+            "score": round(score, 4),
+            "breakdown": {
+                k: round(score * v / total, 4) for k, v in res["breakdown"].items() if k != "recency"
+            },
+            "matched_features": res["matched_features"],
+            "scorer": ev.learned["name"],
+        }
     return res
 
 
