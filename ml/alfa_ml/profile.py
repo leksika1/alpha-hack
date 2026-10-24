@@ -5,6 +5,7 @@ not), feeds the impact score (docs/IMPACT_SCALE.md) and gives the LLM the *allow
 The LLM explains; it does not decide which company facts exist ("classifier decides, LLM explains").
 """
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -121,6 +122,40 @@ def products_of(features: dict[str, Any]) -> list[str]:
     )
 
 
+_RUB_STRONGER = re.compile(
+    r"рубл\w*\s+(\w+\s+){0,3}(вырос|укрепил|подорожал|обновил максимум)|"
+    r"(юан|доллар|евро|валют)\w*\s+(\w+\s+){0,3}(снизил|упал|подешевел|опустил|просел)",
+    re.IGNORECASE,
+)
+_RUB_WEAKER = re.compile(
+    r"рубл\w*\s+(\w+\s+){0,3}(ослаб|упал|подешевел|снизил|обновил минимум)|"
+    r"(юан|доллар|евро|валют)\w*\s+(\w+\s+){0,3}(вырос|подорожал|укрепил)",
+    re.IGNORECASE,
+)
+_MORTGAGE = re.compile(r"ипотек", re.IGNORECASE)
+
+
+def normalize_event(event: dict[str, Any]) -> dict[str, Any]:
+    """ML-side fixes on top of the backend tagger (a copy; the backend's event is not changed).
+
+    - FX direction is about the foreign currency: "рубль вырос" means the yuan/dollar went down.
+    - Mortgage news concerns developers and construction even if tagged only as real estate.
+    """
+    ev = dict(event)
+    tags = dict(ev.get("tags") or {})
+    head = str(ev.get("title") or "")
+    if ev.get("event_type") == "fx":
+        stronger, weaker = bool(_RUB_STRONGER.search(head)), bool(_RUB_WEAKER.search(head))
+        if stronger != weaker:
+            ev["direction"] = "down" if stronger else "up"
+    if _MORTGAGE.search(f"{head}. {ev.get('summary') or ''}"):
+        tags["industry_tags"] = sorted(
+            set(tags.get("industry_tags") or []) | {"real_estate", "construction", "developer"}
+        )
+    ev["tags"] = tags
+    return ev
+
+
 def event_tags(event: dict[str, Any]) -> dict[str, set[str]]:
     tags = event.get("tags") or {}
     return {
@@ -161,6 +196,8 @@ def compute_exposure(features: dict[str, Any], event: dict[str, Any], company_id
                 "Событие касается одного из крупнейших контрагентов компании.",
             )
     match_tags = tags["industry_tags"] - MATCH_GENERIC_TAGS
+    ev_countries = {c.upper() for c in tags["countries"]} - {"РОССИЯ"}
+    fts_upper = {str(c).upper() for c in (fv(features, "fts_countries", []) or [])}
     for tag in sorted(match_tags):
         for d, who in (("in", "покупателей"), ("out", "поставщиков")):
             path = f"counterparties.industry_share_{d}.{tag}"
@@ -168,6 +205,8 @@ def compute_exposure(features: dict[str, Any], event: dict[str, Any], company_id
             strength = counterparty_strength(share) * SECOND_ORDER_DISCOUNT
             if d == "in" and etype == "commodities":
                 strength *= 0.5  # a price move of the customers' goods barely changes what they buy from you
+            if ev_countries and not ev_countries & fts_upper:
+                strength *= 0.5  # a foreign-route story reaches the company's carriers only partly
             if isinstance(share, int | float) and strength > 0:
                 res.offer(
                     "counterparty",
@@ -178,7 +217,13 @@ def compute_exposure(features: dict[str, Any], event: dict[str, Any], company_id
 
     industry = set(fv(features, "industry_tags", []) or [])
     if match_tags & industry:
-        res.offer("industry", 1.0, ["industry_tags", "okved.code"], "Событие касается отрасли компании.")
+        foreign = bool(ev_countries) and not ev_countries & fts_upper
+        res.offer(
+            "industry",
+            0.4 if foreign else 1.0,
+            ["industry_tags", "okved.code"],
+            "Событие касается отрасли компании" + (" за рубежом (косвенно)." if foreign else "."),
+        )
 
     fts = {str(c).upper() for c in (fv(features, "fts_countries", []) or [])}
     countries = {c.upper() for c in tags["countries"]} - {"РОССИЯ"}
@@ -191,7 +236,11 @@ def compute_exposure(features: dict[str, Any], event: dict[str, Any], company_id
     trade_type = (
         etype in FX_COUNTRY_TYPES
         or (etype == "trade_logistics" and not match_tags)
-        or (etype == "trade_logistics" and bool(match_tags & (industry | _cp_tags(features))))
+        or (
+            etype == "trade_logistics"
+            # a foreign price story counts the country only with an own exposure, not via counterparties
+            and bool(match_tags & (industry if tags["commodities"] else industry | _cp_tags(features)))
+        )
     )
     if overlap_countries and trade_type:
         res.offer(
@@ -200,7 +249,7 @@ def compute_exposure(features: dict[str, Any], event: dict[str, Any], company_id
             ["fts_countries"],
             "Компания ведёт ВЭД со страной события: " + ", ".join(sorted(overlap_countries)) + ".",
         )
-    elif ev_ccy and ev_ccy & own_ccy:
+    elif ev_ccy and ev_ccy & own_ccy and etype in FX_COUNTRY_TYPES:
         res.offer(
             "fx_country",
             0.9,
