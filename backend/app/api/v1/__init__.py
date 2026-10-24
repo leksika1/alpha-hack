@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     admin,
+    admin_sources,
     analytics,
     auth,
     catalog,
@@ -26,3 +27,4 @@ router.include_router(qa.router)
 router.include_router(notifications.router)
 router.include_router(engagement.router)
 router.include_router(admin.router)
+router.include_router(admin_sources.router)

@@ -43,7 +43,11 @@ async def run_news_collection(
     )
     store = store or S3ObjectStore(get_s3_client(), settings.s3_bucket_news_raw)
     own_fetcher = fetcher is None
-    fetcher = fetcher or PoliteFetcher(settings.news_user_agent, min_interval_s=settings.news_min_interval_s)
+    fetcher = fetcher or PoliteFetcher(
+        settings.news_user_agent,
+        min_interval_s=settings.news_min_interval_s,
+        public_only=settings.news_public_hosts_only,
+    )
     try:
         result = await poll(
             conn,

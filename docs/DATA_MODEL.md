@@ -143,7 +143,7 @@ erDiagram
 
 | Таблица | Ключ | Содержание |
 |---|---|---|
-| `core.sources` | `id` | каталог источников: вид (`rss`, `fixture`), URL, приоритет, `fallback_for`, темы; здоровье — `health_status`, `consecutive_failures`, `last_error`, `last_latency_ms`, `etag`/`last_modified` |
+| `core.sources` | `id` | каталог источников: вид (`rss`, `fixture`), URL, приоритет, `fallback_for`, темы; `origin` (`catalog` — из файла, `admin` — добавлен админом), `disabled_by_admin` (ADR-036); здоровье — `health_status`, `consecutive_failures`, `last_error`, `last_latency_ms`, `etag`/`last_modified` |
 | `core.news_raw` | `id` | один опрос источника: исход (`ok`, `not_modified`, `unchanged`, `http_error`, `network_error`, `robots_disallowed`, `parse_error`), статус, ключ тела в S3 и SHA-256, задержка, число записей, новых и дублей |
 | `core.news_items` | `id`, uq `canonical_url` | нормализованная новость: заголовок, лид (без строк с prompt injection), текст, дата, хэш текста, теги тегера, флаги (`suspected_prompt_injection`), `raw_id` |
 | `core.events` | `id`, uq `cluster_key` | событие (кластер новостей): тип, направление, срочность и её причины, объединённые теги (GIN), первое и последнее упоминание, число новостей |

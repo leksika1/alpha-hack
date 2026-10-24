@@ -418,6 +418,8 @@ class Source(Base):
     last_latency_ms: Mapped[int | None] = mapped_column(Integer)
     etag: Mapped[str | None] = mapped_column(Text)
     last_modified: Mapped[str | None] = mapped_column(Text)
+    origin: Mapped[str] = mapped_column(String(16), server_default="catalog")  # catalog | admin (ADR-036)
+    disabled_by_admin: Mapped[bool] = mapped_column(Boolean, server_default="false")
 
 
 class NewsRaw(Base):

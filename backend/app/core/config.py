@@ -98,6 +98,7 @@ class Settings(BaseSettings):
     news_fetch_concurrency: int = 4
     news_min_interval_s: float = 2.0  # per host
     news_failures_to_down: int = 3
+    news_public_hosts_only: bool = True  # SSRF guard of the collector (ADR-036)
 
     # Matching / generation
     match_min_score: float = 0.2

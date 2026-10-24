@@ -2516,6 +2516,258 @@
           }
         ]
       }
+    },
+    "/api/v1/admin/sources": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Все источники новостей",
+        "operationId": "list_sources_api_v1_admin_sources_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SourceOut"
+                  },
+                  "title": "Response List Sources Api V1 Admin Sources Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Добавить источник (RSS/Atom): сначала проверка ленты, затем опрос в очереди",
+        "operationId": "create_api_v1_admin_sources_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "poll_now",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Сразу поставить опрос в очередь",
+              "default": true,
+              "title": "Poll Now"
+            },
+            "description": "Сразу поставить опрос в очередь"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceCreatedOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          },
+          "409": {
+            "description": "Такая лента уже есть"
+          },
+          "422": {
+            "description": "Неверный URL, лента не прошла проверку или неизвестный fallback_for"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/sources/check": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Проверить ленту, ничего не сохраняя: доступность, robots.txt, публичный адрес, разбор RSS/Atom и последние новости",
+        "operationId": "check_api_v1_admin_sources_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedCheckIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedCheckOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          },
+          "422": {
+            "description": "Неверный URL"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/sources/{source_id}": {
+      "patch": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Включить или выключить источник; у добавленных админом — ещё название, приоритет, резерв, темы",
+        "operationId": "update_api_v1_admin_sources__source_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "title": "Source Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourcePatchIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          },
+          "404": {
+            "description": "Источник не найден"
+          },
+          "422": {
+            "description": "Источник из каталога: можно только enabled; неизвестный fallback_for"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Удалить источник, добавленный админом (пока по нему нет новостей)",
+        "operationId": "delete_api_v1_admin_sources__source_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          },
+          "404": {
+            "description": "Источник не найден"
+          },
+          "409": {
+            "description": "Источник из каталога или по нему уже есть новости — выключите его"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3418,6 +3670,88 @@
         ],
         "title": "FeatureOut"
       },
+      "FeedCheckIn": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 10,
+            "title": "Url",
+            "examples": [
+              "https://feeds.bbci.co.uk/news/business/rss.xml"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "FeedCheckIn"
+      },
+      "FeedCheckOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "description": "ok | empty (не лента) | http_error | network_error (в т.ч. непубличный адрес) | robots_disallowed | too_large"
+          },
+          "status_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Code"
+          },
+          "items": {
+            "type": "integer",
+            "title": "Items"
+          },
+          "sample": {
+            "items": {
+              "$ref": "#/components/schemas/FeedSampleItem"
+            },
+            "type": "array",
+            "title": "Sample",
+            "description": "До 5 последних новостей ленты"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ok",
+          "url",
+          "outcome",
+          "status_code",
+          "items",
+          "sample",
+          "error"
+        ],
+        "title": "FeedCheckOut"
+      },
       "FeedOut": {
         "properties": {
           "company_id": {
@@ -3455,6 +3789,31 @@
           "next_cursor"
         ],
         "title": "FeedOut"
+      },
+      "FeedSampleItem": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Published At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "url",
+          "published_at"
+        ],
+        "title": "FeedSampleItem"
       },
       "FeedSummaryOut": {
         "properties": {
@@ -5405,6 +5764,298 @@
           "page"
         ],
         "title": "SourceClickOut"
+      },
+      "SourceCreatedOut": {
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/SourceOut"
+          },
+          "check": {
+            "$ref": "#/components/schemas/FeedCheckOut"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id",
+            "description": "Опрос нового источника поставлен в очередь"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source",
+          "check",
+          "task_id"
+        ],
+        "title": "SourceCreatedOut"
+      },
+      "SourceIn": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 10,
+            "title": "Url",
+            "examples": [
+              "https://feeds.bbci.co.uk/news/business/rss.xml"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 2,
+            "title": "Name"
+          },
+          "topics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Topics"
+          },
+          "priority": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Priority",
+            "default": 100
+          },
+          "fallback_for": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback For"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url",
+          "name"
+        ],
+        "title": "SourceIn"
+      },
+      "SourceOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "rss | fixture"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "catalog",
+              "admin"
+            ],
+            "title": "Origin",
+            "description": "catalog — из news_sources.json (можно только включить или выключить); admin — добавлен админом"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Опрашивается сейчас"
+          },
+          "disabled_by_admin": {
+            "type": "boolean",
+            "title": "Disabled By Admin"
+          },
+          "is_fixture": {
+            "type": "boolean",
+            "title": "Is Fixture"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority"
+          },
+          "fallback_for": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback For",
+            "description": "Резерв для источника: опрашивается, когда тот down"
+          },
+          "topics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Topics"
+          },
+          "health_status": {
+            "type": "string",
+            "title": "Health Status",
+            "description": "healthy | degraded | down | unknown"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "items_24h": {
+            "type": "integer",
+            "title": "Items 24H"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "url",
+          "origin",
+          "enabled",
+          "disabled_by_admin",
+          "is_fixture",
+          "priority",
+          "fallback_for",
+          "topics",
+          "health_status",
+          "last_error",
+          "last_checked_at",
+          "last_success_at",
+          "items_24h"
+        ],
+        "title": "SourceOut"
+      },
+      "SourcePatchIn": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "fallback_for": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback For"
+          },
+          "topics": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topics"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SourcePatchIn"
       },
       "StateIn": {
         "properties": {
