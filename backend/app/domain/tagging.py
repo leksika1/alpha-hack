@@ -4,6 +4,11 @@ Extracts from a news text: industry tags (same vocabulary as data/reference/okve
 countries (spelled as in FTS data), regions (spelled as in REGION), currencies, event type, direction
 (up/down/hold), numbers (key rate), urgency reasons and prompt-injection flags. Matching is on lowercase
 word stems, so unseen news are handled the same way as fixtures (case criterion 05).
+
+Foreign sources (ADR-039): English stems map to the same keys (industries, commodities, countries as spelled
+in FTS data, currencies, event types, direction, urgency), so an English news item matches companies exactly
+like a Russian one; `language` is detected from the alphabet. Short English roots that start other words
+(port -> portfolio, fed -> fedex) are given as phrases.
 """
 
 import re
@@ -154,6 +159,153 @@ CURRENCY_STEMS: dict[str, tuple[str, ...]] = {
     "INR": ("рупи",),
 }
 
+# --- English stems for foreign sources (ADR-039) ---
+INDUSTRY_STEMS_EN: dict[str, tuple[str, ...]] = {
+    "metals": ("metal", "steel", "rebar", "smelter", "steelmaker", "steel mill", "iron and steel"),
+    "metallurgy": ("steelmaker", "steel mill", "smelter", "metallurg"),
+    "steel": ("steel", "rebar", "hot-rolled", "flat-rolled", "steelmaker"),
+    "construction": ("construction", "homebuilder", "housing start", "builder"),
+    "developer": ("property developer", "homebuilder", "real estate developer"),
+    "real_estate": ("real estate", "property market", "mortgage", "commercial property"),
+    "construction_materials": ("cement", "concrete", "brick", "building material"),
+    "logistics": ("logistics", "freight", "cargo", "container", "supply chain", "transit"),
+    "trucking": ("trucking", "truckload", "haulage", "truck driver", "freight truck"),
+    "warehousing": ("warehouse", "fulfillment"),
+    "shipping": ("shipping", "vessel", "tanker", "bulk carrier", "seaport", "port of", "ports", "maritime"),
+    "rail": ("railway", "railroad", "rail freight", "railcar"),
+    "agriculture": ("grain", "wheat", "harvest", "crop", "farm", "fertiliz", "fertilis", "agricultur"),
+    "grain_trade": ("grain export", "wheat export", "grain trade", "grain shipment"),
+    "food": ("food", "dairy", "meat", "poultry", "pork", "beef"),
+    "beverages": ("beverage", "beer", "brewer", "spirits maker"),
+    "retail": ("retail", "retailer", "supermarket", "consumer spending", "grocery chain"),
+    "consumer_goods": ("consumer goods", "household appliance", "apparel"),
+    "oil_gas": ("oil", "crude", "refiner", "refinery", "lng", "petroleum", "gasoline", "diesel"),
+    "fuel": ("fuel", "gasoline", "diesel", "jet fuel"),
+    "automotive": ("automaker", "carmaker", "car sales", "auto industry", "vehicle sales"),
+    "automotive_parts": ("auto parts", "car parts"),
+    "electronics": ("electronics", "semiconductor", "microchip", "smartphone", "chipmaker"),
+    "it": ("software", "cloud computing", "tech compan", "tech sector"),
+    "chemicals": ("chemical", "fertiliz", "fertilis", "polymer", "petrochemical"),
+    "machinery": ("machinery", "industrial equipment", "machine tool", "heavy equipment"),
+    "energy": ("electricity", "power price", "power grid", "utility compan"),
+    "hospitality": ("hotel", "tourism", "restaurant"),
+    "wholesale": ("wholesale", "distributor"),
+    "finance": ("banking sector", "bank lending"),
+    "leasing": ("leasing",),
+    "pharma": ("pharmaceutical", "drugmaker"),
+    "telecom": ("telecom", "mobile operator"),
+}
+COMMODITY_STEMS_EN: dict[str, tuple[str, ...]] = {
+    "steel": ("steel", "rebar", "hot-rolled", "flat-rolled"),
+    "iron_ore": ("iron ore", "pellet"),
+    "coal": ("coal", "coking coal", "thermal coal"),
+    "oil": ("oil price", "crude", "brent", "wti", "urals", "oil output", "oil export"),
+    "gas": ("natural gas", "lng", "gas price", "gas pipeline"),
+    "fuel": ("fuel", "gasoline", "diesel"),
+    "grain": ("grain", "wheat", "barley", "corn", "maize"),
+    "fertilizers": ("fertiliz", "fertilis", "potash", "urea", "ammonia"),
+    "gold": ("gold",),
+    "nonferrous": ("copper", "aluminium", "aluminum", "nickel", "zinc"),
+    "cement": ("cement",),
+    "timber": ("timber", "lumber", "wood pulp"),
+    "sugar": ("sugar",),
+    "fish": ("salmon", "pollock", "seafood", "fishing"),
+}
+COUNTRY_STEMS_EN: dict[str, tuple[str, ...]] = {
+    "КИТАЙ": ("china", "chinese", "beijing"),
+    "ТУРЦИЯ": ("turkiye", "turkish", "ankara"),
+    "ИНДИЯ": ("india", "indian", "new delhi"),
+    "ОАЭ": ("uae", "emirates", "dubai", "abu dhabi"),
+    "КАЗАХСТАН": ("kazakhstan",),
+    "УЗБЕКИСТАН": ("uzbekistan",),
+    "БЕЛАРУСЬ": ("belarus",),
+    "ЕГИПЕТ": ("egypt",),
+    "ИРАН": ("iran",),
+    "МОНГОЛИЯ": ("mongolia",),
+    "США": ("united states", "u.s.", "american", "washington"),
+    "ГЕРМАНИЯ": ("germany", "german"),
+    "ИТАЛИЯ": ("italy", "italian"),
+    "ЛИТВА": ("lithuania",),
+    "ПОЛЬША": ("poland", "polish"),
+    "ГОНКОНГ": ("hong kong",),
+    "ЮЖНАЯ КОРЕЯ": ("south korea", "korean", "seoul"),
+    "АЗЕРБАЙДЖАН": ("azerbaijan",),
+    "АРМЕНИЯ": ("armenia",),
+    "ВЬЕТНАМ": ("vietnam",),
+    "ИЗРАИЛЬ": ("israel",),
+    "КЫРГЫЗСТАН": ("kyrgyz",),
+    "СЕРБИЯ": ("serbia",),
+}
+CURRENCY_STEMS_EN: dict[str, tuple[str, ...]] = {
+    "USD": ("dollar",),
+    "EUR": ("euro ",),
+    "CNY": ("yuan", "renminbi"),
+    "TRY": ("lira",),
+    "AED": ("dirham",),
+    "INR": ("rupee",),
+}
+EVENT_TYPE_RULES_EN: dict[str, tuple[str, ...]] = {
+    "monetary_policy": (
+        "key rate",
+        "interest rate",
+        "rate cut",
+        "rate hike",
+        "central bank",
+        "federal reserve",
+        "the fed",
+        "ecb",
+        "monetary policy",
+        "bank of russia",
+    ),
+    "sanctions": ("sanction", "embargo", "export control", "price cap", "blacklist"),
+    "fx": ("exchange rate", "rouble", "ruble", "dollar index", "devaluation", "currency market"),
+    "regulation_tax": ("tariff", "import duty", "export duty", "tax", "levy", "regulator", "new rules"),
+    "trade_logistics": ("shipping", "freight", "logistics", "customs", "import", "export", "supply chain"),
+    "commodities": ("prices of", "price of", "futures", "benchmark price", "prices rose", "prices fell"),
+    "macro_stat": ("inflation", "gdp", "pmi", "unemployment", "industrial output", "retail sales"),
+    "labor": ("wage", "labor shortage", "labour shortage", "layoff", "jobs report"),
+}
+UP_STEMS_EN = (
+    "rise",
+    "rose",
+    "rising",
+    "raise",
+    "raised",
+    "hike",
+    "increase",
+    "surge",
+    "jump",
+    "soar",
+    "climb",
+    "gain",
+    "higher",
+    "tighten",
+)
+DOWN_STEMS_EN = (
+    "cut",
+    "fall",
+    "fell",
+    "drop",
+    "decline",
+    "plunge",
+    "slump",
+    "lower",
+    "ease",
+    "eased",
+    "reduce",
+    "slash",
+)
+HOLD_STEMS_EN = ("held rates", "hold rates", "kept rates", "keep rates", "left rates", "unchanged", "on hold")
+URGENT_RULES_EN: dict[str, tuple[str, ...]] = {
+    "emergency": ("accident", "explosion", "blaze", "strike", "blockade", "collapse", "disaster"),
+    "sharp_move": ("sharp", "plunge", "surge", "record high", "record low", "soar", "crash"),
+}
+
+
+def _with_en(ru: dict[str, tuple[str, ...]], en: dict[str, tuple[str, ...]]) -> dict[str, tuple[str, ...]]:
+    return {key: ru.get(key, ()) + en.get(key, ()) for key in {**ru, **en}}
+
+
 # Ordered: the first matching type wins.
 EVENT_TYPE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
@@ -206,7 +358,7 @@ INJECTION_PATTERNS = (
     re.compile(r"выполни(те)? (команду|инструкцию)|execute the following", re.I),
 )
 
-KEY_RATE_RE = re.compile(r"ставк[а-я]*[^.%]{0,60}?(\d{1,2}(?:[.,]\d{1,2})?)\s*%")
+KEY_RATE_RE = re.compile(r"(?:ставк[а-я]*|rate)[^.%]{0,60}?(\d{1,2}(?:[.,]\d{1,2})?)\s*%")
 PERCENT_RE = re.compile(r"(\d{1,3}(?:[.,]\d{1,2})?)\s*%")
 
 
@@ -222,6 +374,7 @@ class NewsTags:
     numbers: list[dict[str, object]] = field(default_factory=list)
     urgency_reasons: list[str] = field(default_factory=list)
     flags: list[str] = field(default_factory=list)
+    language: str = "ru"
 
     @property
     def urgent(self) -> bool:
@@ -238,6 +391,7 @@ class NewsTags:
             "currencies": self.currencies,
             "numbers": self.numbers,
             "urgency_reasons": self.urgency_reasons,
+            "language": self.language,
         }
 
 
@@ -261,17 +415,33 @@ def _compile(table: dict[str, tuple[str, ...]]) -> dict[str, tuple[re.Pattern[st
     return {key: tuple(_stem_regex(s) for s in stems) for key, stems in table.items()}
 
 
-_INDUSTRY = _compile(INDUSTRY_STEMS)
-_COMMODITY = _compile(COMMODITY_STEMS)
-_COUNTRY = _compile(COUNTRY_STEMS)
+_INDUSTRY = _compile(_with_en(INDUSTRY_STEMS, INDUSTRY_STEMS_EN))
+_COMMODITY = _compile(_with_en(COMMODITY_STEMS, COMMODITY_STEMS_EN))
+_COUNTRY = _compile(_with_en(COUNTRY_STEMS, COUNTRY_STEMS_EN))
 _REGION = _compile(REGION_STEMS)
-_CURRENCY = _compile(CURRENCY_STEMS)
-_EVENT_TYPES = tuple((t, tuple(_stem_regex(s) for s in stems)) for t, stems in EVENT_TYPE_RULES)
-_URGENT = tuple((r, tuple(_stem_regex(s) for s in stems)) for r, stems in URGENT_RULES)
-_UP = tuple(_stem_regex(s) for s in UP_STEMS)
-_DOWN = tuple(_stem_regex(s) for s in DOWN_STEMS)
-_HOLD = tuple(_stem_regex(s) for s in HOLD_STEMS)
-_CBR = tuple(_stem_regex(s) for s in ("банк росси", "цб", "центробанк", "регулятор"))
+_CURRENCY = _compile(_with_en(CURRENCY_STEMS, CURRENCY_STEMS_EN))
+_EVENT_TYPES = tuple(
+    (t, tuple(_stem_regex(s) for s in stems + EVENT_TYPE_RULES_EN.get(t, ())))
+    for t, stems in EVENT_TYPE_RULES
+)
+_URGENT = tuple(
+    (r, tuple(_stem_regex(s) for s in stems + URGENT_RULES_EN.get(r, ()))) for r, stems in URGENT_RULES
+)
+_UP = tuple(_stem_regex(s) for s in UP_STEMS + UP_STEMS_EN)
+_DOWN = tuple(_stem_regex(s) for s in DOWN_STEMS + DOWN_STEMS_EN)
+_HOLD = tuple(_stem_regex(s) for s in HOLD_STEMS + HOLD_STEMS_EN)
+_CBR = tuple(
+    _stem_regex(s)
+    for s in ("банк росси", "цб", "центробанк", "регулятор", "bank of russia", "russian central bank")
+)
+_CYRILLIC = re.compile(r"[а-я]")
+_LATIN = re.compile(r"[a-z]")
+
+
+def detect_language(text: str) -> str:
+    """ru or en by the alphabet of the letters (lowercased text)."""
+    cyr, lat = len(_CYRILLIC.findall(text)), len(_LATIN.findall(text))
+    return "en" if lat > 2 * cyr else "ru"
 
 
 def _any(text: str, patterns: tuple[re.Pattern[str], ...]) -> bool:
@@ -340,4 +510,5 @@ def tag_news(title: str, body: str) -> NewsTags:
         numbers=numbers,
         urgency_reasons=sorted(set(reasons)),
         flags=["suspected_prompt_injection"] if detect_injection(raw) else [],
+        language=detect_language(text),
     )

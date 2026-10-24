@@ -723,9 +723,18 @@ async def test_admin_alerts_reflect_system_state(env: dict[str, Any]) -> None:
     c = env["client"]
     ah = await admin_headers(c)
     async with pg_connection(env["url"]) as conn:
-        await conn.execute(
+        others = [
+            r["id"] for r in await conn.fetch("SELECT id FROM core.sources WHERE enabled AND NOT is_fixture")
+        ]
+        await conn.execute("UPDATE core.sources SET enabled = false WHERE id = ANY($1::text[])", others)
+        await conn.executemany(  # one source of three is down: skipped quietly
             """INSERT INTO core.sources (id, name, kind, health_status, last_error)
-               VALUES ('alert-test', 'Тестовый RSS', 'rss', 'down', 'HTTP 503')"""
+               VALUES ($1, $2, 'rss', $3, $4)""",
+            [
+                ("alert-down", "Недоступный RSS", "down", "HTTP 503"),
+                ("alert-ok-1", "Рабочий RSS 1", "healthy", None),
+                ("alert-ok-2", "Рабочий RSS 2", "healthy", None),
+            ],
         )
         await conn.executemany(  # rejected runs in the last hour (the module's own generation ran too)
             """INSERT INTO core.agent_runs
@@ -742,21 +751,22 @@ async def test_admin_alerts_reflect_system_state(env: dict[str, Any]) -> None:
             }
         )
         keys = {a.key: a for a in await evaluate(conn, unreachable_ml)}
-    assert {"source-down:alert-test", "insights-rejected", "ml-unavailable", "llm-budget-exhausted"} <= set(
-        keys
-    )
-    assert (
-        keys["ml-unavailable"].severity == "critical" and "HTTP 503" in keys["source-down:alert-test"].detail
-    )
+        assert {"insights-rejected", "ml-unavailable", "llm-budget-exhausted"} <= set(keys)
+        assert keys["ml-unavailable"].severity == "critical" and "sources-down" not in keys
+        # most sources down: a network problem of the server
+        await conn.execute("UPDATE core.sources SET health_status = 'down' WHERE id = 'alert-ok-1'")
+        mass = {a.key: a for a in await evaluate(conn, env["settings"])}
+    assert "sources-down" in mass and "2 из 3" in mass["sources-down"].detail
 
     assert (await c.get("/api/v1/admin/alerts", headers=await login(c))).status_code == 403
     live = (await c.get("/api/v1/admin/alerts", headers=ah)).json()
-    assert "source-down:alert-test" in {a["key"] for a in live}
+    assert "sources-down" in {a["key"] for a in live}
     async with pg_connection(env["url"]) as conn:
-        await conn.execute("DELETE FROM core.sources WHERE id = 'alert-test'")
+        await conn.execute("DELETE FROM core.sources WHERE id LIKE 'alert-%'")
         await conn.execute("DELETE FROM core.agent_runs WHERE id LIKE 'run_alert_%'")
+        await conn.execute("UPDATE core.sources SET enabled = true WHERE id = ANY($1::text[])", others)
     after = {a["key"] for a in (await c.get("/api/v1/admin/alerts", headers=ah)).json()}
-    assert "source-down:alert-test" not in after
+    assert "sources-down" not in after
 
 
 RSS = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>World business</title>
@@ -768,15 +778,14 @@ RSS = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>World business
 
 async def test_admin_manages_news_sources(env: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
     from app.integrations.news.http import PoliteFetcher
-    from app.services import news_sources_admin
+    from app.services import news_discovery, news_sources_admin
     from app.services.news_ingest import sync_sources
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/robots.txt":
             return httpx.Response(404)
-        return httpx.Response(
-            200, content=RSS if request.url.path == "/rss.xml" else b"<html>not a feed</html>"
-        )
+        is_feed = request.url.host == "world.example.com" and request.url.path == "/rss.xml"
+        return httpx.Response(200, content=RSS if is_feed else b"<html>not a feed</html>")
 
     def fake_fetcher(
         *args: Any, **kwargs: Any
@@ -784,6 +793,7 @@ async def test_admin_manages_news_sources(env: dict[str, Any], monkeypatch: pyte
         return PoliteFetcher("test", min_interval_s=0, transport=httpx.MockTransport(handler))
 
     monkeypatch.setattr(news_sources_admin, "PoliteFetcher", fake_fetcher)
+    monkeypatch.setattr(news_discovery, "PoliteFetcher", fake_fetcher)
     c = env["client"]
     ah = await admin_headers(c)
     url = "/api/v1/admin/sources"
@@ -801,7 +811,7 @@ async def test_admin_manages_news_sources(env: dict[str, Any], monkeypatch: pyte
     local = await c.post(f"{url}/check", headers=ah, json={"url": "file:///etc/passwd"})
     assert local.status_code == 422
 
-    bad = await c.post(url, headers=ah, json={"url": "https://world.example.com/page", "name": "Не лента"})
+    bad = await c.post(url, headers=ah, json={"url": "https://nofeed.example.com/page", "name": "Не лента"})
     assert bad.status_code == 422 and bad.json()["type"].endswith("/feed-check-failed")
     body = {"url": "https://world.example.com/rss.xml", "name": "World business", "topics": ["world"]}
     created = await c.post(url, headers=ah, json=body, params={"poll_now": "false"})
