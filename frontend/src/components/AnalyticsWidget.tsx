@@ -7,7 +7,7 @@ import { ArrowRightMIcon } from '@alfalab/icons-glyph/ArrowRightMIcon';
 import { trackEvent, useFeed, useFeedSummary } from '../api/hooks';
 import { useSession } from '../auth/session';
 import { cleanTitle, companyShortName, formatRelative, plural, POLARITY } from '../lib/format';
-import { ImpactMeter, POLARITY_TEXT } from './ui';
+import { ImpactMeter, POLARITY_TEXT, sortInsights } from './ui';
 import type { Polarity } from '../api/types';
 import { SparkIcon } from '../layout/icons';
 import { cn } from '../lib/cn';
@@ -31,7 +31,7 @@ export function AnalyticsWidget() {
   const shownFor = useRef<string | null>(null);
 
   const companySummary = summary.data?.companies.find((c) => c.company_id === company?.company_id);
-  const items = (feed.data?.items ?? []).slice(0, 3);
+  const items = sortInsights(feed.data?.items ?? [], 'importance').slice(0, 3);
   const otherUrgent = (summary.data?.companies ?? []).filter((c) => c.company_id !== company?.company_id && c.urgent > 0);
 
   useEffect(() => {
@@ -48,7 +48,7 @@ export function AnalyticsWidget() {
 
   return (
     <section
-      className="relative mt-4 overflow-hidden rounded-3xl border border-accent/20 bg-white p-6 shadow-card"
+      className="relative mt-4 overflow-hidden rounded-3xl shadow-accent/20 bg-white p-6 shadow-card"
       aria-label="Аналитика для вашей компании"
     >
       <div className="mb-4 flex flex-col justify-between gap-6 md:flex-row">
@@ -57,7 +57,7 @@ export function AnalyticsWidget() {
             <SparkIcon width={16} height={16} /> Альфа-Аналитика
           </div>
           <h2 className="mt-1 mb-1.5 text-2xl">Важное для вашего бизнеса</h2>
-          <p className="max-w-[620px] text-ink-2">
+          <p className="max-w-155 text-ink-2">
             События из новостей и аналитики банка, отобранные по профилю компании: что произошло, почему это важно вам и что можно сделать.
           </p>
         </div>

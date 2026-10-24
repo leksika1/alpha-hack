@@ -1,5 +1,5 @@
 // Вопрос к аналитике (CJM 06): ответ агента потоком (SSE) с источниками, метками происхождения и ограничениями.
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@alfalab/core-components/button';
 import { PaperAirplaneMIcon } from '@alfalab/icons-glyph/PaperAirplaneMIcon';
@@ -188,8 +188,16 @@ export function AskPanel({ insightId, companyId, suggestions }: { insightId?: st
               }
             }}
           />
-          <Button view="accent" size={48} type="submit" loading={busy} disabled={!question.trim()} aria-label="Отправить вопрос">
-            <PaperAirplaneMIcon />
+          <Button
+            view="accent"
+            size={48}
+            type="submit"
+            loading={busy}
+            disabled={!question.trim()}
+            aria-label="Отправить вопрос"
+            className="!w-[48px] !min-w-[48px] shrink-0 rounded-xl !px-0 [&>span]:flex [&>span]:justify-center"
+          >
+            <PaperAirplaneMIcon className="block" />
           </Button>
         </div>
       </form>
@@ -215,12 +223,13 @@ function TurnView({ turn }: { turn: Turn }) {
           </Note>
         )}
         {turn.status === 'done' && turn.statements.length > 0 && (
-          <div className="mt-2.5 border-t border-black/6 pt-2.5">
+          <div className="mt-2.5 grid grid-cols-[max-content_1fr] items-start gap-x-2.5 gap-y-2 border-t border-black/6 pt-2.5 text-sm">
+            {/* Общая сетка: колонка бейджей одной ширины (по самому широкому), бейджи растянуты на всю колонку. */}
             {turn.statements.map((s) => (
-              <div key={s.id} className="flex items-baseline gap-2.5 py-1 text-sm">
-                <KindBadge kind={s.kind} demo={isDemoStatement(s, turn.sources)} />
+              <Fragment key={s.id}>
+                <KindBadge kind={s.kind} demo={isDemoStatement(s, turn.sources)} className="mt-px justify-center" />
                 <span>{s.text}</span>
-              </div>
+              </Fragment>
             ))}
           </div>
         )}
