@@ -290,3 +290,184 @@ async def add_news(
         urgent_events=result.urgent_event_ids,
         companies_queued=companies,
     )
+
+
+class AnalyticsUploadOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: uuid.UUID
+    file_name: str
+    title: str
+    status: Literal["processing", "ready"]
+    queued: bool = Field(description="Поставлен в очередь на обработку (false — такой файл уже загружен)")
+    duplicate: bool
+    task_id: str | None
+
+
+@router.post(
+    "/analytics",
+    response_model=AnalyticsUploadOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        **ADMIN_ERRS,
+        413: {"description": "Файл больше ANALYTICS_MAX_BYTES"},
+        415: {"description": "Тело запроса — не application/pdf"},
+        422: {"description": "Не PDF или неверное имя файла"},
+    },
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}},
+        }
+    },
+    summary="Загрузить PDF аналитики (тело — файл, `Content-Type: application/pdf`): сразу виден со статусом "
+    "processing, воркер извлекает текст или распознаёт сканы, режет на фрагменты и индексирует",
+)
+async def upload_analytics(
+    request: Request,
+    admin: Admin,
+    conn: Conn,
+    settings: SettingsDep,
+    file_name: Annotated[str, Query(min_length=5, max_length=200, pattern=r"(?i)^[^/\\]+\.pdf$")],
+) -> AnalyticsUploadOut:
+    from app.services.analytics_upload import register_upload
+    from app.workers.tasks import ingest_upload_task
+
+    content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if content_type != "application/pdf":
+        raise ProblemError(415, "unsupported-media-type", "Expected application/pdf", content_type or None)
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > settings.analytics_max_bytes:
+            raise ProblemError(
+                413, "too-large", "PDF is too large", f"limit {settings.analytics_max_bytes} bytes"
+            )
+    try:
+        doc = await register_upload(conn, settings, bytes(data), file_name)
+    except ValueError as exc:
+        raise ProblemError(422, "validation", "Invalid PDF", str(exc)) from exc
+    task_id = (
+        (await ingest_upload_task.kiq(document_id=str(doc["document_id"]))).task_id if doc["queued"] else None
+    )
+    return AnalyticsUploadOut(**doc, task_id=task_id)
+
+
+class AdminAnalyticsDocumentOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: uuid.UUID
+    title: str
+    file_name: str
+    origin: str
+    status: str = Field(description="processing | ready | failed")
+    error: str | None
+    pages: int
+    chunks: int
+    extraction: str | None
+    ocr_confidence: float | None
+    created_at: datetime
+    processed_at: datetime | None
+
+
+@router.get(
+    "/analytics",
+    response_model=list[AdminAnalyticsDocumentOut],
+    responses=ADMIN_ERRS,
+    summary="Все материалы аналитики со статусом обработки и ошибкой (пользователям видны только готовые)",
+)
+async def list_analytics(admin: Admin, conn: Conn) -> list[AdminAnalyticsDocumentOut]:
+    from app.services.analytics_upload import list_all_documents
+
+    return [AdminAnalyticsDocumentOut(**d) for d in await list_all_documents(conn)]
+
+
+class GenerationRunsRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str = Field(description="insight | qa")
+    outcome: str = Field(description="completed, rejected, skipped, failed, answered… или running")
+    count: int
+    p50_s: float | None
+    p95_s: float | None
+
+
+class StuckRunOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    kind: str
+    company_id: str
+    event_id: uuid.UUID | None
+    generator: str
+    started_at: datetime
+
+
+class CandidateFailureOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    company_id: str
+    event_id: uuid.UUID
+    role: str
+    status: str
+    status_reason: str | None
+    updated_at: datetime
+
+
+class GenerationOverviewOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    generator: str = Field(description="remote (ML-сервис) | stub | fake")
+    ml_service: str = Field(description="ok | unavailable | http-NNN | not-used")
+    queue_length: int | None = Field(description="Задач в очереди воркера (null — Redis недоступен)")
+    candidates: dict[str, int] = Field(description="Кандидаты (компания × событие × роль) по статусам")
+    runs_24h: list[GenerationRunsRow]
+    stuck_after_s: int
+    stuck_runs: list[StuckRunOut] = Field(description="Запуски без результата дольше stuck_after_s")
+    recent_failures: list[CandidateFailureOut]
+
+
+@router.get(
+    "/generation",
+    response_model=GenerationOverviewOut,
+    responses=ADMIN_ERRS,
+    summary="Монитор генерации: очередь, кандидаты по статусам, запуски агента за сутки (p50/p95), зависшие "
+    "запуски, последние ошибки, доступность ML-сервиса",
+)
+async def generation_overview(admin: Admin, conn: Conn, settings: SettingsDep) -> GenerationOverviewOut:
+    from app.services.generation_monitor import overview
+
+    return GenerationOverviewOut(**await overview(conn, settings))
+
+
+class GenerationRetryIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    company_ids: list[str] | None = Field(default=None, max_length=100, description="null — все компании")
+    include_rejected: bool = Field(default=False, description="Вернуть в очередь и отклонённые валидатором")
+
+
+class GenerationRetryOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stuck_closed: int
+    requeued: int
+    companies: list[str]
+
+
+@router.post(
+    "/generation/retry",
+    response_model=GenerationRetryOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses=ADMIN_ERRS,
+    summary="Повторить генерацию: закрыть зависшие запуски, вернуть упавших кандидатов в очередь и запустить",
+)
+async def generation_retry(
+    body: GenerationRetryIn, request: Request, admin: Admin, conn: Conn, settings: SettingsDep
+) -> GenerationRetryOut:
+    from app.services.generation_monitor import retry
+
+    result = await retry(conn, settings, body.company_ids, body.include_rejected)
+    if result["companies"]:
+        await request.app.state.enqueue(result["companies"])
+    return GenerationRetryOut(**result)

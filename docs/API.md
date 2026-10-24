@@ -65,7 +65,11 @@ Swagger `http://localhost:8000/docs`. Внутренние API для ML опи�
 | GET | `/admin/sources/health` | Здоровье источников новостей |
 | POST | `/admin/ingest/{kind}` | Поставить в очередь `news` или `analytics` |
 | POST | `/admin/news` | Ручная новость через общий конвейер |
+| POST | `/admin/analytics?file_name=` | Загрузить PDF аналитики (тело — файл, `application/pdf`); обработка в очереди |
+| GET | `/admin/analytics` | Все материалы аналитики со статусом обработки (`processing`, `ready`, `failed`) и ошибкой |
 | POST | `/admin/insights/regenerate` | Перегенерировать инсайты компаний |
+| GET | `/admin/generation` | Монитор генерации: очередь, кандидаты по статусам, запуски агента за сутки (p50/p95), зависшие запуски, последние ошибки, доступность ML |
+| POST | `/admin/generation/retry` | Закрыть зависшие запуски, вернуть упавших (и по желанию отклонённых) кандидатов в очередь |
 | PATCH | `/admin/crm-requests/{id}` | Сменить статус заявки мок-CRM (пользователь получит уведомление) |
 
 Служебные эндпоинты (без префикса):

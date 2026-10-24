@@ -2,6 +2,7 @@
 Tools API with a run-scoped token exactly as in docker-compose). Covers SPEC §11.2 scenarios 1-8, 10, 11."""
 
 import json
+import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any
 
 import httpx
 import pytest
+from fpdf import FPDF
 
 import ml_stub.main as stub
 from app.core.config import get_settings
@@ -19,6 +21,7 @@ from app.integrations.generators import get_generator
 from app.integrations.llm import FakeLlmProvider
 from app.main import create_app
 from app.services.analytics_run import run_analytics_ingest
+from app.services.analytics_upload import process_upload
 from app.services.generation import generate_pending
 from app.services.ingest_companies import ingest_companies
 from app.services.matching import affected_companies, event_profile, load_profiles, match_events
@@ -623,6 +626,95 @@ async def test_admin_operations(env: dict[str, Any]) -> None:
     )
     assert regen.status_code == 202 and regen.json()["candidates"] > 0
     assert len(env["stats"]) == before + 1  # app.state.enqueue ran the generation
+
+
+def text_pdf(title: str, body: str) -> bytes:
+    pdf = FPDF()
+    pdf.add_font("Roboto", fname=str(REF / "fonts" / "Roboto-Regular.ttf"))
+    pdf.set_font("Roboto", size=12)
+    pdf.add_page()
+    pdf.multi_cell(0, 8, title + "\n\n" + body)
+    return bytes(pdf.output())
+
+
+async def test_admin_uploads_analytics_pdf_and_worker_indexes_it(env: dict[str, Any]) -> None:
+    c = env["client"]
+    ah = await admin_headers(c)
+    url = "/api/v1/admin/analytics"
+    data = text_pdf(
+        "Обзор рынка удобрений, октябрь",
+        "Экспорт азотных удобрений вырос на фоне высоких цен на газ в Европе. Аналитики Альфа-Банка ждут, "
+        "что маржа производителей сохранится до конца года, а внутренние цены останутся стабильными. " * 3,
+    )
+    pdf_headers = {**ah, "Content-Type": "application/pdf"}
+
+    async def upload(headers: dict[str, str], name: str, body: bytes) -> httpx.Response:
+        return await c.post(url, headers=headers, params={"file_name": name}, content=body)
+
+    assert (await upload(ah, "x.pdf", data)).status_code == 415
+    assert (await upload(pdf_headers, "x.pdf", b"not a pdf")).status_code == 422
+    assert (await upload(pdf_headers, "../x.pdf", data)).status_code == 422
+    assert (
+        await upload({**await login(c), "Content-Type": "application/pdf"}, "x.pdf", data)
+    ).status_code == 403
+
+    resp = await upload(pdf_headers, "fertilizers_oct.pdf", data)
+    up = resp.json()
+    assert resp.status_code == 202 and up["status"] == "processing" and up["queued"] and up["task_id"], up
+    listed = {d["document_id"]: d for d in (await c.get(url, headers=ah)).json()}
+    assert listed[up["document_id"]]["status"] == "processing"
+
+    async with pg_connection(env["url"]) as conn:  # what the worker task does
+        outcome = await process_upload(conn, env["settings"], uuid.UUID(up["document_id"]))
+    assert outcome.status == "ready" and outcome.chunks > 0, outcome
+    doc = {d["document_id"]: d for d in (await c.get(url, headers=ah)).json()}[up["document_id"]]
+    assert doc["status"] == "ready" and doc["chunks"] > 0 and doc["error"] is None
+    assert doc["origin"] == "upload"
+    user_docs = (await c.get("/api/v1/analytics/documents", headers=await login(c))).json()
+    assert up["document_id"] in {d["document_id"] for d in user_docs}
+
+    again = (await upload(pdf_headers, "copy.pdf", data)).json()
+    assert again["status"] == "ready" and again["duplicate"] and not again["queued"]
+    assert again["task_id"] is None
+    async with pg_connection(env["url"]) as conn:
+        await conn.execute("DELETE FROM core.analytics_documents WHERE id = $1::uuid", up["document_id"])
+
+
+async def test_admin_generation_monitor_and_retry(env: dict[str, Any]) -> None:
+    c = env["client"]
+    ah = await admin_headers(c)
+    async with pg_connection(env["url"]) as conn:
+        await conn.execute(  # a run the worker never finished (its process died mid-generation)
+            """INSERT INTO core.agent_runs (id, kind, request_id, company_id, role, generator, started_at)
+               VALUES ('run_stuck_test', 'insight', 'gen:stuck', $1, 'cfo', 'stub',
+                       now() - interval '2 hours')""",
+            LOGISTICS,
+        )
+        failed = await conn.fetchval(
+            """UPDATE core.candidate_matches SET status = 'failed', status_reason = 'ml-unavailable (test)'
+               WHERE id = (SELECT id FROM core.candidate_matches WHERE company_id = $1 ORDER BY id LIMIT 1)
+               RETURNING id""",
+            LOGISTICS,
+        )
+    assert failed
+    assert (await c.get("/api/v1/admin/generation", headers=await login(c))).status_code == 403
+    view = (await c.get("/api/v1/admin/generation", headers=ah)).json()
+    assert "run_stuck_test" in {r["id"] for r in view["stuck_runs"]}
+    assert any(f["status_reason"] == "ml-unavailable (test)" for f in view["recent_failures"])
+    assert view["candidates"]["failed"] >= 1 and view["runs_24h"] and view["queue_length"] is not None
+
+    before = len(env["stats"])
+    retry = await c.post("/api/v1/admin/generation/retry", headers=ah, json={"company_ids": [LOGISTICS]})
+    body = retry.json()
+    assert retry.status_code == 202 and body["stuck_closed"] == 1 and body["requeued"] >= 1, body
+    assert body["companies"] == [LOGISTICS] and len(env["stats"]) == before + 1  # generation ran again
+    after = (await c.get("/api/v1/admin/generation", headers=ah)).json()
+    assert "run_stuck_test" not in {r["id"] for r in after["stuck_runs"]}
+    async with pg_connection(env["url"]) as conn:
+        run = await conn.fetchrow("SELECT status, error FROM core.agent_runs WHERE id = 'run_stuck_test'")
+        cand = await conn.fetchval("SELECT status FROM core.candidate_matches WHERE id = $1", failed)
+    assert run["status"] == "error" and "stuck" in run["error"]
+    assert cand != "failed"
 
 
 async def test_admin_manual_news_goes_through_the_pipeline(env: dict[str, Any]) -> None:

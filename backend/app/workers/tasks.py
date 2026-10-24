@@ -1,6 +1,7 @@
 """Task registry: generation, news, analytics, digests and metrics snapshots."""
 
 import asyncio
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -9,6 +10,7 @@ from app.core.config import get_settings
 from app.core.pg import pg_connection
 from app.integrations.generators import get_generator
 from app.services.analytics_run import run_analytics_ingest
+from app.services.analytics_upload import process_upload
 from app.services.generation import generate_pending
 from app.services.metrics import snapshot_day
 from app.services.news_run import run_news_collection
@@ -81,6 +83,16 @@ async def ingest_analytics_task(force: bool = False) -> list[dict[str, object]]:
     async with pg_connection() as conn:
         outcomes = await run_analytics_ingest(conn, settings, force=force)
     return [o.__dict__ for o in outcomes]
+
+
+@broker.task(task_name="analytics.ingest_upload")
+async def ingest_upload_task(document_id: str) -> dict[str, object]:
+    """Index a PDF uploaded through the admin API (FR-A7)."""
+    settings = get_settings()
+    async with pg_connection() as conn:
+        outcome = await process_upload(conn, settings, uuid.UUID(document_id))
+    log.info("analytics_upload_done", document_id=document_id, status=outcome.status, error=outcome.error)
+    return outcome.__dict__
 
 
 @broker.task(task_name="notifications.digest_daily", schedule=[{"cron": get_settings().digest_daily_cron}])

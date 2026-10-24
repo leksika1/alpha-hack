@@ -130,12 +130,13 @@ ML_SERVICE_TOKEN=<как у Backend>
 
 | Симптом | Причина и действие |
 |---|---|
-| Лента пуста сразу после старта | Генерация ещё идёт: `docker compose logs worker`. Если в логах `ml-stub ... not ready`, проверьте `docker compose ps ml-stub` |
+| Лента пуста сразу после старта | Генерация ещё идёт: `GET /api/v1/admin/generation` (очередь, кандидаты `pending`, доступность ML) или `docker compose logs worker`. `ml_service: unavailable` — проверить сервис `ml` |
+| В `/admin/generation` есть `stuck_runs` или растёт `candidates.failed` | Воркер упал посреди генерации или ML не отвечал: `POST /api/v1/admin/generation/retry` закроет зависшие запуски и вернёт упавших кандидатов в очередь (`include_rejected` — и отклонённых) |
 | Инсайты не появляются, в `/admin/metrics` растёт `generation.rejected` | Агент возвращает невалидные инсайты: причины — в `generation.reject_reasons` и `core.insights_rejected`; передать ML-команде |
 | Вопросы отвечают `error: ml-unavailable` | ML-сервис недоступен: проверить `ML_SERVICE_URL`, `docker compose logs ml-stub` |
 | `429 budget-exhausted` в логах агента | Дневной бюджет LLM исчерпан (`/admin/llm-usage`). Сервис работает без LLM (`allow_llm=false`); бюджет обновится в 00:00 МСК. Поднимать `LLM_DAILY_BUDGET_RUB` — только в пределах лимита организаторов |
 | Источник `down` в `/admin/sources/health` | После 3 неудачных опросов опрашивается резервный (`fallback_for`). Причина — в `last_error`; `robots_disallowed` не повторяется до правки каталога |
-| PDF аналитики `failed` | Причина — в `analytics_documents.error`. Лимиты: `ANALYTICS_MAX_BYTES`, `ANALYTICS_MAX_PAGES`. Пустой результат OCR не публикуется |
+| PDF аналитики `failed` | Причина — в `GET /api/v1/admin/analytics` (поле `error`). Загрузить файл заново — `POST /api/v1/admin/analytics?file_name=…` (тело — PDF). Лимиты: `ANALYTICS_MAX_BYTES`, `ANALYTICS_MAX_PAGES`. Пустой результат OCR не публикуется |
 | Поиск по аналитике не находит смысловые совпадения | `EMBEDDING_PROVIDER=fake` или модель недоступна: работает только полнотекстовая часть (`vector_rank=null`). Подключить модель (см. выше) и переиндексировать |
 | 429 `rate-limited` у фронтенда | Поднять `RATE_LIMIT_PUBLIC_PER_MIN` или проверить, не зациклился ли клиент |
 | Redis недоступен | Очередь стоит: новые новости и генерация ждут. Ранее созданные инсайты по-прежнему отдаются, rate limit пропускает запросы. Поднять `redis`, задачи продолжатся |
