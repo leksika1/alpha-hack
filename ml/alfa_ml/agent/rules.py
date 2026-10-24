@@ -6,6 +6,7 @@ news sources, every bank claim cites an analytics chunk — so the result passes
 """
 
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import Any
 
 from alfa_ml.agent.draft import Action, BankPosition, Claim, Consequence, Draft, Fact, Quant, Reason, Scenario
@@ -931,17 +932,28 @@ def _bank_view(w: _Writer) -> None:
     topic = stems(f"{ev.event.get('title', '')} {ev.event.get('summary', '')}") | stems(
         FACTOR_KEYWORDS.get(etype, "")
     )
+    title_stems = (
+        stems(str(ev.event.get("title") or "")) | stems(FACTOR_KEYWORDS.get(etype, ""))
+    ) - _GENERIC_STEMS
     for a in ev.analytics[:4]:
-        text = " ".join(s for s in sentences(str(a.hit.get("text") or "")) if "ДЕМО (синтетика)" not in s)
-        best = best_sentences(text, query, n=2)
+        text = " ".join(
+            s
+            for s in sentences(str(a.hit.get("text") or ""))
+            if "ДЕМО (синтетика)" not in s and not _ocr_noise(s)
+        )
+        best = [b for b in best_sentences(text, query, n=2) if len(stems(b) & title_stems) >= 2]
         if not best:
             continue
-        # the RAG always returns top-k: keep a chunk only if it speaks about the event's topic (2+ shared stems)
+        # the RAG always returns top-k: keep a chunk only if it speaks about the event's topic (3+ shared stems)
         if len(stems(" ".join(best)) & topic) < 3:
             continue
-        quote = clip(" ".join(best), 300)
+        # a verbatim quote must be one contiguous sentence of the chunk (two picked sentences may be apart)
+        quote = best[0] if len(best[0]) <= 400 else None  # clipping would add "…" and break verbatim match
         label = "Демо-материал (синтетика)" if is_demo_material(a.hit) else "Аналитики Альфа-Банка"
         doc = clip(str(a.hit.get("doc_title") or ""), 120)
+        age = _age_days(a.hit.get("doc_date"), ev.event.get("first_seen_at"))
+        if age is not None and age > 365:
+            doc += f", материал от {str(a.hit.get('doc_date'))[:10]} — может быть неактуален"
         w.positions.append(
             BankPosition(
                 source=a.sid,
@@ -952,6 +964,32 @@ def _bank_view(w: _Writer) -> None:
         w.claim(f"{label}: {clip(' '.join(best), 300)}", "bank_analytics", 0.9, [a.sid])
         if len(w.positions) >= 2:
             break
+
+
+# stems too common in business news to tie a bank material to an event on their own
+_GENERIC_STEMS = frozenset(
+    {"росси", "росс", "рынок", "рынка", "рынке", "цены", "цена", "цен", "рост", "выросл", "вырос", "снизи",
+     "компа", "банк", "банка", "году", "года", "прогн", "уровн", "конца", "начал"}
+)  # fmt: skip
+
+
+def _age_days(doc_date: Any, event_date: Any) -> int | None:
+    try:
+        d = date.fromisoformat(str(doc_date)[:10])
+        e = datetime.fromisoformat(str(event_date)).date() if event_date else date.today()
+    except ValueError:
+        return None
+    return (e - d).days
+
+
+def _ocr_noise(sentence: str) -> bool:
+    """OCR of tables/charts gives runs of numbers and 1-2 letter fragments, not a statement."""
+    tokens = sentence.split()
+    if len(tokens) < 5:
+        return True
+    junk = sum(1 for t in tokens if not any(ch.isalpha() for ch in t))
+    caps = sum(1 for t in tokens if t.isupper() and 1 < len(t) <= 4)  # table headers: "TOT", "YoY"
+    return (junk + caps) / len(tokens) > 0.4
 
 
 def _quant(w: _Writer) -> None:

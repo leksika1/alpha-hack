@@ -203,12 +203,9 @@ def assemble(
             break
     if positions:
         title_text = f"{e.get('title', '')} {e.get('summary', '')}"
+        # "direct" only if what we show from the material is about the event itself, not just the chunk
         direct = any(
-            overlap(
-                str(e.get("title", "")), str((ev.analytics_by_sid(p["source_ref"]) or {}).get("text", ""))
-            )
-            >= 0.35
-            for p in positions
+            overlap(str(e.get("title", "")), str(p["quote"] or p["text"])) >= 0.35 for p in positions
         )
         coverage = "direct" if direct and title_text else "related"
     else:

@@ -184,13 +184,20 @@ async def main() -> None:
     ap.add_argument("--data-dir", default=str(SYN), help="CSV dir (synthetic or data/raw)")
     ap.add_argument("--report", default=str(HERE.parent / "reports" / "eval.md"))
     ap.add_argument("--title", default="Оценка ML-сервиса (офлайн)")
+    ap.add_argument(
+        "--analytics", default=None, help="chunks JSON from eval.real_analytics (default: demo PDFs)"
+    )
     args = ap.parse_args()
     now = datetime.now(UTC)
     labels = json.loads(Path(args.labels).read_text(encoding="utf-8"))
     companies = list(labels["companies"])
     cc = CsvCompanies(Path(args.data_dir))
     events = load_events(now, Path(args.news) if args.news else None)
-    chunks = load_analytics()
+    chunks = (
+        [c for d in json.loads(Path(args.analytics).read_text(encoding="utf-8")) for c in d["chunks"]]
+        if args.analytics
+        else load_analytics()
+    )
     products = [
         {
             "product_id": p["id"],
@@ -310,6 +317,23 @@ async def main() -> None:
                         quant=len(ins["impact"]["quantitative"]),
                         hypotheses=sum(1 for s in ins["statements"] if s["kind"] == "hypothesis"),
                         insight_title=ins["title"],
+                        bank_docs=sorted(
+                            {
+                                c["doc_title"]
+                                for c in chunks
+                                for p in ins["bank_view"]["positions"]
+                                if c["chunk_id"] == p["analytics_chunk_id"]
+                            }
+                        ),
+                        bank_quote_ok=all(
+                            not p.get("quote")
+                            or any(
+                                p["quote"] in c["text"]
+                                for c in chunks
+                                if c["chunk_id"] == p["analytics_chunk_id"]
+                            )
+                            for p in ins["bank_view"]["positions"]
+                        ),
                         quality_issues=[i["code"] for i in q.quality],
                     )
                     (out_dir / f"{cid}_{key}_{role}.json").write_text(
