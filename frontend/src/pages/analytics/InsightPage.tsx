@@ -256,7 +256,6 @@ export function InsightPage() {
 
             <Block id="what" num={1} title="Что произошло">
               <h3 className="mb-1.5 text-[17px]">{ins.event.title}</h3>
-              <p>{ins.event.summary}</p>
               <div className="mt-3 flex flex-col gap-3">
                 {ins.event.key_facts.map((f, i) => (
                   <StatementItem key={i} text={f.text} refs={f.source_refs} />
@@ -309,9 +308,9 @@ export function InsightPage() {
                   ))}
                 </div>
               )}
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 ">
                 <ConsequenceColumn title="Риски" tone="risk" empty="Существенных рисков не выявлено." items={ins.consequences.risks} refBadges={refBadges} />
-                <ConsequenceColumn title="Возможности" tone="opp" empty="Явных возможностей не выявлено." items={ins.consequences.opportunities} refBadges={refBadges} />
+                {ins.consequences.opportunities[0] && <ConsequenceColumn title="Возможности" tone="opp" empty="Явных возможностей не выявлено." items={ins.consequences.opportunities} refBadges={refBadges} />}
               </div>
               {ins.consequences.scenarios.length > 0 && (
                 <>
@@ -414,7 +413,7 @@ export function InsightPage() {
             <Disclaimers items={ins.disclaimers} />
           </div>
 
-          <aside className="flex flex-col gap-3 xl:sticky xl:top-[88px]">
+          <aside className="flex flex-col gap-3 xl:sticky xl:top-22">
             <div className="card flex flex-col gap-2.5 p-6">
               <div className="label-caps mt-1">Влияние на компанию</div>
               <ImpactMeter level={ins.impact.level} score={ins.impact.score} />

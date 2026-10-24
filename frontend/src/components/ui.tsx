@@ -120,17 +120,22 @@ const KIND_STYLES: Record<StatementKind, string> = {
 const KIND_BASE = 'inline-flex shrink-0 items-center whitespace-nowrap rounded-md px-2 py-0.5 align-[1px] text-[11px] font-bold tracking-[0.02em]';
 
 // demo — утверждение опирается на синтетический демо-материал: его нельзя выдавать за аналитику Альфа-Банка.
-export function KindBadge({ kind, demo = false }: { kind: StatementKind; demo?: boolean }) {
+// «(синтетика)» — всегда второй строкой, чтобы бейдж не растягивал колонку.
+export function KindBadge({ kind, demo = false, className }: { kind: StatementKind; demo?: boolean; className?: string }) {
   const k = STATEMENT_KIND[kind];
   if (demo && kind === 'bank_analytics') {
     return (
-      <span className={cn(KIND_BASE, 'border border-dashed border-neg bg-white text-neg')} title="Синтетический демо-материал, не аналитика Альфа-Банка">
-        Демо-материал (синтетика)
+      <span
+        className={cn(KIND_BASE, 'flex-col border border-dashed border-neg bg-white text-center leading-tight text-neg', className)}
+        title="Синтетический демо-материал, не аналитика Альфа-Банка"
+      >
+        <span>Демо-материал</span>
+        <span>(синтетика)</span>
       </span>
     );
   }
   return (
-    <span className={cn(KIND_BASE, KIND_STYLES[kind])} title={k?.hint}>
+    <span className={cn(KIND_BASE, KIND_STYLES[kind], className)} title={k?.hint}>
       {k?.label ?? kind}
     </span>
   );
@@ -249,9 +254,21 @@ export function Select({
 
 export type SortMode = 'importance' | 'recent';
 
-// Порядок с бэкенда — по значимости для компании и роли; «сначала новые» — по дате публикации.
-export function sortInsights<T extends { published_at: string | null }>(items: T[], mode: SortMode): T[] {
-  if (mode === 'importance') return items;
+const IMPACT_RANK: Record<string, number> = { critical: 3, high: 2, medium: 1, low: 0 };
+
+type Sortable = { published_at: string | null; impact_level: string; urgent: boolean; relevance_score: number };
+
+// «По значимости» — по уровню влияния на компанию (те же столбики, что на карточке), внутри уровня срочные выше,
+// дальше порядок бэкенда: релевантность для компании и роли с учётом свежести. «Сначала новые» — по дате публикации.
+export function sortInsights<T extends Sortable>(items: T[], mode: SortMode): T[] {
+  if (mode === 'importance') {
+    return [...items].sort(
+      (a, b) =>
+        (IMPACT_RANK[b.impact_level] ?? 0) - (IMPACT_RANK[a.impact_level] ?? 0) ||
+        Number(b.urgent) - Number(a.urgent) ||
+        b.relevance_score - a.relevance_score,
+    );
+  }
   return [...items].sort((a, b) => new Date(b.published_at ?? 0).getTime() - new Date(a.published_at ?? 0).getTime());
 }
 
