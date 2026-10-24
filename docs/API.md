@@ -63,6 +63,11 @@ Swagger `http://localhost:8000/docs`. Внутренние API для ML опи�
 | GET | `/admin/llm-usage` | Бюджет LLM (и доля вопросов: `chat_limit_rub`, `chat_spent_rub`) и расход по дням, моделям, целям |
 | GET | `/admin/data-quality` | Отчёт качества последней загрузки компаний |
 | GET | `/admin/sources/health` | Здоровье источников новостей |
+| GET | `/admin/sources` | Все источники: откуда (`catalog` / `admin`), включён ли, здоровье, новостей за сутки |
+| POST | `/admin/sources/check` | Проверить ленту без сохранения: доступность, robots.txt, разбор, последние новости |
+| POST | `/admin/sources` | Добавить RSS/Atom-источник (после проверки), опрос сразу в очереди |
+| PATCH | `/admin/sources/{id}` | Включить/выключить; у добавленных админом — имя, приоритет, резерв, темы |
+| DELETE | `/admin/sources/{id}` | Удалить добавленный админом источник, пока по нему нет новостей |
 | POST | `/admin/ingest/{kind}` | Поставить в очередь `news` или `analytics` |
 | POST | `/admin/news` | Ручная новость через общий конвейер |
 | POST | `/admin/analytics?file_name=` | Загрузить PDF аналитики (тело — файл, `application/pdf`); обработка в очереди |

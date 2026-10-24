@@ -59,7 +59,9 @@ class PollResult:
 
 
 async def sync_sources(conn: Any, catalog_path: Path, live_enabled: bool, fixture_path: Path | None) -> int:
-    """Upsert the catalog; live sources are enabled only when NEWS_LIVE_SOURCES_ENABLED."""
+    """Upsert the catalog; live sources are enabled only when NEWS_LIVE_SOURCES_ENABLED and not switched off
+    by an admin. Sources an admin added (origin = admin, ADR-036) are not in the file and keep their
+    settings."""
     data = json.loads(await asyncio.to_thread(catalog_path.read_text, encoding="utf-8"))
     rows = [
         (s["id"], s["name"], s["kind"], s["url"], int(s.get("priority", 100)), s.get("fallback_for"),
@@ -73,9 +75,13 @@ async def sync_sources(conn: Any, catalog_path: Path, live_enabled: bool, fixtur
         """INSERT INTO core.sources (id, name, kind, url, priority, fallback_for, enabled, is_fixture, topics)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, kind = EXCLUDED.kind, url = EXCLUDED.url,
-               priority = EXCLUDED.priority, fallback_for = EXCLUDED.fallback_for, enabled = EXCLUDED.enabled,
+               priority = EXCLUDED.priority, fallback_for = EXCLUDED.fallback_for,
+               enabled = EXCLUDED.enabled AND NOT core.sources.disabled_by_admin,
                is_fixture = EXCLUDED.is_fixture, topics = EXCLUDED.topics""",
         rows,
+    )
+    await conn.execute(
+        "UPDATE core.sources SET enabled = $1 AND NOT disabled_by_admin WHERE origin = 'admin'", live_enabled
     )
     if fixture_path is None:
         await conn.execute("UPDATE core.sources SET enabled = false WHERE id = $1", FIXTURE_SOURCE_ID)

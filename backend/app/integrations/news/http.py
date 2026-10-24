@@ -3,7 +3,8 @@
 * robots.txt per host, cached; RFC 9309: 4xx -> no restrictions, 5xx / network error -> assume disallow;
 * explicit User-Agent; minimal interval between requests to the same host;
 * conditional GET (ETag / If-Modified-Since) so unchanged feeds cost one 304;
-* response size cap; timeouts.
+* response size cap; timeouts;
+* `public_only`: every request (redirects and robots.txt included) goes only to public addresses (ADR-036).
 """
 
 import asyncio
@@ -13,6 +14,8 @@ from urllib.parse import urlsplit
 from urllib.robotparser import RobotFileParser
 
 import httpx
+
+from app.integrations.news.safety import BlockedHostError, ensure_public_host, guard_request
 
 MAX_BYTES = 5 * 1024 * 1024
 ROBOTS_TTL_S = 24 * 3600
@@ -38,9 +41,11 @@ class PoliteFetcher:
         min_interval_s: float = 2.0,
         timeout_s: float = 20.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        public_only: bool = False,
     ) -> None:
         self.user_agent = user_agent
         self.min_interval_s = min_interval_s
+        self.public_only = public_only
         self.client = httpx.AsyncClient(
             headers={
                 "User-Agent": user_agent,
@@ -49,6 +54,7 @@ class PoliteFetcher:
             timeout=timeout_s,
             follow_redirects=True,
             transport=transport,
+            event_hooks={"request": [guard_request]} if public_only else None,
         )
         self._robots: dict[str, tuple[float, RobotFileParser | None]] = {}
         self._last_hit: dict[str, float] = {}
@@ -99,6 +105,11 @@ class PoliteFetcher:
             self._last_hit[host] = time.monotonic()
 
     async def fetch(self, url: str, etag: str | None = None, last_modified: str | None = None) -> FetchResult:
+        if self.public_only:
+            try:
+                await ensure_public_host(urlsplit(url).hostname or "")
+            except BlockedHostError as exc:
+                return FetchResult(url, "network_error", error=f"BlockedHostError: {exc}"[:500])
         if not await self.allowed(url):
             return FetchResult(url, "robots_disallowed", error="robots.txt disallows this URL")
         host = urlsplit(url).netloc

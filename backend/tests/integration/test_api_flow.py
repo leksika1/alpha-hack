@@ -759,6 +759,80 @@ async def test_admin_alerts_reflect_system_state(env: dict[str, Any]) -> None:
     assert "source-down:alert-test" not in after
 
 
+RSS = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>World business</title>
+<item><title>Steel prices rise in Europe</title><link>https://news.example.com/a</link>
+<pubDate>Fri, 23 Oct 2026 10:00:00 GMT</pubDate><description>Mills raised prices.</description></item>
+<item><title>Wheat exports slow down</title><link>https://news.example.com/b</link></item>
+</channel></rss>"""
+
+
+async def test_admin_manages_news_sources(env: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.integrations.news.http import PoliteFetcher
+    from app.services import news_sources_admin
+    from app.services.news_ingest import sync_sources
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        return httpx.Response(
+            200, content=RSS if request.url.path == "/rss.xml" else b"<html>not a feed</html>"
+        )
+
+    def fake_fetcher(
+        *args: Any, **kwargs: Any
+    ) -> PoliteFetcher:  # the network is mocked, the guard stays off
+        return PoliteFetcher("test", min_interval_s=0, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(news_sources_admin, "PoliteFetcher", fake_fetcher)
+    c = env["client"]
+    ah = await admin_headers(c)
+    url = "/api/v1/admin/sources"
+    catalog, fixture = REF / "news_sources.json", ROOT / env["settings"].fixture_news_path
+    async with pg_connection(env["url"]) as conn:
+        await sync_sources(conn, catalog, True, fixture)
+    assert (await c.get(url, headers=await login(c))).status_code == 403
+
+    preview = (
+        await c.post(f"{url}/check", headers=ah, json={"url": "https://world.example.com/rss.xml"})
+    ).json()
+    assert preview["ok"] and preview["items"] == 2 and preview["sample"][0]["title"]
+    page = (await c.post(f"{url}/check", headers=ah, json={"url": "https://world.example.com/page"})).json()
+    assert not page["ok"] and page["outcome"] == "empty"
+    local = await c.post(f"{url}/check", headers=ah, json={"url": "file:///etc/passwd"})
+    assert local.status_code == 422
+
+    bad = await c.post(url, headers=ah, json={"url": "https://world.example.com/page", "name": "Не лента"})
+    assert bad.status_code == 422 and bad.json()["type"].endswith("/feed-check-failed")
+    body = {"url": "https://world.example.com/rss.xml", "name": "World business", "topics": ["world"]}
+    created = await c.post(url, headers=ah, json=body, params={"poll_now": "false"})
+    assert created.status_code == 201, created.text
+    src = created.json()["source"]
+    assert src["origin"] == "admin" and src["kind"] == "rss" and src["id"].startswith("adm_")
+    assert (await c.post(url, headers=ah, json=body)).status_code == 409
+
+    renamed = await c.patch(f"{url}/{src['id']}", headers=ah, json={"name": "BBC Business", "priority": 50})
+    assert renamed.status_code == 200 and renamed.json()["name"] == "BBC Business"
+    catalog_id = "rbc"
+    named = await c.patch(f"{url}/{catalog_id}", headers=ah, json={"name": "Другое имя"})
+    assert named.status_code == 422 and "news_sources.json" in named.json()["detail"]
+    off = (await c.patch(f"{url}/{catalog_id}", headers=ah, json={"enabled": False})).json()
+    assert off["enabled"] is False and off["disabled_by_admin"] is True
+    async with pg_connection(env["url"]) as conn:  # the next poll re-syncs the catalog file
+        await sync_sources(conn, catalog, True, fixture)
+        assert await conn.fetchval("SELECT enabled FROM core.sources WHERE id = $1", catalog_id) is False
+        assert await conn.fetchval("SELECT name FROM core.sources WHERE id = $1", src["id"]) == "BBC Business"
+    on = (await c.patch(f"{url}/{catalog_id}", headers=ah, json={"enabled": True})).json()
+    assert on["disabled_by_admin"] is False
+
+    listed = {s["id"]: s for s in (await c.get(url, headers=ah)).json()}
+    assert listed[src["id"]]["origin"] == "admin" and listed[catalog_id]["origin"] == "catalog"
+    assert (await c.delete(f"{url}/{catalog_id}", headers=ah)).status_code == 409
+    assert (await c.delete(f"{url}/{src['id']}", headers=ah)).status_code == 204
+    assert (await c.delete(f"{url}/{src['id']}", headers=ah)).status_code == 404
+    async with pg_connection(env["url"]) as conn:  # live sources are off in the rest of the module
+        await sync_sources(conn, catalog, False, fixture)
+
+
 async def test_admin_manual_news_goes_through_the_pipeline(env: dict[str, Any]) -> None:
     c = env["client"]
     ah = await admin_headers(c)
