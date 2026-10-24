@@ -32,6 +32,30 @@ _MODELS_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 _MODELS_TTL_S = 600.0
 
 
+# Process-wide circuit breaker (ADR-ML-007): when the provider keeps timing out or failing, every generation
+# would wait for its LLM timeout and a regeneration of hundreds of pairs takes hours. After
+# BREAKER_THRESHOLD consecutive transport/HTTP failures the agent stops calling the LLM for BREAKER_OPEN_S
+# seconds (rules@1 answers meanwhile), then tries again.
+BREAKER_THRESHOLD = 3
+BREAKER_OPEN_S = 300.0
+_BREAKER: dict[str, float] = {"fails": 0.0, "open_until": 0.0}
+
+
+def breaker_open() -> bool:
+    return time.monotonic() < _BREAKER["open_until"]
+
+
+def breaker_reset() -> None:
+    _BREAKER.update(fails=0.0, open_until=0.0)
+
+
+def _breaker_fail() -> None:
+    _BREAKER["fails"] += 1
+    if _BREAKER["fails"] >= BREAKER_THRESHOLD:
+        _BREAKER.update(fails=0.0, open_until=time.monotonic() + BREAKER_OPEN_S)
+        log.warning("llm_circuit_open", open_s=BREAKER_OPEN_S)
+
+
 class LLMError(RuntimeError):
     pass
 
@@ -147,6 +171,12 @@ class LLMClient:
     ) -> dict[str, Any]:
         if self.exhausted:
             raise BudgetExhausted("daily LLM budget exhausted")
+        if breaker_open():
+            self.failures += 1
+            left = int(_BREAKER["open_until"] - time.monotonic())
+            raise LLMUnavailable(
+                f"circuit_open: the provider failed {BREAKER_THRESHOLD} times in a row; retry in {left} s"
+            )
         model, display = await self.resolve(alias)
         body: dict[str, Any] = {
             "model": model,
@@ -159,6 +189,7 @@ class LLMClient:
             "X-Purpose": purpose if purpose in {"planning", "generation", "self_check", "chat"} else "other"
         }
         last: Exception | None = None
+        transport_failed = False
         started = time.perf_counter()
         for attempt in range(3):
             try:
@@ -167,9 +198,11 @@ class LLMClient:
                 )
             except httpx.TimeoutException as exc:
                 last = LLMUnavailable(f"timeout: {exc}")
+                transport_failed = True
                 break  # a timeout already consumed the time budget; do not retry
             except httpx.HTTPError as exc:
                 last = LLMUnavailable(str(exc))
+                transport_failed = True
                 continue
             if resp.status_code == 429 and "budget" in resp.text:
                 self.exhausted = True
@@ -185,7 +218,10 @@ class LLMClient:
                 continue
             if resp.status_code >= 400:
                 self.failures += 1
+                if resp.status_code >= 500 or resp.status_code == 429:
+                    _breaker_fail()
                 raise LLMUnavailable(f"HTTP {resp.status_code}: {resp.text[:200]}")
+            _BREAKER["fails"] = 0.0  # the provider answered
             data = resp.json()
             content = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
             usage = data.get("usage") or {}
@@ -215,8 +251,10 @@ class LLMClient:
                     },
                 ]
         self.failures += 1
+        if transport_failed:
+            _breaker_fail()
         raise last or LLMUnavailable("no answer")
 
     @property
     def usable(self) -> bool:
-        return not self.exhausted and self.failures < 2
+        return not self.exhausted and self.failures < 2 and not breaker_open()
