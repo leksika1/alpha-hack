@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.api.deps import Admin, Conn, SettingsDep
 from app.api.v1.admin import ADMIN_ERRS
 from app.core.errors import ProblemError
+from app.services import news_discovery
 from app.services import news_sources_admin as svc
 
 router = APIRouter(prefix="/admin/sources", tags=["admin"])
@@ -71,6 +72,31 @@ class FeedCheckOut(BaseModel):
     error: str | None
 
 
+class DiscoverIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=2, max_length=300, examples=["BBC", "vedomosti.ru", "https://www.cnbc.com"])
+
+
+class FeedCandidate(FeedCheckOut):
+    title: str
+    name: str | None = Field(description="Название сайта из справочника")
+    found_by: str = Field(
+        description="directory — справочник; page — объявлена на странице; link — сама ссылка; "
+        "guess — типовой путь (/rss, /feed)"
+    )
+    already_added: bool
+
+
+class DiscoverOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    kind: Literal["name", "site"]
+    blocked: str | None = Field(description="Сайт из реестра (ADR-037): не добавляется")
+    candidates: list[FeedCandidate]
+
+
 class SourceIn(FeedCheckIn):
     name: str = Field(min_length=2, max_length=120)
     topics: list[str] = Field(default_factory=list, max_length=20)
@@ -120,6 +146,21 @@ async def check(body: FeedCheckIn, admin: Admin, settings: SettingsDep) -> dict[
 
 
 @router.post(
+    "/discover",
+    response_model=DiscoverOut,
+    responses={**ADMIN_ERRS, 422: {"description": "Неверная ссылка"}},
+    summary="Найти ленты сайта по названию (справочник известных сайтов) или по ссылке на сайт; "
+    "каждая проверена",
+)
+async def discover(body: DiscoverIn, admin: Admin, conn: Conn, settings: SettingsDep) -> dict[str, Any]:
+    known = {r["url"] for r in await conn.fetch("SELECT url FROM core.sources WHERE url IS NOT NULL")}
+    try:
+        return await news_discovery.discover(settings, body.query, known)
+    except ValueError as exc:
+        raise _invalid_url(exc) from exc
+
+
+@router.post(
     "",
     response_model=SourceCreatedOut,
     status_code=status.HTTP_201_CREATED,
@@ -128,7 +169,8 @@ async def check(body: FeedCheckIn, admin: Admin, settings: SettingsDep) -> dict[
         409: {"description": "Такая лента уже есть"},
         422: {"description": "Неверный URL, лента не прошла проверку или неизвестный fallback_for"},
     },
-    summary="Добавить источник (RSS/Atom): сначала проверка ленты, затем опрос в очереди",
+    summary="Добавить источник: ссылка на ленту или на сайт (лента найдётся сама); сначала проверка, "
+    "затем опрос",
 )
 async def create(
     body: SourceIn,
@@ -141,6 +183,12 @@ async def create(
 
     try:
         result = await svc.check_feed(settings, body.url)
+        if result.outcome == "empty":  # a site page, not a feed: take the site's first working feed
+            known = {r["url"] for r in await conn.fetch("SELECT url FROM core.sources WHERE url IS NOT NULL")}
+            found = await news_discovery.discover(settings, body.url, known)
+            feed = next((c for c in found["candidates"] if c["ok"] and not c["already_added"]), None)
+            if feed is not None:
+                result = await svc.check_feed(settings, feed["url"])
     except ValueError as exc:
         raise _invalid_url(exc) from exc
     if not result.ok:

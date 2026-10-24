@@ -922,6 +922,64 @@ async def test_user_sends_link_or_text_and_gets_an_insight_for_their_company(
     ).status_code == 403
 
 
+async def test_admin_finds_feeds_by_name_or_site(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.integrations.news.http import PoliteFetcher
+    from app.services import news_discovery, news_sources_admin
+
+    home = b'<html><head><link rel="alternate" type="application/rss+xml" href="/news.rss"></head></html>'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/robots.txt":
+            return httpx.Response(404)
+        if path in {"/", ""}:
+            return httpx.Response(200, content=home, headers={"content-type": "text/html"})
+        if path.endswith((".rss", ".xml", "/feed", "/rss")):
+            return httpx.Response(200, content=RSS)
+        return httpx.Response(404)
+
+    def fake_fetcher(*args: Any, **kwargs: Any) -> PoliteFetcher:
+        return PoliteFetcher("test", min_interval_s=0, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(news_sources_admin, "PoliteFetcher", fake_fetcher)
+    monkeypatch.setattr(news_discovery, "PoliteFetcher", fake_fetcher)
+    c = env["client"]
+    ah = await admin_headers(c)
+    url = "/api/v1/admin/sources/discover"
+
+    by_name = (await c.post(url, headers=ah, json={"query": "Ведомости"})).json()
+    assert by_name["kind"] == "name" and by_name["candidates"]
+    assert {x["found_by"] for x in by_name["candidates"]} == {"directory"}
+    assert all(x["name"] == "Ведомости" for x in by_name["candidates"])
+
+    by_site = (await c.post(url, headers=ah, json={"query": "news.example.com"})).json()
+    assert by_site["kind"] == "site"
+    page_feed = next(x for x in by_site["candidates"] if x["found_by"] == "page")
+    assert (
+        page_feed["url"] == "https://news.example.com/news.rss"
+        and page_feed["ok"]
+        and page_feed["items"] == 2
+    )
+    assert all(x["ok"] for x in by_site["candidates"] if x["found_by"] == "guess")
+
+    blocked = (await c.post(url, headers=ah, json={"query": "meduza.io"})).json()
+    assert blocked["blocked"] and blocked["candidates"] == []
+
+    added = await c.post(
+        "/api/v1/admin/sources",
+        headers=ah,
+        json={"url": "https://news.example.com", "name": "Example News"},
+        params={"poll_now": "false"},
+    )
+    assert added.status_code == 201, added.text
+    assert added.json()["source"]["url"] == "https://news.example.com/news.rss"  # the site's feed, found
+    assert (
+        await c.delete(f"/api/v1/admin/sources/{added.json()['source']['id']}", headers=ah)
+    ).status_code == 204
+
+
 async def test_admin_manual_news_goes_through_the_pipeline(env: dict[str, Any]) -> None:
     c = env["client"]
     ah = await admin_headers(c)
