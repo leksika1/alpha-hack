@@ -3,6 +3,8 @@
 * allowlist of the case's models (alias -> provider id), anything else -> 403 `model-not-allowed`;
 * daily budget in RUB and tokens with a hard stop: every call first *reserves* its estimated cost under an
   advisory lock (concurrent calls cannot overshoot together), the reservation is replaced by the actual cost;
+* questions to the analytics (agent runs of kind `qa`) spend at most LLM_CHAT_BUDGET_SHARE of the day, so the
+  chat cannot eat the budget of the feed's pre-generation (ADR-035);
 * masking of PII before anything leaves the gateway; only a masked preview is stored;
 * cache of deterministic requests (temperature=0), cost 0 on a hit;
 * every call (ok, cached, refused, error) is a row of core.llm_usage, linked to the agent run.
@@ -36,6 +38,7 @@ from app.integrations.llm import LlmProvider, LlmProviderError
 log = get_logger(__name__)
 
 BUDGET_LOCK_KEY = 0x11A_B0D6E7  # pg_advisory_xact_lock key of the daily budget
+CHAT_RUN_KIND = "qa"
 VISION_MODELS = {"qwen3-vl-30b-a3b-instruct"}
 
 LLM_REQUESTS = Counter("llm_requests_total", "LLM gateway calls", ["model", "status"])
@@ -232,15 +235,40 @@ def _prepare(settings: Settings, request: dict[str, Any]) -> _Prepared:
     )
 
 
+async def chat_spent(conn: Any, settings: Settings) -> float:
+    """Today's spend (with pending reservations) of the question runs (ADR-035)."""
+    spent = await conn.fetchval(
+        """SELECT coalesce(sum(CASE WHEN u.status = 'pending' THEN u.estimated_cost_rub
+                                    ELSE u.cost_rub END), 0)
+           FROM core.llm_usage u JOIN core.agent_runs r ON r.id = u.run_id
+           WHERE u.day = $1 AND r.kind = $2""",
+        _today(settings),
+        CHAT_RUN_KIND,
+    )
+    return float(spent)
+
+
+async def _is_chat(conn: Any, caller: Caller) -> bool:
+    if caller.run_id is None:
+        return False
+    kind = await conn.fetchval("SELECT kind FROM core.agent_runs WHERE id = $1", caller.run_id)
+    return bool(kind == CHAT_RUN_KIND)
+
+
 async def _reserve(
     conn: Any, settings: Settings, caller: Caller, purpose: str, prep: _Prepared, stream: bool
 ) -> int:
     estimate = cost_rub(prep.tokens_in_est, prep.tokens_out_est, prep.model.price)
+    chat_limit: float | None = None
     async with conn.transaction():
         await conn.execute("SELECT pg_advisory_xact_lock($1)", BUDGET_LOCK_KEY)
         b = await budget(conn, settings)
         tokens_after = b.tokens_in + b.tokens_out + prep.tokens_in_est + prep.tokens_out_est
-        if b.spent_rub + estimate <= b.limit_rub and tokens_after <= b.token_limit:
+        fits = b.spent_rub + estimate <= b.limit_rub and tokens_after <= b.token_limit
+        if fits and await _is_chat(conn, caller):
+            chat_limit = settings.llm_chat_budget_share * b.limit_rub
+            fits = await chat_spent(conn, settings) + estimate <= chat_limit
+        if fits:
             return await _insert_usage(
                 conn, settings, caller, purpose, prep.model.alias,
                 provider_model=prep.model.provider_model, status="pending", stream=stream,
@@ -251,13 +279,19 @@ async def _reserve(
     log.error(
         "llm_budget_exhausted",
         day=b.day, spent_rub=round(b.spent_rub, 4), limit_rub=b.limit_rub, estimate_rub=estimate,
-        run_id=caller.run_id, model=prep.model.alias,
+        run_id=caller.run_id, model=prep.model.alias, chat_limit_rub=chat_limit,
     )  # fmt: skip
+    # The same code for the chat share: the agent already falls back to rules on budget-exhausted
+    detail = (
+        f"questions share of the day ({chat_limit:.2f} RUB) is spent, call estimate {estimate:.4f} RUB"
+        if chat_limit is not None
+        else f"spent {b.spent_rub:.2f} of {b.limit_rub:.2f} RUB, call estimate {estimate:.4f} RUB"
+    )
     exc = ProblemError(
         429,
         "budget-exhausted",
         "Daily LLM budget is exhausted",
-        f"spent {b.spent_rub:.2f} of {b.limit_rub:.2f} RUB, call estimate {estimate:.4f} RUB",
+        detail,
         extra={"remaining_rub": round(b.remaining_rub, 4)},
     )
     await _refuse(conn, settings, caller, purpose, prep.model.alias, exc)
@@ -423,8 +457,13 @@ async def usage_summary(conn: Any, settings: Settings, days: int = 7) -> dict[st
            GROUP BY day, model, purpose, status ORDER BY day DESC, cost_rub DESC""",
         since,
     )
+    b = await budget(conn, settings)
     return {
-        "budget": (await budget(conn, settings)).as_dict(),
+        "budget": {
+            **b.as_dict(),
+            "chat_limit_rub": round(settings.llm_chat_budget_share * b.limit_rub, 4),
+            "chat_spent_rub": round(await chat_spent(conn, settings), 4),
+        },
         "rows": [
             {
                 "date": r["day"].isoformat(),

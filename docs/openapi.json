@@ -4247,6 +4247,15 @@
           "exhausted": {
             "type": "boolean",
             "title": "Exhausted"
+          },
+          "chat_limit_rub": {
+            "type": "number",
+            "title": "Chat Limit Rub",
+            "description": "Предел вопросов к аналитике за день (LLM_CHAT_BUDGET_SHARE)"
+          },
+          "chat_spent_rub": {
+            "type": "number",
+            "title": "Chat Spent Rub"
           }
         },
         "additionalProperties": false,
@@ -4258,7 +4267,9 @@
           "remaining_rub",
           "tokens_in",
           "tokens_out",
-          "exhausted"
+          "exhausted",
+          "chat_limit_rub",
+          "chat_spent_rub"
         ],
         "title": "LlmBudgetOut"
       },

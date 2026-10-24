@@ -204,6 +204,43 @@ async def test_budget_hard_stop_even_under_concurrency(env: dict[str, Any]) -> N
     holder["settings"] = base
 
 
+async def test_questions_cannot_eat_the_generation_budget(env: dict[str, Any]) -> None:
+    c, conn, holder = env["client"], env["conn"], env["holder"]
+    base: Settings = holder["settings"]
+    for run_id, kind in (("run_chat_share_qa", "qa"), ("run_chat_share_gen", "insight")):
+        await conn.execute(
+            """INSERT INTO core.agent_runs (id, kind, request_id, company_id, generator)
+               VALUES ($1, $2, 'chat-share', 'U_700001', 'test') ON CONFLICT (id) DO NOTHING""",
+            run_id,
+            kind,
+        )
+    spent = float(await conn.fetchval("SELECT coalesce(sum(cost_rub), 0) FROM core.llm_usage"))
+    # plenty for the day, but questions get 0.01 RUB: less than one call reserves (~0.03 RUB)
+    limit = spent + 10.0
+    holder["settings"] = base.model_copy(
+        update={"llm_daily_budget_rub": limit, "llm_chat_budget_share": 0.01 / limit}
+    )
+
+    async def call(run_id: str, text: str) -> httpx.Response:
+        token = issue_run_token(holder["settings"], run_id, "U_700001", 60)
+        headers = {"Authorization": f"Bearer {token}", "X-Run-Id": run_id}
+        return await c.post("/internal/llm/chat/completions", headers=headers, json=body(text))
+
+    try:
+        refused = await call("run_chat_share_qa", "вопрос 1")
+        assert refused.status_code == 429 and refused.json()["type"].endswith("/budget-exhausted")
+        assert "questions share" in refused.json()["detail"]
+        assert (await call("run_chat_share_gen", "генерация")).status_code == 200  # the feed keeps its budget
+        holder["settings"] = holder["settings"].model_copy(update={"llm_chat_budget_share": 0.3})
+        assert (await call("run_chat_share_qa", "вопрос 2")).status_code == 200
+        from app.services.llm_gateway import usage_summary
+
+        summary = await usage_summary(conn, holder["settings"])
+        assert 0 < summary["budget"]["chat_spent_rub"] <= summary["budget"]["chat_limit_rub"]
+    finally:
+        holder["settings"] = base
+
+
 async def test_admin_llm_usage(env: dict[str, Any]) -> None:
     c, conn = env["client"], env["conn"]
     for login, role in (("llm_admin", "admin"), ("llm_user", "user")):

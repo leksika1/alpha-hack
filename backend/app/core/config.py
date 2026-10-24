@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     llm_default_price_rub_per_1m: tuple[float, float] = (100.0, 300.0)  # conservative until tariffs are known
     llm_daily_budget_rub: float = 450.0
     llm_daily_token_limit: int = 3_000_000
+    # Questions (runs of kind qa) may spend at most this share of the daily budget: the rest stays for the
+    # pre-generation of the feed (ADR-035)
+    llm_chat_budget_share: float = Field(default=0.3, ge=0.0, le=1.0)
     llm_budget_utc_offset_h: int = 3  # the "day" of the daily budget: Moscow time (UTC+3, no DST)
     llm_request_timeout_s: float = 60.0
     llm_max_retries: int = 1
