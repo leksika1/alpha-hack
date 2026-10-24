@@ -470,3 +470,19 @@ def test_real_business_news_keeps_its_channels() -> None:
     )
     items = compute_exposure(feats, steel, "U_1").items
     assert "commodity" in items and "industry" in items
+
+
+async def test_failing_provider_opens_the_circuit_for_next_runs(backend, llm_script: LLMScript) -> None:  # type: ignore[no-untyped-def]
+    from alfa_ml import llm as llm_mod
+
+    llm_script.status = 503
+    for _ in range(2):
+        res = await Agent(generate_request(RATE_EVENT["event_id"])).run()
+        assert res.status == "completed"  # rules@1 answers while the provider fails
+    assert llm_mod.breaker_open()
+    calls = len(llm_script.calls)
+    res = await Agent(generate_request(STEEL_EVENT["event_id"])).run()
+    assert res.status == "completed" and len(llm_script.calls) == calls  # no waiting on a dead provider
+    llm_mod.breaker_reset()
+    llm_script.status = 200
+    assert not llm_mod.breaker_open()
