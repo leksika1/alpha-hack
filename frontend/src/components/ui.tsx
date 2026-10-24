@@ -126,7 +126,7 @@ export function KindBadge({ kind, demo = false, className }: { kind: StatementKi
   if (demo && kind === 'bank_analytics') {
     return (
       <span
-        className={cn(KIND_BASE, 'flex-col border border-dashed border-neg bg-white text-center leading-tight text-neg', className)}
+        className={cn(KIND_BASE, 'flex-col bg-neg-bg py-1 text-center leading-tight text-accent', className)}
         title="Синтетический демо-материал, не аналитика Альфа-Банка"
       >
         <span>Демо-материал</span>

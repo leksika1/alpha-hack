@@ -223,11 +223,11 @@ function TurnView({ turn }: { turn: Turn }) {
           </Note>
         )}
         {turn.status === 'done' && turn.statements.length > 0 && (
-          <div className="mt-2.5 grid grid-cols-[max-content_1fr] items-start gap-x-2.5 gap-y-2 border-t border-black/6 pt-2.5 text-sm">
-            {/* Общая сетка: колонка бейджей одной ширины (по самому широкому), бейджи растянуты на всю колонку. */}
+          <div className="mt-2.5 grid grid-cols-[max-content_1fr] items-center gap-x-3 gap-y-2.5 border-t border-black/6 pt-2.5 text-sm">
+            {/* Общая сетка: колонка бейджей одной ширины, бейдж по центру своей ячейки и строки. */}
             {turn.statements.map((s) => (
               <Fragment key={s.id}>
-                <KindBadge kind={s.kind} demo={isDemoStatement(s, turn.sources)} className="mt-px justify-center" />
+                <KindBadge kind={s.kind} demo={isDemoStatement(s, turn.sources)} className="justify-self-center" />
                 <span>{s.text}</span>
               </Fragment>
             ))}
@@ -277,10 +277,21 @@ function ChatSources({ sources }: { sources: Source[] }) {
     toast.show({ title: s.title, body: 'Данные о компании — во вкладке «Профиль компании».' });
   };
 
+  // Одинаковые подписи (та же лента, та же страница документа) показываем один раз; данные о компании — после внешних источников.
+  const seen = new Set<string>();
+  const unique = sources.filter((s) => {
+    const label = sourceLabel(s);
+    if (seen.has(label)) return false;
+    seen.add(label);
+    return true;
+  });
+  const isOwnData = (s: Source) => s.type === 'company_data' || s.type === 'user_data';
+  const ordered = [...unique.filter((s) => !isOwnData(s)), ...unique.filter(isOwnData)];
+
   return (
     <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
       <span className="text-[13px] text-ink-2">Источники:</span>
-      {sources.map((s) => (
+      {ordered.map((s) => (
         <button key={s.id} type="button" className={srcRefClass(s.type)} onClick={() => open(s)} title={s.title}>
           {sourceLabel(s)}
         </button>
