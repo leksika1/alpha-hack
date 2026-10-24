@@ -4,7 +4,7 @@ import httpx
 import pytest
 import respx
 
-from app.core.config import Settings, insecure_defaults
+from app.core.config import ALLOWED_LLM_MODELS, DEFAULT_LLM_BASE_URL, Settings, insecure_defaults
 from app.core.ratelimit import bucket_for, caller_key
 from app.domain.llm import (
     ModelPrice,
@@ -114,10 +114,23 @@ async def test_openai_provider_retries_then_maps_errors() -> None:
     assert err.value.status == 504
 
 
-async def test_unconfigured_provider_fails_cleanly() -> None:
+@pytest.mark.parametrize(("base_url", "key"), [(None, None), ("https://llm.test/v1", None), (None, "k")])
+async def test_unconfigured_provider_fails_cleanly(base_url: str | None, key: str | None) -> None:
     with pytest.raises(LlmProviderError) as err:
-        await OpenAICompatibleProvider(None, None, 5, 0).complete({"model": "m", "messages": []})
+        await OpenAICompatibleProvider(base_url, key, 5, 0).complete({"model": "m", "messages": []})
     assert err.value.code == "llm-not-configured"
+
+
+def test_organisers_provider_is_the_default_and_env_map_extends_it() -> None:
+    defaults = Settings()
+    assert defaults.llm_base_url == DEFAULT_LLM_BASE_URL
+    assert defaults.llm_model_map["gemma-4-26b-a4b"] == "google/gemma-4-26b-a4b-it"
+    assert set(defaults.llm_model_map) == set(ALLOWED_LLM_MODELS)
+    old_env = Settings(llm_model_map={})  # an old .env with LLM_MODEL_MAP={}
+    assert old_env.llm_model_map == defaults.llm_model_map
+    custom = Settings(llm_model_map={"kimi-k2.6": "moonshotai/kimi-k2.6-preview"})
+    assert custom.llm_model_map["kimi-k2.6"] == "moonshotai/kimi-k2.6-preview"
+    assert custom.llm_model_map["glm-5.3-flash"] == "z-ai/glm-5.3-flash"
 
 
 def test_rate_limit_buckets_and_caller_keys() -> None:

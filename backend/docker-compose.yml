@@ -10,7 +10,7 @@
 #   BACKEND_ALIAS   — unique name of `api` in dokploy-network: alfa-backend-prod / alfa-backend-dev
 #   APP_ENV=prod and secrets: JWT_SECRET, SERVICE_TOKEN, ML_SERVICE_TOKEN, POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD
 #   ML_ALIAS        — name of the ML service in dokploy-network (the same value as in the ML service)
-# Optional: LLM_BASE_URL, LLM_API_KEY, LLM_MODEL_MAP (keys from the organisers).
+# LLM: only LLM_API_KEY (the team's key); the organisers' URL and model ids are the defaults.
 
 x-app-env: &app-env
   APP_ENV: ${APP_ENV:-dev}

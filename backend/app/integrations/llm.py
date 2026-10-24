@@ -51,9 +51,9 @@ class OpenAICompatibleProvider:
         self.transport = transport
 
     def _client(self) -> httpx.AsyncClient:
-        if not self.base_url:
-            raise LlmProviderError(502, "llm-not-configured", "LLM_BASE_URL is not set")
-        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        if not self.base_url or not self.api_key:
+            raise LlmProviderError(502, "llm-not-configured", "LLM_BASE_URL and LLM_API_KEY are required")
+        headers = {"Authorization": f"Bearer {self.api_key}"}
         return httpx.AsyncClient(
             base_url=self.base_url, headers=headers, timeout=self.timeout_s, transport=self.transport
         )
