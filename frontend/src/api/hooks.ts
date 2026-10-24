@@ -5,7 +5,6 @@ import type {
   AnalyticsDocument,
   BankProduct,
   CrmRequest,
-  Digest,
   Feed,
   FeedbackIn,
   FeedFilter,
@@ -37,7 +36,6 @@ export const keys = {
   askHistory: (companyId: string) => ['ask-history', companyId] as const,
   profile: (companyId: string) => ['profile', companyId] as const,
   graph: (companyId: string) => ['graph', companyId] as const,
-  digest: (companyId: string, period: string) => ['digest', companyId, period] as const,
   notifications: ['notifications'] as const,
   requests: ['requests'] as const,
   products: ['bank-products'] as const,
@@ -117,14 +115,6 @@ export function useGraph(companyId: string | undefined) {
   });
 }
 
-export function useDigest(companyId: string | undefined, period: 'day' | 'week') {
-  return useQuery({
-    queryKey: keys.digest(companyId ?? '', period),
-    queryFn: () => get<Digest>(`/digest${qs({ company_id: companyId, period })}`),
-    enabled: !!companyId,
-  });
-}
-
 export function useNotifications(enabled = true) {
   return useQuery({ queryKey: keys.notifications, queryFn: () => get<Notifications>('/notifications?limit=30'), enabled });
 }
@@ -151,7 +141,6 @@ export function useSetRole() {
       qc.invalidateQueries({ queryKey: keys.me });
       qc.invalidateQueries({ queryKey: keys.feedAll });
       qc.invalidateQueries({ queryKey: keys.summary });
-      qc.invalidateQueries({ queryKey: ['digest'] });
     },
   });
 }
@@ -164,7 +153,6 @@ export function useInsightState(insightId: string) {
       qc.invalidateQueries({ queryKey: keys.insight(insightId) });
       qc.invalidateQueries({ queryKey: keys.feedAll });
       qc.invalidateQueries({ queryKey: keys.summary });
-      qc.invalidateQueries({ queryKey: ['digest'] });
       qc.invalidateQueries({ queryKey: keys.notifications });
     },
   });

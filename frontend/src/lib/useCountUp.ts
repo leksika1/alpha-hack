@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-// Плавная «прокрутка» числа к новому значению (счётчики на главной и в дайджесте).
+// Плавная «прокрутка» числа к новому значению (счётчики на главной и над лентой).
 export function useCountUp(target: number | undefined, duration = 700): number | undefined {
   const [value, setValue] = useState(target);
   const from = useRef(0);
