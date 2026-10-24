@@ -274,7 +274,7 @@ def build_insight(
     if "industry" in values:
         overlap = sorted((ev.industry_tags & profile.industry_tags) - {"trade", "manufacturing"})
         label = ", ".join(TAG_LABELS.get(t, t) for t in overlap) or okved_name
-        txt = f"Событие касается отрасли компании: {label} (ОКВЭД: {okved_name})."
+        txt = f"Событие касается отрасли компании: {label}."
         sid = d.stmt(txt, "fact", 1.0, ["sc"], comp["industry"].features)
         d.reasons.append(
             ("industry", {"text": txt, "feature_refs": comp["industry"].features, "statement_refs": [sid]})
