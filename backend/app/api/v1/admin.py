@@ -471,3 +471,29 @@ async def generation_retry(
     if result["companies"]:
         await request.app.state.enqueue(result["companies"])
     return GenerationRetryOut(**result)
+
+
+class AlertOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    severity: Literal["warning", "critical"]
+    title: str
+    detail: str
+
+
+@router.get(
+    "/alerts",
+    response_model=list[AlertOut],
+    responses=ADMIN_ERRS,
+    summary="Активные проблемы сейчас: упавшие источники, бюджет LLM, доля отклонённых инсайтов, зависшие "
+    "запуски, недоступный ML. Те же условия раз в 5 минут уходят в Telegram (ALERTS_PROVIDER=telegram) "
+    "или в лог",
+)
+async def alerts(admin: Admin, conn: Conn, settings: SettingsDep) -> list[AlertOut]:
+    from app.services.alerts import evaluate
+
+    return [
+        AlertOut(key=a.key, severity=a.severity, title=a.title, detail=a.detail)
+        for a in await evaluate(conn, settings)
+    ]

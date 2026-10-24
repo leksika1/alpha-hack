@@ -125,6 +125,12 @@ ML_SERVICE_TOKEN=<как у Backend>
 | Источники новостей | `GET /api/v1/admin/sources/health` |
 | Качество загрузки данных | `GET /api/v1/admin/data-quality` |
 | Конкретный запрос | `X-Trace-Id` ответа → поиск в логах (`trace_id`); для инсайта — `GET /insights/{id}/trace` |
+| Генерация инсайтов | `GET /api/v1/admin/generation`: очередь, кандидаты, запуски за сутки, зависшие, ошибки, ML |
+| Активные проблемы | `GET /api/v1/admin/alerts`; раз в 5 минут те же условия уходят в Telegram или в лог (ADR-034) |
+
+**Алерты в Telegram:** создать бота у @BotFather, добавить его в чат команды, узнать `chat_id`
+(`https://api.telegram.org/bot<токен>/getUpdates` после сообщения в чат). В Environment бэкенда:
+`ALERTS_PROVIDER=telegram`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ALERTS_LABEL=prod` (или `dev`).
 
 ## Типовые ситуации
 

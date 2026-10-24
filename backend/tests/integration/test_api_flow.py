@@ -717,6 +717,48 @@ async def test_admin_generation_monitor_and_retry(env: dict[str, Any]) -> None:
     assert cand != "failed"
 
 
+async def test_admin_alerts_reflect_system_state(env: dict[str, Any]) -> None:
+    from app.services.alerts import evaluate
+
+    c = env["client"]
+    ah = await admin_headers(c)
+    async with pg_connection(env["url"]) as conn:
+        await conn.execute(
+            """INSERT INTO core.sources (id, name, kind, health_status, last_error)
+               VALUES ('alert-test', 'Тестовый RSS', 'rss', 'down', 'HTTP 503')"""
+        )
+        await conn.executemany(  # rejected runs in the last hour (the module's own generation ran too)
+            """INSERT INTO core.agent_runs
+                   (id, kind, request_id, company_id, role, generator, status, outcome, finished_at)
+               VALUES ($1, 'insight', 'gen:alert-test', $2, 'cfo', 'stub', 'ok', $3, now())""",
+            [(f"run_alert_{i}", LOGISTICS, "rejected" if i else "completed") for i in range(5)],
+        )
+        unreachable_ml = env["settings"].model_copy(
+            update={
+                "insight_generator": "remote",
+                "ml_service_url": "http://127.0.0.1:9",
+                "llm_daily_budget_rub": 0,
+                "alert_reject_ratio": 0.001,  # the module generated many runs already
+            }
+        )
+        keys = {a.key: a for a in await evaluate(conn, unreachable_ml)}
+    assert {"source-down:alert-test", "insights-rejected", "ml-unavailable", "llm-budget-exhausted"} <= set(
+        keys
+    )
+    assert (
+        keys["ml-unavailable"].severity == "critical" and "HTTP 503" in keys["source-down:alert-test"].detail
+    )
+
+    assert (await c.get("/api/v1/admin/alerts", headers=await login(c))).status_code == 403
+    live = (await c.get("/api/v1/admin/alerts", headers=ah)).json()
+    assert "source-down:alert-test" in {a["key"] for a in live}
+    async with pg_connection(env["url"]) as conn:
+        await conn.execute("DELETE FROM core.sources WHERE id = 'alert-test'")
+        await conn.execute("DELETE FROM core.agent_runs WHERE id LIKE 'run_alert_%'")
+    after = {a["key"] for a in (await c.get("/api/v1/admin/alerts", headers=ah)).json()}
+    assert "source-down:alert-test" not in after
+
+
 async def test_admin_manual_news_goes_through_the_pipeline(env: dict[str, Any]) -> None:
     c = env["client"]
     ah = await admin_headers(c)
