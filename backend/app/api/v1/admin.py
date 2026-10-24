@@ -44,6 +44,8 @@ class LlmBudgetOut(BaseModel):
     tokens_in: int
     tokens_out: int
     exhausted: bool
+    chat_limit_rub: float = Field(description="Предел вопросов к аналитике за день (LLM_CHAT_BUDGET_SHARE)")
+    chat_spent_rub: float
 
 
 class LlmUsageOut(BaseModel):

@@ -60,7 +60,7 @@ Swagger `http://localhost:8000/docs`. Внутренние API для ML опи�
 | POST | `/events` | События интерфейса для воронки (`widget_shown`, `widget_click`, `card_impression`, …) |
 | **Администрирование** (`admin`) | | |
 | GET | `/admin/metrics` | North star и метрики этапов CJM, генерация, ежедневные снимки (`docs/METRICS.md`) |
-| GET | `/admin/llm-usage` | Бюджет LLM и расход по дням, моделям, целям |
+| GET | `/admin/llm-usage` | Бюджет LLM (и доля вопросов: `chat_limit_rub`, `chat_spent_rub`) и расход по дням, моделям, целям |
 | GET | `/admin/data-quality` | Отчёт качества последней загрузки компаний |
 | GET | `/admin/sources/health` | Здоровье источников новостей |
 | POST | `/admin/ingest/{kind}` | Поставить в очередь `news` или `analytics` |
