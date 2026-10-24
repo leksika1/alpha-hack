@@ -339,7 +339,7 @@ def test_currency_match_counts_only_for_fx_stories() -> None:
         "tags": {"industry_tags": ["real_estate"], "countries": ["ГЕРМАНИЯ"], "currencies": ["EUR"]},
     }
     assert "fx_country" not in compute_exposure(feats, story, "U_1").items
-    fx = {"event_type": "fx", "tags": {"currencies": ["EUR"]}}
+    fx = {"event_type": "fx", "title": "Курс евро вырос к рублю", "tags": {"currencies": ["EUR"]}}
     assert "fx_country" in compute_exposure(feats, fx, "U_1").items
 
 
@@ -376,3 +376,97 @@ async def test_strong_ruble_is_a_risk_for_exporter(backend, monkeypatch) -> None
     res = await Agent(generate_request(ev["event_id"], allow_llm=False)).run()
     assert res.status == "completed", res.error
     assert "выручка от экспорта снизится" in res.insight["title"]  # type: ignore[index]
+
+
+@pytest.mark.parametrize(
+    ("title", "summary", "etype", "tags", "absent"),
+    [
+        # a foreign courier robbery tagged as monetary policy ("Fed" in "FedEx") is not the key rate
+        (
+            "Nearly $1M in Pokémon Cards STOLEN from FedEx",
+            "A FedEx truck was robbed in California.",
+            "monetary_policy",
+            {},
+            "rate",
+        ),
+        (
+            "Центробанк Турции снизил ключевую ставку до 36%",
+            "Центробанк Турции снизил ставку.",
+            "monetary_policy",
+            {},
+            "rate",
+        ),
+        # "медики" is not copper, a film release ("прокат") is not rolled steel
+        (
+            "ВСУ обстреляли скорые с тяжелыми больными",
+            "Медики больницы не смогли вывезти пациентов.",
+            "industry",
+            {"commodities": ["nonferrous"]},
+            "commodity",
+        ),
+        (
+            "Три премьеры начала ноября: что посмотреть в кино",
+            "В начале ноября в прокат выходят драма и мелодрама.",
+            "industry",
+            {"industry_tags": ["metals", "steel"], "commodities": ["steel"]},
+            "industry",
+        ),
+        # a sanctions headline with no Russian trade or payments in it
+        (
+            "Минюст объявил иноагентом журналиста",
+            "Минюст объявил иноагентами журналиста и блогера.",
+            "sanctions",
+            {},
+            "fx_country",
+        ),
+        # the company's trade country is mentioned, but not trade
+        (
+            "Посол США в Турции заявил о возможном ударе по Ирану",
+            "Посол заявил о возможном ударе.",
+            "other",
+            {"countries": ["ТУРЦИЯ", "ИРАН"]},
+            "fx_country",
+        ),
+    ],
+)
+def test_live_feed_false_positives_are_screened(title, summary, etype, tags, absent) -> None:  # type: ignore[no-untyped-def]
+    from alfa_ml.profile import compute_exposure, normalize_event
+
+    feats = {
+        "products.loan": {"value": True, "source": "csv"},
+        "sensitivities.rate_sensitive": {"value": True, "source": "derived"},
+        "sensitivities.fx_sensitive": {"value": True, "source": "derived"},
+        "sensitivities.commodity_exposure": {"value": ["steel", "nonferrous"], "source": "derived"},
+        "industry_tags": {"value": ["metals", "wholesale"], "source": "csv"},
+        "fts_countries": {"value": ["ТУРЦИЯ", "КИТАЙ"], "source": "csv"},
+    }
+    ev = normalize_event({"event_type": etype, "title": title, "summary": summary, "tags": tags})
+    assert absent not in compute_exposure(feats, ev, "U_1").items
+
+
+def test_real_business_news_keeps_its_channels() -> None:
+    from alfa_ml.profile import compute_exposure, normalize_event
+
+    feats = {
+        "products.loan": {"value": True, "source": "csv"},
+        "sensitivities.commodity_exposure": {"value": ["steel"], "source": "derived"},
+        "industry_tags": {"value": ["metals"], "source": "csv"},
+    }
+    rate = normalize_event(
+        {
+            "event_type": "monetary_policy",
+            "title": "Банк России сохранил ключевую ставку на уровне 14%",
+            "tags": {},
+        }
+    )
+    assert "rate" in compute_exposure(feats, rate, "U_1").items
+    steel = normalize_event(
+        {
+            "event_type": "commodities",
+            "title": "Цены на арматуру и сортовой прокат выросли на 8%",
+            "summary": "",
+            "tags": {"commodities": ["steel"], "industry_tags": ["metals"]},
+        }
+    )
+    items = compute_exposure(feats, steel, "U_1").items
+    assert "commodity" in items and "industry" in items

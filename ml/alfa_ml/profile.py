@@ -135,15 +135,126 @@ _RUB_WEAKER = re.compile(
 _MORTGAGE = re.compile(r"ипотек", re.IGNORECASE)
 
 
+# --- event screening (ADR-ML-010): cues are matched on whole words of title + lead + news body ----------------
+_ECON = re.compile(
+    r"цен[аыеу]?\b|цены|стоимост|рын(ок|ка|ке|ку)|спрос|выручк|прибыл|убыт|продаж|экспорт|импорт|поставк|"
+    r"производств|выпуск|инвест|ставк|курс|кредит|ипотек|налог|пошлин|тариф|бюджет|компани|предприят|бизнес|"
+    r"отрасл|банк|рубл|доллар|юан|евро\b|млн|млрд|трлн|тонн|баррел|акци[ия]|облигац|инфляц|ввп|санкц|"
+    r"перевоз|груз|логист|склад|урожа|топлив|бензин|дизел|нефт|газ\b|газа\b|сырь|"
+    r"price|market|demand|revenue|profit|sales|export|import|supply|production|invest|rate|tariff|budget|"
+    r"inflation|freight|cargo|shipping|earnings|oil|diesel|fuel|grain|wheat|steel|\$|%",
+    re.IGNORECASE,
+)
+_RUSSIA = re.compile(
+    r"росси|\bрф\b|рубл|российск|отечествен|москв|петербург|минфин|минэк|минпромторг|правительств|госдум|"
+    r"банк росси|\bцб\b|центробанк(?!\w* (турци|кита|сша|инди|япони))|набиуллин|новак|силуанов|ржд|"
+    r"russia|russian|ruble|rouble|moscow",
+    re.IGNORECASE,
+)
+_CYRILLIC = re.compile(r"[а-яё]", re.IGNORECASE)
+# market conditions of an industry (prices, tariffs, demand, shortages) — what reaches a company via counterparties;
+# a single firm's incident or expansion does not
+_MARKET = re.compile(
+    r"цен[аыеу]?\b|цены|стоимост|тариф|ставк\w* (фрахт|перевоз)|дефицит|спрос|подорож|подешев|рост\w* цен|"
+    r"сниж\w* цен|пошлин|сбор\b|сбора\b|санкц|ограничени|запрет|price|rate[sd]?\b|tariff|shortage|demand|cost",
+    re.IGNORECASE,
+)
+_FOREIGN_GEO = re.compile(
+    r"\bЕС\b|евросоюз|европ|\bсша\b|американ|британ|нидерланд|германи|франц|париж|индии|индия|япони|канад|"
+    r"кени|пакистан|венесуэл|оаэ|гонконг|вьетнам|бразил|норвеги|осло|кипр",
+    re.IGNORECASE,
+)
+# the Bank of Russia's policy: key rate / monetary policy without a foreign central bank in the headline
+_RU_RATE = re.compile(
+    r"ключев\w*\s+ставк|денежно-кредитн|\bдкп\b|ставк\w*\s+(цб|банка россии)", re.IGNORECASE
+)
+_FOREIGN_CB = re.compile(
+    r"фрс|\bfed\b|ецб|банк англии|банк японии|центробанк\w* (турци|кита|сша|инди|япони|казахстан)|"
+    r"народн\w* банк кита|турци|индии|филиппин|гонконг|hkma",
+    re.IGNORECASE,
+)
+_TRADE = re.compile(
+    r"импорт|экспорт|поставк|груз|таможн|пошлин|торгов|перевоз|логист|порт[ауе]?\b|портов|транзит|платеж|платёж|"
+    r"расчет|расчёт|валют|контракт|закупк|import|export|cargo|customs|tariff|trade|shipping|freight|payment",
+    re.IGNORECASE,
+)
+# backend tags that come from homonyms or substrings ("в прокат выходят", "Чугунный мост", "медики")
+_TAG_CUES: dict[tuple[str, str], re.Pattern[str]] = {
+    ("commodities", "nonferrous"): re.compile(
+        r"\bмед(ь|и|ью)\b|алюмини|никел|\bцинк|цветн\w* металл|цветмет|copper|alumin|nickel|zinc", re.I
+    ),
+    ("commodities", "steel"): re.compile(
+        r"\bсталь|\bстальн|сталелит|металлопрокат|арматур|горячекат|холоднокат|сортов\w* прокат|"
+        r"(производств|выпуск|экспорт|импорт|потреблени|цен\w*|тонн|рын\w*|спрос\w*|поставк\w*)( на)? стали\b|"
+        r"прокат\w*(?=[^.]{0,60}(стал|металл|арматур|сортов))|steel|rebar",
+        re.I,
+    ),
+    ("industry_tags", "metals"): re.compile(
+        r"металл|\bсталь|\bстальн|сталелит|арматур|горячекат|(производств|выпуск|экспорт|импорт|потреблени|"
+        r"цен\w*|тонн|рын\w*)( на)? стали\b|прокат\w*(?=[^.]{0,60}(стал|металл|арматур))|steel|metal",
+        re.I,
+    ),
+    ("industry_tags", "steel"): re.compile(
+        r"\bсталь|\bстальн|сталелит|металлопрокат|арматур|горячекат|(производств|выпуск|экспорт|импорт|"
+        r"потреблени|цен\w*|тонн|рын\w*)( на)? стали\b|прокат\w*(?=[^.]{0,60}(стал|металл|арматур))|steel",
+        re.I,
+    ),
+    ("industry_tags", "retail"): re.compile(
+        r"ритейл|розничн|торгов\w* сет|продаж|товарооборот|средн\w* чек|покупательск|retail|sales|store sales",
+        re.I,
+    ),
+}
+
+
+def _event_text(event: dict[str, Any]) -> str:
+    parts = [str(event.get("title") or ""), str(event.get("summary") or "")]
+    for n in (event.get("news") or [])[:2]:
+        body = n.get("body") if isinstance(n, dict) else None
+        if isinstance(body, dict):
+            parts.append(str(body.get("content") or "")[:1500])
+    return ". ".join(parts)
+
+
+def screen_event(event: dict[str, Any]) -> dict[str, Any]:
+    """Cheap deterministic screening of an event: is it business news, about Russia, about the key rate, trade."""
+    text = _event_text(event)
+    head = str(event.get("title") or "")
+    return {
+        "business": bool(_ECON.search(text)),
+        "russia": bool(_RUSSIA.search(text)),
+        "cyrillic": bool(_CYRILLIC.search(head)),
+        "ru_rate": bool(_RU_RATE.search(text))
+        and bool(_CYRILLIC.search(head))
+        and not _FOREIGN_CB.search(head),
+        "trade": bool(_TRADE.search(text)),
+        "market": bool(_MARKET.search(text)),
+        "rate_in_title": bool(_RU_RATE.search(head)),
+        "foreign_geo": bool(_FOREIGN_GEO.search(head)),
+    }
+
+
 def normalize_event(event: dict[str, Any]) -> dict[str, Any]:
     """ML-side fixes on top of the backend tagger (a copy; the backend's event is not changed).
 
     - FX direction is about the foreign currency: "рубль вырос" means the yuan/dollar went down.
     - Mortgage news concerns developers and construction even if tagged only as real estate.
+    - Tags that come from homonyms or substrings are dropped when the text has no whole-word cue.
+    - `ml_screen`: business / Russia / key-rate / trade cues used by compute_exposure.
     """
     ev = dict(event)
     tags = dict(ev.get("tags") or {})
+    text = _event_text(ev)
+    dropped = []
+    for (kind, tag), cue in _TAG_CUES.items():
+        vals = list(tags.get(kind) or [])
+        if tag in vals and not cue.search(text):
+            tags[kind] = [v for v in vals if v != tag]
+            dropped.append(f"{kind}:{tag}")
     head = str(ev.get("title") or "")
+    if ev.get("event_type") in {"other", "macro_stat", "commodities"} and (
+        _RUB_STRONGER.search(head) or _RUB_WEAKER.search(head)
+    ):
+        ev["event_type"] = "fx"  # "Рубль вырос… в паре с юанем" is an FX move whatever the tagger said
     if ev.get("event_type") == "fx":
         stronger, weaker = bool(_RUB_STRONGER.search(head)), bool(_RUB_WEAKER.search(head))
         if stronger != weaker:
@@ -153,6 +264,7 @@ def normalize_event(event: dict[str, Any]) -> dict[str, Any]:
             set(tags.get("industry_tags") or []) | {"real_estate", "construction", "developer"}
         )
     ev["tags"] = tags
+    ev["ml_screen"] = {**screen_event(ev), "dropped_tags": dropped}
     return ev
 
 
@@ -339,6 +451,51 @@ def compute_exposure(features: dict[str, Any], event: dict[str, Any], company_id
         e.features = [f for f in e.features if feature_known(f, paths)]
         if not e.features:
             del res.items[e.name]
+    return _apply_screen(res, event, etype)
+
+
+def _apply_screen(res: "ExposureResult", event: dict[str, Any], etype: str) -> "ExposureResult":
+    """Gates from the event screening (ADR-ML-010). Direct links (group, named counterparty) always stay."""
+    scr = event.get("ml_screen") or screen_event(event)
+    cp = res.items.get("counterparty")
+    direct = {"group"} | (
+        {"counterparty"}
+        if cp is not None and any(f.startswith("counterparties.top_") for f in cp.features)
+        else set()
+    )
+    items = res.items
+    if not scr["business"]:
+        for k in list(items):
+            if k not in direct:
+                del items[k]
+        return res
+    cp_items = items.get("counterparty")
+    if cp_items is not None and "counterparty" not in direct and not scr.get("market", True):
+        del items[
+            "counterparty"
+        ]  # an industry incident or a firm's news, not a change in the industry's terms
+    if etype == "monetary_policy" and "rate" in items:
+        if not scr["ru_rate"]:
+            del items[
+                "rate"
+            ]  # a foreign central bank, an earnings story with "rates", "FedEx": not the key rate
+        elif not scr.get("rate_in_title", True):
+            r = items["rate"]  # a market wrap or a digest that mentions the rate in passing
+            items["rate"] = Exposure(r.name, round(r.value * 0.25, 4), r.features, r.reason)
+    fx = items.get("fx_country")
+    if fx is not None:
+        broad = fx.features == ["sensitivities.fx_sensitive"]
+        by_country = "fts_countries" in fx.features and etype not in {"fx"}
+        if broad and not (scr["russia"] and scr["trade"]):
+            del items["fx_country"]  # a sanctions/FX story that is not about Russian trade or payments
+        elif by_country and not scr["trade"]:
+            del items["fx_country"]  # the company's trade country is mentioned, but not its trade
+    if not scr["russia"] and (not scr["cyrillic"] or scr.get("foreign_geo")):
+        for k, e in items.items():
+            if k not in direct:
+                items[k] = Exposure(
+                    e.name, round(e.value * 0.5, 4), e.features, e.reason
+                )  # foreign-only story
     return res
 
 

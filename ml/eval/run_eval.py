@@ -61,7 +61,7 @@ def load_events(now: datetime, path: Path | None = None) -> dict[str, dict[str, 
             "event_id": str(uuid.uuid5(NS, key)),
             "title": text_title,
             "summary": news[0]["body"],
-            "event_type": t.event_type,
+            "event_type": news[0].get("backend_type") or t.event_type,  # live sets keep the stand's type
             "direction": t.direction,
             "urgent": t.event_type in {"monetary_policy", "sanctions"},
             "urgency_reasons": [],
@@ -184,6 +184,7 @@ async def main() -> None:
     ap.add_argument("--data-dir", default=str(SYN), help="CSV dir (synthetic or data/raw)")
     ap.add_argument("--report", default=str(HERE.parent / "reports" / "eval.md"))
     ap.add_argument("--title", default="Оценка ML-сервиса (офлайн)")
+    ap.add_argument("--note", default=None, help="data description line for the report")
     ap.add_argument(
         "--analytics", default=None, help="chunks JSON from eval.real_analytics (default: demo PDFs)"
     )
@@ -341,12 +342,14 @@ async def main() -> None:
                     )
                 rows.append(row)
     (out_dir / "rows.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
-    report = render(rows, bool(args.llm_base_url), args.title)
+    report = render(rows, bool(args.llm_base_url), args.title, args.note)
     Path(args.report).write_text(report, encoding="utf-8")
     print(report)
 
 
-def render(rows: list[dict[str, Any]], llm: bool, title: str = "Оценка ML-сервиса (офлайн)") -> str:
+def render(
+    rows: list[dict[str, Any]], llm: bool, title: str = "Оценка ML-сервиса (офлайн)", note: str | None = None
+) -> str:
     lines = [
         f"# {title}",
         "",
@@ -355,7 +358,9 @@ def render(rows: list[dict[str, Any]], llm: bool, title: str = "Оценка ML-
     ]
     lines += [
         "Данные: 5 демо-компаний и 15 событий демо-ленты бэкенда (синтетика, повторяет особенности реальных данных); профили собраны тем же `build_context`, что и в Tools API; разметка — `ml/eval/labels.json` (0 — нерелевантно, 1 — фон, 2 — важно)."
-        if "Оценка ML-сервиса" in title
+        if "Оценка ML-сервиса" in title and not note
+        else note
+        if note
         else "Отложенный набор: реальные новости и профили реальных клиентов; разметка сделана по профилям до прогона, порог показа не менялся (`ml/eval/heldout/`).",
         "",
     ]
