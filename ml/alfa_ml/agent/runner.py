@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from alfa_ml import prompts
+from alfa_ml import prompts, ranker2, semantic
 from alfa_ml.agent.assemble import assemble, strip_private
 from alfa_ml.agent.checks import CheckResult, check_insight
 from alfa_ml.agent.draft import Draft, parse_llm_draft
@@ -228,6 +228,24 @@ class Agent:
             ev.add_news((event.get("news") or [])[: self.s.ml_max_news])
             plan = rule_plan(event, features, exposure)
             pre = score_exposure(exposure, event, role)
+            learned: dict[str, Any] | None = None
+            if exposure.items and ranker2.available():
+                try:
+                    x = ranker2.pair_features(features, event, exposure, pre["score"])
+                    prob, contrib = ranker2.predict(x)
+                    concept = semantic.top_concept(features, event)
+                    learned = {
+                        "name": ranker2.NAME,
+                        "score": round(prob, 4),
+                        "threshold": ranker2.threshold(),
+                        "top_features": ranker2.explain(contrib),
+                        "concept": {"name": concept[0], "similarity": round(concept[1], 3)}
+                        if concept
+                        else None,
+                    }
+                    ev.learned = learned
+                except Exception as exc:  # the learned ranker is an improvement, never a point of failure
+                    log.warning("ranker2_failed", error=str(exc)[:300])
             await self.step(
                 "plan",
                 "rule_plan",
@@ -238,14 +256,21 @@ class Agent:
                     "exposure": {k: round(v.value, 3) for k, v in exposure.items.items()},
                     "pre_score": pre["score"],
                     "event_screen": event.get("ml_screen"),  # ADR-ML-010: why channels were gated
+                    "learned": learned,  # ADR-ML-011: ml-ranker@2 probability and its main reasons
                 },
             )
-            if not exposure.items or pre["score"] < self.s.ml_skip_threshold:
+            relevant = (
+                learned["score"] >= learned["threshold"]
+                if learned
+                else pre["score"] >= self.s.ml_skip_threshold
+            )
+            if not exposure.items or not relevant:
                 await self.step(
                     "final",
                     "skip_not_relevant",
                     "skipped",
-                    output_preview=f"no company exposure (score {pre['score']})",
+                    output_preview=f"not relevant (rules {pre['score']}"
+                    + (f", ml-ranker@2 {learned['score']} < {learned['threshold']})" if learned else ")"),
                 )
                 return RunResult("skipped", skip_reason="not_relevant", usage=self.usage(), trace=self.trace)
             if not ev.news:

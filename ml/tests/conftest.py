@@ -5,7 +5,7 @@ import httpx
 import pytest
 
 from alfa_ml import llm as llm_mod
-from alfa_ml import tools_client
+from alfa_ml import semantic, tools_client
 from alfa_ml.config import get_settings
 from tests.fakes import LLMScript, make_backend
 
@@ -18,6 +18,9 @@ def _settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     get_settings.cache_clear()
     llm_mod._MODELS_CACHE.clear()
     llm_mod.breaker_reset()
+    semantic.set_backend(
+        None
+    )  # unit tests: rules only (the semantic layer has its own tests with a fake backend)
 
 
 @pytest.fixture
