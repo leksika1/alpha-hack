@@ -16,13 +16,14 @@ import ml_stub.main as stub
 from app.core.config import get_settings
 from app.core.pg import pg_connection
 from app.core.security import issue_run_token
+from app.domain.ports import GenerationOutcome
 from app.domain.scoring import profile_from_context, score_candidate
 from app.integrations.generators import get_generator
 from app.integrations.llm import FakeLlmProvider
 from app.main import create_app
 from app.services.analytics_run import run_analytics_ingest
 from app.services.analytics_upload import process_upload
-from app.services.generation import generate_pending
+from app.services.generation import GenerationStats, generate_one, generate_pending
 from app.services.ingest_companies import ingest_companies
 from app.services.matching import affected_companies, event_profile, load_profiles, match_events
 from app.services.metrics import snapshot_day
@@ -1011,3 +1012,34 @@ async def test_admin_manual_news_goes_through_the_pipeline(env: dict[str, Any]) 
     assert state == (False, "manual", "healthy") and raw == 2
     h = await login(c)
     assert (await c.post("/api/v1/admin/news", headers=h, json={"items": [news]})).status_code == 403
+
+
+class _SkippingGenerator:
+    name = "skip-test"
+
+    async def generate(self, request: Any) -> GenerationOutcome:
+        return GenerationOutcome(status="skipped", skip_reason="not_relevant")
+
+
+async def test_skipped_regeneration_retires_the_previous_card(env: dict[str, Any]) -> None:
+    async with pg_connection(env["url"]) as conn:
+        cand = await conn.fetchrow(
+            """SELECT cm.* FROM core.candidate_matches cm
+               JOIN core.insights i ON i.company_id = cm.company_id AND i.event_id = cm.event_id
+                    AND i.role_variant = cm.role AND (i.expires_at IS NULL OR i.expires_at > now())
+               WHERE cm.company_id = $1 AND cm.status = 'generated' ORDER BY cm.id LIMIT 1""",
+            RETAIL,
+        )
+        assert cand is not None
+        stats = GenerationStats()
+        await generate_one(conn, get_settings(), _SkippingGenerator(), cand, stats)
+        live = await conn.fetchval(
+            """SELECT count(*) FROM core.insights
+               WHERE company_id = $1 AND event_id = $2 AND role_variant = $3
+                 AND (expires_at IS NULL OR expires_at > now())""",
+            RETAIL,
+            cand["event_id"],
+            cand["role"],
+        )
+        status = await conn.fetchval("SELECT status FROM core.candidate_matches WHERE id = $1", cand["id"])
+    assert stats.skipped == 1 and status == "skipped" and live == 0
