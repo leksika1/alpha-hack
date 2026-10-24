@@ -8,7 +8,10 @@ import httpx
 
 from app.core.config import get_settings
 from app.core.pg import pg_connection
+from app.integrations.alerts import get_alert_sink
 from app.integrations.generators import get_generator
+from app.services.alerts import evaluate as evaluate_alerts
+from app.services.alerts import notify as notify_alerts
 from app.services.analytics_run import run_analytics_ingest
 from app.services.analytics_upload import process_upload
 from app.services.generation import generate_pending
@@ -105,6 +108,18 @@ async def digest_daily_task() -> int:
 async def digest_weekly_task() -> int:
     async with pg_connection() as conn:
         return await create_digests(conn, "week")
+
+
+@broker.task(task_name="alerts.check", schedule=[{"cron": get_settings().alerts_cron}])
+async def alerts_check_task() -> list[str]:
+    """Sends active operational alerts (ADR-034), each at most once per cooldown."""
+    import redis.asyncio as aioredis
+
+    settings = get_settings()
+    async with pg_connection() as conn:
+        alerts = await evaluate_alerts(conn, settings)
+    async with aioredis.from_url(settings.redis_url) as redis:
+        return await notify_alerts(alerts, get_alert_sink(settings), redis, settings.alert_cooldown_min * 60)
 
 
 @broker.task(task_name="metrics.snapshot", schedule=[{"cron": get_settings().metrics_daily_cron}])

@@ -2480,6 +2480,42 @@
           }
         ]
       }
+    },
+    "/api/v1/admin/alerts": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Активные проблемы сейчас: упавшие источники, бюджет LLM, доля отклонённых инсайтов, зависшие запуски, недоступный ML. Те же условия раз в 5 минут уходят в Telegram (ALERTS_PROVIDER=telegram) или в лог",
+        "operationId": "alerts_api_v1_admin_alerts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AlertOut"
+                  },
+                  "type": "array",
+                  "title": "Response Alerts Api V1 Admin Alerts Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -2703,6 +2739,39 @@
           "processed_at"
         ],
         "title": "AdminAnalyticsDocumentOut"
+      },
+      "AlertOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "warning",
+              "critical"
+            ],
+            "title": "Severity"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "severity",
+          "title",
+          "detail"
+        ],
+        "title": "AlertOut"
       },
       "AnalyticsDocumentOut": {
         "properties": {

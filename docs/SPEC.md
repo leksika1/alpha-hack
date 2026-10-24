@@ -187,7 +187,7 @@
 
 ### 5.6 Администрирование (FR-ADM)
 
-`/admin/metrics`, `/admin/data-quality`, `/admin/sources/health`, `/admin/ingest/{news|analytics|companies}`, `/admin/insights/regenerate`, `/admin/llm-usage`, `/admin/analytics` (загрузка PDF и статусы обработки, FR-A7), `/admin/generation` и `/admin/generation/retry` (монитор генерации: очередь, зависшие запуски, повтор упавших).
+`/admin/metrics`, `/admin/data-quality`, `/admin/sources/health`, `/admin/ingest/{news|analytics|companies}`, `/admin/insights/regenerate`, `/admin/llm-usage`, `/admin/analytics` (загрузка PDF и статусы обработки, FR-A7), `/admin/generation` и `/admin/generation/retry` (монитор генерации: очередь, зависшие запуски, повтор упавших), `/admin/alerts` и периодические алерты в Telegram или лог (ADR-034).
 
 ---
 

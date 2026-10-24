@@ -113,6 +113,15 @@ class Settings(BaseSettings):
     qa_history_messages: int = 6  # previous messages of the thread passed to the agent
     qa_timeout_s: float = 90.0
 
+    # Operational alerts (ADR-034): log, or a Telegram chat through a bot
+    alerts_provider: Literal["log", "telegram"] = "log"
+    alerts_label: str = ""  # shown in every message, e.g. prod / dev (default: APP_ENV)
+    alerts_cron: str = "*/5 * * * *"
+    alert_cooldown_min: int = 60  # the same condition is sent again only after this
+    alert_reject_ratio: float = 0.5  # share of rejected insights in the last hour
+    telegram_bot_token: SecretStr | None = None
+    telegram_chat_id: str | None = None
+
     # Rate limits (Redis token bucket per caller)
     rate_limit_enabled: bool = True
     rate_limit_public_per_min: int = 120

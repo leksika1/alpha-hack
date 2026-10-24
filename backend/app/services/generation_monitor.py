@@ -35,7 +35,7 @@ async def _queue_length(settings: Settings) -> int | None:
         return None
 
 
-async def _ml_status(settings: Settings) -> str:
+async def ml_status(settings: Settings) -> str:
     if settings.insight_generator != "remote":
         return "not-used"
     try:
@@ -72,7 +72,7 @@ async def overview(conn: Any, settings: Settings) -> dict[str, Any]:
     )
     return {
         "generator": settings.insight_generator,
-        "ml_service": await _ml_status(settings),
+        "ml_service": await ml_status(settings),
         "queue_length": await _queue_length(settings),
         "candidates": {state: int(counts.get(state, 0)) for state in CANDIDATE_STATES},
         "runs_24h": [
