@@ -14,6 +14,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 
+from app.domain.compliance import check_texts, strings_of
 from app.domain.contracts import CONTRACTS_DIR
 
 SOURCE_REQUIRED_KINDS = {"fact", "bank_analytics"}
@@ -72,6 +73,10 @@ def check_chat_final(final: dict[str, Any]) -> ChatCheck:
                     "detail": f"{st.get('id')}: {st.get('kind')} without valid sources",
                 }
             )
+    for finding in check_texts(strings_of(final)):  # Russian law (ADR-037)
+        result.problems.append(
+            {"code": f"compliance_{finding.code}", "detail": f"{finding.law}: {finding.fragment}"[:300]}
+        )
     disclaimers = list(final.get("disclaimers") or [])
     if not any(d.get("code") == NOT_INVESTMENT_ADVICE["code"] for d in disclaimers):
         result.final["disclaimers"] = [*disclaimers, NOT_INVESTMENT_ADVICE]

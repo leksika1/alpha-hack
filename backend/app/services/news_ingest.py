@@ -31,6 +31,7 @@ class SourceRun:
     n_items: int = 0
     n_new: int = 0
     n_duplicates: int = 0
+    n_blocked: int = 0  # ADR-037
     latency_ms: int = 0
     error: str | None = None
     health: str = "unknown"
@@ -195,6 +196,7 @@ async def _handle(
             run.n_items, stored = await process_raw(conn, src, raw_id, fetch.body, now)
             run.n_new = stored.inserted
             run.n_duplicates = stored.duplicates + stored.near_duplicates
+            run.n_blocked = stored.blocked
         except Exception as exc:  # malformed feed: keep the raw body for later re-processing
             run.outcome, run.error = "parse_error", f"{type(exc).__name__}: {exc}"[:500]
             await conn.execute(

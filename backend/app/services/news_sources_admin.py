@@ -15,6 +15,7 @@ from app.core.config import Settings
 from app.integrations.news.connectors import SourceInfo, connector_for
 from app.integrations.news.http import PoliteFetcher
 from app.integrations.news.safety import check_url_shape
+from app.services.compliance import registry_entry
 
 SAMPLE_ITEMS = 5
 CHECK_TIMEOUT_S = 15.0
@@ -52,6 +53,9 @@ async def check_feed(settings: Settings, url: str, fetcher: PoliteFetcher | None
     """Fetches the feed politely (robots.txt, public addresses only) and parses it; nothing is stored.
     ValueError for a malformed URL."""
     url = check_url_shape(url)
+    entry = registry_entry(url)
+    if entry is not None:  # ADR-037
+        return FeedCheck(False, url, "registry_source", error=f"{entry.name}: {entry.status} (реестр)")
     own = fetcher is None
     fetcher = fetcher or PoliteFetcher(
         settings.news_user_agent,
