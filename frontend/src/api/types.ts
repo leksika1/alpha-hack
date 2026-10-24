@@ -19,7 +19,6 @@ export type ProfileSection = S['ProfileSection'];
 export type ProfileUpdate = S['ProfileUpdateIn'];
 export type Graph = S['GraphOut'];
 export type GraphEdge = S['GraphEdge'];
-export type Digest = S['DigestOut'];
 export type Notification = S['NotificationOut'];
 export type Notifications = S['NotificationsOut'];
 export type CrmRequest = S['RequestOut'];
