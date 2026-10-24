@@ -126,7 +126,9 @@ async def get_counterparties(
 async def get_event(conn: Conn, scope: Scope, settings: SettingsDep, args: dict[str, Any] = Body(...)) -> Any:
     async def run() -> tuple[int, Any]:
         try:
-            ev = await svc.event(conn, str(args["event_id"]), min(int(args.get("max_chars", 3000)), 8000))
+            ev = await svc.event(
+                conn, str(args["event_id"]), min(int(args.get("max_chars", 3000)), 8000), scope.company_id
+            )
         except (KeyError, ValueError) as exc:
             raise ProblemError(422, "validation", "event_id (uuid) is required") from exc
         if ev is None:
@@ -145,7 +147,7 @@ async def search_news(
             raise ProblemError(422, "validation", "query is required")
         args["limit"] = min(int(args.get("limit", 10)), 30)
         args["max_chars"] = min(int(args.get("max_chars", 1500)), 4000)
-        return 200, {"hits": await svc.search_news(conn, args)}
+        return 200, {"hits": await svc.search_news(conn, args, scope.company_id)}
 
     return await _run_tool(conn, scope, "search_news", args, settings.tool_calls_per_run, run)
 

@@ -98,12 +98,16 @@ async def match(
         now - timedelta(days=EVENT_WINDOW_DAYS),
     )
     ev_profiles = [event_profile(e) for e in events]
+    private = {str(e["id"]): e["private_company_ids"] for e in events}  # user-sent events (ADR-038)
     records: list[tuple[Any, ...]] = []
     scored = 0
     for cid, (profile, ctx_version) in profiles.items():
         for role in sorted(roles.get(cid, set())):
             results = []
             for ev in ev_profiles:
+                only = private.get(ev.event_id)
+                if only is not None and cid not in only:
+                    continue
                 res = score_candidate(profile, ev, role, now)
                 scored += 1
                 if res.score >= min_score:

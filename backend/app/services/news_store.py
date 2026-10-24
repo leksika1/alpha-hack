@@ -23,6 +23,7 @@ from app.services.compliance import registry_entry
 log = get_logger(__name__)
 
 FIXTURE_SOURCE_ID = "fixture"
+USER_SOURCE_ID = "user"  # links and texts users send (ADR-038)
 TRACKING_PARAMS = re.compile(r"^(utm_|yclid|gclid|fbclid|from$|ref$)")
 CLUSTER_WINDOW = timedelta(hours=72)
 RECENT_LIMIT = 5000
@@ -283,6 +284,10 @@ async def store_news(
                 window.touch_event(event_id, d.published_at, sig)
             else:
                 await _join_event(conn, event_id, d, tags)
+                if source_id != USER_SOURCE_ID:  # a real source confirms it: no longer private
+                    await conn.execute(
+                        "UPDATE core.events SET private_company_ids = NULL WHERE id = $1::uuid", event_id
+                    )
                 window.touch_event(event_id, d.published_at, sig)
             await conn.execute(
                 "INSERT INTO core.event_news (event_id, news_id) VALUES ($1::uuid, $2)", event_id, news_id

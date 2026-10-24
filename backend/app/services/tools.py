@@ -9,6 +9,7 @@ from datetime import date
 from typing import Any
 
 from app.services.analytics_search import QueryEmbedder, hybrid_search
+from app.services.news_store import USER_SOURCE_ID
 
 SECTION_PREFIXES: dict[str, tuple[str, ...]] = {
     "identity": (
@@ -187,14 +188,19 @@ async def counterparties(
     }
 
 
-async def event(conn: Any, event_id: str, max_chars: int) -> dict[str, Any] | None:
+async def event(conn: Any, event_id: str, max_chars: int, company_id: str) -> dict[str, Any] | None:
     e = await conn.fetchrow("SELECT * FROM core.events WHERE id = $1::uuid", event_id)
-    if e is None:
+    only = e["private_company_ids"] if e is not None else None
+    if e is None or (only is not None and company_id not in only):
         return None
+    # A user's link or text is shown only to the agent working for that user's company (ADR-038)
     news = await conn.fetch(
         """SELECT n.* FROM core.news_items n JOIN core.event_news en ON en.news_id = n.id
-           WHERE en.event_id = $1 ORDER BY n.published_at, n.id""",
+           WHERE en.event_id = $1 AND (n.source_id <> $2 OR $3)
+           ORDER BY n.published_at, n.id""",
         e["id"],
+        USER_SOURCE_ID,
+        only is not None and company_id in only,
     )
     tags = json.loads(e["tags"])
     return {
@@ -229,14 +235,16 @@ async def event(conn: Any, event_id: str, max_chars: int) -> dict[str, Any] | No
     }
 
 
-async def search_news(conn: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
+async def search_news(conn: Any, args: dict[str, Any], company_id: str) -> list[dict[str, Any]]:
     """Phase 2: Russian full-text search with filters. Phase 4 adds vector search + RRF (hybrid)."""
     rows = await conn.fetch(
         """SELECT n.*, en.event_id,
                   ts_rank_cd(to_tsvector('russian', n.title || ' ' || coalesce(n.body, '')),
                              plainto_tsquery('russian', $1)) AS rank
            FROM core.news_items n LEFT JOIN core.event_news en ON en.news_id = n.id
-           WHERE to_tsvector('russian', n.title || ' ' || coalesce(n.body, '')) @@
+           LEFT JOIN core.events ev ON ev.id = en.event_id
+           WHERE (n.source_id <> $8 OR $9 = ANY(ev.private_company_ids))
+             AND to_tsvector('russian', n.title || ' ' || coalesce(n.body, '')) @@
                plainto_tsquery('russian', $1)
              AND ($2::timestamptz IS NULL OR n.published_at >= $2)
              AND ($3::timestamptz IS NULL OR n.published_at <= $3)
@@ -251,6 +259,8 @@ async def search_news(conn: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
         args.get("industry_tags") or [],
         args.get("countries") or [],
         int(args.get("limit", 10)),
+        USER_SOURCE_ID,
+        company_id,
     )
     max_chars = int(args.get("max_chars", 1500))
     return [

@@ -34,6 +34,7 @@
 | Профиль компании (что мы знаем, полнота) и анкета | `GET /companies/{id}/profile`, `PATCH /companies/{id}/profile` |
 | Связи компании | `GET /companies/{id}/graph` (гипотезы помечены) |
 | Дайджест | `GET /digest?company_id&period=day|week` — счётчики, топ-5, риски, возможности, следующие шаги |
+| «Прислать новость» | `POST /news/submit {company_id, url}` или `{company_id, title, text}` → показать `message`; `unavailable` — «Ресурс сейчас недоступен для просмотра» (+ `reason`); `blocked` — нарушает законодательство (+ `reason` со статьёй); `generation_queued` — инсайт придёт в ленту и уведомлением |
 | Админ: материалы аналитики | `POST /admin/analytics?file_name=x.pdf` — тело запроса сам файл (`Content-Type: application/pdf`, без multipart) → 202 со статусом `processing`; список и статусы обработки — `GET /admin/analytics` (опрашивать, пока `processing`) |
 | Админ: источники новостей | `GET /admin/sources`; перед добавлением — `POST /admin/sources/check {url}` (показать `sample` — последние новости ленты, `outcome`/`error`); `POST /admin/sources {url,name,topics}`; `PATCH /admin/sources/{id} {enabled}`; `DELETE` — только `origin=admin` |
 
