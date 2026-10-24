@@ -1,10 +1,7 @@
-// Всплывающие уведомления в стилистике Альфа-Бизнеса: светлая карточка, иконка по смыслу, плавные появление и уход.
+// Всплывающие уведомления в стилистике Альфа-Бизнеса: светлая карточка, статус-бейдж Core DS (как в ToastPlate), плавные появление и уход.
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
 import { CrossMIcon } from '@alfalab/icons-glyph/CrossMIcon';
-import { CheckmarkCircleMIcon } from '@alfalab/icons-glyph/CheckmarkCircleMIcon';
-import { ExclamationCircleMIcon } from '@alfalab/icons-glyph/ExclamationCircleMIcon';
-import { InformationCircleMIcon } from '@alfalab/icons-glyph/InformationCircleMIcon';
-import { BellMIcon } from '@alfalab/icons-glyph/BellMIcon';
+import { StatusBadge, type StatusBadgeProps } from '@alfalab/core-components/status-badge';
 import { cn } from '../lib/cn';
 
 export interface Toast {
@@ -22,12 +19,12 @@ interface ToastApi {
 
 const ToastContext = createContext<ToastApi>({ show: () => undefined });
 
-const TONE_ICON = {
-  default: { icon: InformationCircleMIcon, className: 'bg-muted text-ink-2' },
-  urgent: { icon: BellMIcon, className: 'bg-neg-bg text-accent' },
-  positive: { icon: CheckmarkCircleMIcon, className: 'bg-pos-bg text-pos' },
-  error: { icon: ExclamationCircleMIcon, className: 'bg-neg-bg text-neg' },
-} as const;
+const TONE_BADGE: Record<NonNullable<Toast['tone']>, StatusBadgeProps['view']> = {
+  default: 'neutral-information',
+  urgent: 'attention-alert',
+  positive: 'positive-checkmark',
+  error: 'negative-cross',
+};
 
 const LEAVE_MS = 220;
 let seq = 0;
@@ -58,8 +55,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div className="fixed right-6 bottom-6 z-[1000] flex w-[380px] max-w-[calc(100vw-32px)] flex-col gap-2.5" role="status" aria-live="polite">
         {items.map((t) => {
-          const tone = TONE_ICON[t.tone ?? 'default'];
-          const Icon = tone.icon;
           return (
             <div
               key={t.id}
@@ -68,11 +63,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 t.leaving ? 'motion-safe:animate-toast-out' : 'motion-safe:animate-toast-in',
               )}
             >
-              <span className={cn('inline-flex size-9 shrink-0 items-center justify-center rounded-full [&_svg]:size-5', tone.className)}>
-                <Icon />
+              {/* Бейдж и крестик — по центру первой строки заголовка: однострочное уведомление выровнено по центру. */}
+              <span className="flex h-6 shrink-0 items-center">
+                <StatusBadge view={TONE_BADGE[t.tone ?? 'default']} size={24} />
               </span>
-              <div className="min-w-0 flex-1 pt-0.5">
-                <div className="leading-snug font-semibold">{t.title}</div>
+              <div className="min-w-0 flex-1">
+                <div className="leading-6 font-semibold">{t.title}</div>
                 {t.body && <div className="mt-0.5 line-clamp-3 text-sm text-ink-2">{t.body}</div>}
                 {t.action && (
                   <button
@@ -86,7 +82,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   </button>
                 )}
               </div>
-              <button className="p-0.5 text-ink-3 transition-colors hover:text-ink" aria-label="Закрыть" onClick={() => dismiss(t.id)}>
+              <button className="flex h-6 shrink-0 items-center text-ink-3 transition-colors hover:text-ink" aria-label="Закрыть" onClick={() => dismiss(t.id)}>
                 <CrossMIcon width={18} height={18} />
               </button>
             </div>

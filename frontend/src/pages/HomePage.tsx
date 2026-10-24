@@ -14,9 +14,10 @@ import { REQUEST_STATUS, ACTION_TYPES, formatDate } from '../lib/format';
 import { Pill } from '../components/ui';
 import { cn } from '../lib/cn';
 
+// Третий элемент — нужно действие клиента: только такие счётчики красные, остальные нейтральные.
 const TASKS: [string, number, boolean][] = [
   ['Подписать и отправить', 1, true],
-  ['В работе у банка', 7, true],
+  ['В работе у банка', 7, false],
   ['Отклонённые', 4, true],
   ['Черновики', 1, false],
   ['Оплатить', 1, false],
@@ -39,11 +40,11 @@ function QuickButton({ onClick, muted = false, children }: { onClick: () => void
 
 function HeroTile({ icon, title, sub, onClick }: { icon: ReactNode; title: string; sub: string; onClick: () => void }) {
   return (
-    <button className="pressable group flex items-center gap-3 text-left text-white" onClick={onClick}>
-      <span className="inline-flex size-10 items-center justify-center rounded-xl bg-white/10 group-hover:bg-white/20">{icon}</span>
+    <button className="pressable group flex items-center gap-3 text-left" onClick={onClick}>
+      <span className="inline-flex size-10 items-center justify-center rounded-xl bg-muted transition-colors group-hover:bg-muted-2">{icon}</span>
       <span>
         {title}
-        <small className="block text-xs text-white/55">{sub}</small>
+        <small className="block text-xs text-ink-2">{sub}</small>
       </span>
     </button>
   );
@@ -74,27 +75,34 @@ export function HomePage() {
         </QuickButton>
       </div>
 
-      <section className="grid gap-3 rounded-3xl bg-black bg-[radial-gradient(45%_60%_at_80%_120%,rgba(239,49,36,0.45),transparent_70%)] p-3 text-white md:grid-cols-[1.6fr_1fr]">
-        <div className="rounded-[18px] bg-linear-160 from-[#26262a] to-[#18181b] p-5">
-          <div className="text-sm text-white/60">{companies.length > 1 ? `В ${companies.length} компаниях` : 'На счетах'}</div>
+      <section className="grid gap-4 md:grid-cols-[1.6fr_1fr]">
+        <div className="card p-6">
+          <div className="text-sm text-ink-2">{companies.length > 1 ? `В ${companies.length} компаниях` : 'На счетах'}</div>
           <div className="my-1 text-[34px] font-bold tracking-[-0.01em]">2 524 550 000,00 RUB</div>
-          <div className="text-white/60">↳ 10 800 570 344,95 RUB с овердрафтом</div>
+          <div className="text-ink-2">↳ 10 800 570 344,95 RUB с овердрафтом</div>
           <div className="mt-3 mb-5 flex items-center gap-2.5 font-medium">
             <span>4 000,00 CNY</span>
             <span>40 000,00 KZT</span>
-            <span className="rounded-lg bg-white/12 px-1.5 py-0.5 text-xs">+5</span>
+            <span className="rounded-lg bg-muted-2 px-1.5 py-0.5 text-xs">+5</span>
           </div>
-          <div className="flex gap-6 border-t border-white/10 pt-4">
+          <div className="flex gap-6 border-t border-line pt-4">
             <HeroTile icon={<ReceiptMIcon />} title="Счета" sub="2 в рублях, 2 в валюте" onClick={() => stub('Счета')} />
             <HeroTile icon={<CardMIcon />} title="Бизнес-карты" sub="Реквизиты и операции" onClick={() => stub('Бизнес-карты')} />
           </div>
         </div>
-        <div className="rounded-[18px] bg-linear-160 from-[#222225] from-45% to-[#3a1511] p-5">
-          <div className="mb-2 font-bold">Дела в работе</div>
-          {TASKS.map(([label, n, red]) => (
-            <button key={label} className="flex w-full justify-between py-[7px] text-white/92 transition-colors duration-200 hover:text-white" onClick={() => stub(label)}>
+        <div className="card px-3 py-5">
+          <div className="mb-1 px-3 text-[17px] font-bold">Дела в работе</div>
+          {TASKS.map(([label, n, attention]) => (
+            <button key={label} className="flex w-full items-center justify-between rounded-xl px-3 py-[7px] transition-colors duration-200 hover:bg-muted" onClick={() => stub(label)}>
               <span>{label}</span>
-              <span className={cn('inline-flex h-5 min-w-5 items-center justify-center rounded-[10px] text-xs', red ? 'bg-accent' : 'bg-white/12')}>{n}</span>
+              <span
+                className={cn(
+                  'inline-flex h-5 min-w-5 items-center justify-center rounded-[10px] px-1.5 text-xs font-medium',
+                  attention ? 'bg-accent text-white' : 'bg-muted-2 text-ink-2',
+                )}
+              >
+                {n}
+              </span>
             </button>
           ))}
         </div>
