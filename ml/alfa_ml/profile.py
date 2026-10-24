@@ -169,6 +169,8 @@ _FOREIGN_GEO = re.compile(
 _RU_RATE = re.compile(
     r"ключев\w*\s+ставк|денежно-кредитн|\bдкп\b|ставк\w*\s+(цб|банка россии)", re.IGNORECASE
 )
+# the headline is about a rate at all ("снизить ставку", "прогноз по средней ставке"); a market wrap is not
+_RATE_WORD = re.compile(r"\bставк\w*|\bдкп\b|\bдку\b", re.IGNORECASE)
 _FOREIGN_CB = re.compile(
     r"фрс|\bfed\b|ецб|банк англии|банк японии|центробанк\w* (турци|кита|сша|инди|япони|казахстан)|"
     r"народн\w* банк кита|турци|индии|филиппин|гонконг|hkma",
@@ -229,7 +231,7 @@ def screen_event(event: dict[str, Any]) -> dict[str, Any]:
         and not _FOREIGN_CB.search(head),
         "trade": bool(_TRADE.search(text)),
         "market": bool(_MARKET.search(text)),
-        "rate_in_title": bool(_RU_RATE.search(head)),
+        "rate_in_title": bool(_RU_RATE.search(head) or _RATE_WORD.search(head)),
         "foreign_geo": bool(_FOREIGN_GEO.search(head)),
     }
 
