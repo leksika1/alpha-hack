@@ -2296,6 +2296,190 @@
           }
         ]
       }
+    },
+    "/api/v1/admin/analytics": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Загрузить PDF аналитики (тело — файл, `Content-Type: application/pdf`): сразу виден со статусом processing, воркер извлекает текст или распознаёт сканы, режет на фрагменты и индексирует",
+        "operationId": "upload_analytics_api_v1_admin_analytics_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "file_name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 5,
+              "maxLength": 200,
+              "pattern": "(?i)^[^/\\\\]+\\.pdf$",
+              "title": "File Name"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsUploadOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          },
+          "413": {
+            "description": "Файл больше ANALYTICS_MAX_BYTES"
+          },
+          "415": {
+            "description": "Тело запроса — не application/pdf"
+          },
+          "422": {
+            "description": "Не PDF или неверное имя файла"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/pdf": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Все материалы аналитики со статусом обработки и ошибкой (пользователям видны только готовые)",
+        "operationId": "list_analytics_api_v1_admin_analytics_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminAnalyticsDocumentOut"
+                  },
+                  "title": "Response List Analytics Api V1 Admin Analytics Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/generation": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Монитор генерации: очередь, кандидаты по статусам, запуски агента за сутки (p50/p95), зависшие запуски, последние ошибки, доступность ML-сервиса",
+        "operationId": "generation_overview_api_v1_admin_generation_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationOverviewOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/generation/retry": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Повторить генерацию: закрыть зависшие запуски, вернуть упавших кандидатов в очередь и запустить",
+        "operationId": "generation_retry_api_v1_admin_generation_retry_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationRetryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationRetryOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -2419,6 +2603,107 @@
         ],
         "title": "ActionOut"
       },
+      "AdminAnalyticsDocumentOut": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
+          },
+          "origin": {
+            "type": "string",
+            "title": "Origin"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "processing | ready | failed"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "pages": {
+            "type": "integer",
+            "title": "Pages"
+          },
+          "chunks": {
+            "type": "integer",
+            "title": "Chunks"
+          },
+          "extraction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction"
+          },
+          "ocr_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocr Confidence"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "processed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processed At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "document_id",
+          "title",
+          "file_name",
+          "origin",
+          "status",
+          "error",
+          "pages",
+          "chunks",
+          "extraction",
+          "ocr_confidence",
+          "created_at",
+          "processed_at"
+        ],
+        "title": "AdminAnalyticsDocumentOut"
+      },
       "AnalyticsDocumentOut": {
         "properties": {
           "document_id": {
@@ -2504,6 +2789,63 @@
         ],
         "title": "AnalyticsDocumentOut"
       },
+      "AnalyticsUploadOut": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "processing",
+              "ready"
+            ],
+            "title": "Status"
+          },
+          "queued": {
+            "type": "boolean",
+            "title": "Queued",
+            "description": "Поставлен в очередь на обработку (false — такой файл уже загружен)"
+          },
+          "duplicate": {
+            "type": "boolean",
+            "title": "Duplicate"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "document_id",
+          "file_name",
+          "title",
+          "status",
+          "queued",
+          "duplicate",
+          "task_id"
+        ],
+        "title": "AnalyticsUploadOut"
+      },
       "BankProductOut": {
         "properties": {
           "product_id": {
@@ -2552,6 +2894,54 @@
           "source"
         ],
         "title": "BankProductOut"
+      },
+      "CandidateFailureOut": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Event Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "status_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Reason"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "company_id",
+          "event_id",
+          "role",
+          "status",
+          "status_reason",
+          "updated_at"
+        ],
+        "title": "CandidateFailureOut"
       },
       "CompanyBrief": {
         "properties": {
@@ -3108,6 +3498,185 @@
           "recorded_at"
         ],
         "title": "FeedbackOut"
+      },
+      "GenerationOverviewOut": {
+        "properties": {
+          "generator": {
+            "type": "string",
+            "title": "Generator",
+            "description": "remote (ML-сервис) | stub | fake"
+          },
+          "ml_service": {
+            "type": "string",
+            "title": "Ml Service",
+            "description": "ok | unavailable | http-NNN | not-used"
+          },
+          "queue_length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Length",
+            "description": "Задач в очереди воркера (null — Redis недоступен)"
+          },
+          "candidates": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Candidates",
+            "description": "Кандидаты (компания × событие × роль) по статусам"
+          },
+          "runs_24h": {
+            "items": {
+              "$ref": "#/components/schemas/GenerationRunsRow"
+            },
+            "type": "array",
+            "title": "Runs 24H"
+          },
+          "stuck_after_s": {
+            "type": "integer",
+            "title": "Stuck After S"
+          },
+          "stuck_runs": {
+            "items": {
+              "$ref": "#/components/schemas/StuckRunOut"
+            },
+            "type": "array",
+            "title": "Stuck Runs",
+            "description": "Запуски без результата дольше stuck_after_s"
+          },
+          "recent_failures": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateFailureOut"
+            },
+            "type": "array",
+            "title": "Recent Failures"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "generator",
+          "ml_service",
+          "queue_length",
+          "candidates",
+          "runs_24h",
+          "stuck_after_s",
+          "stuck_runs",
+          "recent_failures"
+        ],
+        "title": "GenerationOverviewOut"
+      },
+      "GenerationRetryIn": {
+        "properties": {
+          "company_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Ids",
+            "description": "null — все компании"
+          },
+          "include_rejected": {
+            "type": "boolean",
+            "title": "Include Rejected",
+            "description": "Вернуть в очередь и отклонённые валидатором",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "GenerationRetryIn"
+      },
+      "GenerationRetryOut": {
+        "properties": {
+          "stuck_closed": {
+            "type": "integer",
+            "title": "Stuck Closed"
+          },
+          "requeued": {
+            "type": "integer",
+            "title": "Requeued"
+          },
+          "companies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Companies"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "stuck_closed",
+          "requeued",
+          "companies"
+        ],
+        "title": "GenerationRetryOut"
+      },
+      "GenerationRunsRow": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "insight | qa"
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "description": "completed, rejected, skipped, failed, answered… или running"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "p50_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 S"
+          },
+          "p95_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 S"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "outcome",
+          "count",
+          "p50_s",
+          "p95_s"
+        ],
+        "title": "GenerationRunsRow"
       },
       "GraphCounterparty": {
         "properties": {
@@ -4779,6 +5348,54 @@
           "action"
         ],
         "title": "StateIn"
+      },
+      "StuckRunOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "generator": {
+            "type": "string",
+            "title": "Generator"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "company_id",
+          "event_id",
+          "generator",
+          "started_at"
+        ],
+        "title": "StuckRunOut"
       },
       "TokenOut": {
         "properties": {

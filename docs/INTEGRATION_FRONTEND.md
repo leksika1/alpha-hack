@@ -34,6 +34,7 @@
 | Профиль компании (что мы знаем, полнота) и анкета | `GET /companies/{id}/profile`, `PATCH /companies/{id}/profile` |
 | Связи компании | `GET /companies/{id}/graph` (гипотезы помечены) |
 | Дайджест | `GET /digest?company_id&period=day|week` — счётчики, топ-5, риски, возможности, следующие шаги |
+| Админ: материалы аналитики | `POST /admin/analytics?file_name=x.pdf` — тело запроса сам файл (`Content-Type: application/pdf`, без multipart) → 202 со статусом `processing`; список и статусы обработки — `GET /admin/analytics` (опрашивать, пока `processing`) |
 
 ## SSE: вопросы и уведомления
 

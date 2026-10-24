@@ -160,6 +160,7 @@
 - **FR-A4** Эмбеддинги → `vector(EMBEDDING_DIM)` (HNSW, cosine); `tsv` = `to_tsvector('russian', ...)` (GIN).
 - **FR-A5** Гибридный поиск: вектор top-k + BM25 (`ts_rank_cd`) top-k → Reciprocal Rank Fusion; фильтры по дате/тегам; ответ с цитатой, страницей, ID чанка.
 - **FR-A6** Ссылка на первоисточник: ссылка на PDF через API (токен на документ, 15 минут) + `#page=N` (ADR-033).
+- **FR-A7** Загрузка PDF администратором (`POST /admin/analytics`): файл сразу виден со статусом `processing`, воркер прогоняет тот же пайплайн FR-A1…A4; повтор того же файла — без изменений, упавший — в очередь заново.
 
 ### 5.4 Матчинг, скоринг, генерация (FR-M)
 
@@ -186,7 +187,7 @@
 
 ### 5.6 Администрирование (FR-ADM)
 
-`/admin/metrics`, `/admin/data-quality`, `/admin/sources/health`, `/admin/ingest/{news|analytics|companies}`, `/admin/insights/regenerate`, `/admin/llm-usage`.
+`/admin/metrics`, `/admin/data-quality`, `/admin/sources/health`, `/admin/ingest/{news|analytics|companies}`, `/admin/insights/regenerate`, `/admin/llm-usage`, `/admin/analytics` (загрузка PDF и статусы обработки, FR-A7), `/admin/generation` и `/admin/generation/retry` (монитор генерации: очередь, зависшие запуски, повтор упавших).
 
 ---
 

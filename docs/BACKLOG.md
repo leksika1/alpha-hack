@@ -21,10 +21,8 @@
 - [news] Метрики сбора в Prometheus из воркера (сейчас — `core.news_raw`/`core.sources`; витрина — `/admin/sources/health`, фаза 6).
 - [market] RSS курсов ЦБ (`cbr.ru/rss/RssCurrency`) — источник для `get_market_data` (ключевая ставка, курсы).
 - [news] Срочность «событие у контрагента» — по упоминанию компаний (в обезличенных данных нет наименований).
-- [analytics] Загрузка PDF через админ-API (`POST /admin/analytics`) с очередью `analytics.ingest` — фаза 6 (админка).
 - [analytics] Реранкер (cross-encoder) поверх RRF — за интерфейсом, по решению ML — ADR-024.
 - [ops] Dokploy: `api` и `worker` в общей `dokploy-network`, где имена `postgres`/`redis`/`minio` могут оказаться у
   чужого проекта; обращаться к своей инфраструктуре по уникальным алиасам проекта — ADR-032.
 - [ops] Алерты (Telegram/почта) на падение источников, исчерпание бюджета LLM и рост `generation.rejected` — RUNBOOK.
-- [api] Админ-API статусов генерации: очередь, зависшие `agent_runs`, повтор упавших запусков — фаза 8.
 
