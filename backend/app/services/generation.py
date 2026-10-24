@@ -251,6 +251,15 @@ async def generate_one(
             candidate["id"],
             outcome.skip_reason,
         )
+        # A re-generation that the agent now skips must not leave the previous card in the feed.
+        await conn.execute(
+            """UPDATE core.insights SET expires_at = now()
+               WHERE company_id = $1 AND event_id = $2 AND role_variant = $3
+                 AND (expires_at IS NULL OR expires_at > now())""",
+            company_id,
+            candidate["event_id"],
+            role.value,
+        )
         stats.skipped += 1
         return
     if outcome.status != "completed" or outcome.raw_insight is None:
