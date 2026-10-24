@@ -14,8 +14,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from app.core.logging import get_logger
 from app.domain.clustering import NewsSignature, best_event, is_near_duplicate, signature, tag_values
+from app.domain.compliance import NEWS_RULES, check_text
 from app.domain.tagging import NewsTags, normalize_text, strip_injection, tag_news
+from app.services.compliance import registry_entry
+
+log = get_logger(__name__)
 
 FIXTURE_SOURCE_ID = "fixture"
 TRACKING_PARAMS = re.compile(r"^(utm_|yclid|gclid|fbclid|from$|ref$)")
@@ -40,9 +45,19 @@ class StoreResult:
     inserted: int = 0
     duplicates: int = 0
     near_duplicates: int = 0
+    blocked: int = 0  # violate Russian law or come from a registry site (ADR-037): not stored
     event_ids: list[str] = field(default_factory=list)
     new_event_ids: list[str] = field(default_factory=list)
     urgent_event_ids: list[str] = field(default_factory=list)
+
+
+def blocked_reason(draft: NewsDraft) -> str | None:
+    """Why a news item must not reach users (ADR-037), or None."""
+    entry = registry_entry(draft.url)
+    if entry is not None:
+        return f"registry_source: {entry.name} ({entry.status})"
+    findings = check_text(draft.title + "\n" + draft.body, NEWS_RULES)
+    return f"{findings[0].code}: {findings[0].fragment}" if findings else None
 
 
 def canonical_url(url: str) -> str:
@@ -221,6 +236,11 @@ async def store_news(
             )
             if dup:
                 result.duplicates += 1
+                continue
+            blocked = blocked_reason(d)
+            if blocked is not None:
+                result.blocked += 1
+                log.warning("news_blocked_compliance", source_id=source_id, url=d.url, reason=blocked)
                 continue
             tags = tag_news(d.title, d.body)
             summary = _summary(d)

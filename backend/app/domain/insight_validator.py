@@ -12,6 +12,7 @@ from typing import Any
 from jsonschema import Draft202012Validator, FormatChecker
 from pydantic import ValidationError
 
+from app.domain.compliance import check_texts, strings_of
 from app.domain.contracts import CONTRACTS_DIR
 from app.domain.contracts.insight import NOT_INVESTMENT_ADVICE, Insight, StatementKind
 from app.domain.impact import level_for_score
@@ -140,6 +141,8 @@ def validate_insight(payload: dict[str, Any], ctx: ValidationContext) -> Validat
                 f"score {insight.impact.score} -> {expected.value}, got {insight.impact.level.value}",
             )
         )
+    for finding in check_texts(strings_of(payload)):  # Russian law (ADR-037)
+        problems.append(Problem(f"compliance_{finding.code}", f"{finding.law}: {finding.fragment}"))
     for action in insight.actions:
         if action.product_id and action.product_id not in ctx.known_products:
             problems.append(Problem("unknown_product", action.product_id))
