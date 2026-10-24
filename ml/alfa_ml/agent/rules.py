@@ -209,6 +209,12 @@ def _commodity_label(items: list[str]) -> str:
     return ", ".join(COMMODITY_LABELS.get(c, c) for c in items)
 
 
+def _demand_signal(ev: Evidence) -> bool:
+    """Large purchases / interventions on the company's market: support for prices, not a cost."""
+    text = _event_text(ev).lower()
+    return any(k in text for k in ("госзакуп", "закупки зерна", "интервенц", "рост спроса"))
+
+
 def _affected_counterparties(ev: Evidence) -> list[dict[str, Any]]:
     """Known counterparties whose industry the event touches (second-order effect)."""
     if not ev.counterparties:
@@ -769,8 +775,12 @@ def _consequences(w: _Writer, news_refs: list[str]) -> str:
                 ["спрос клиентов", "действия конкурентов"],
                 basis,
             )
-        elif up:
-            w.head("условия в отрасли компании улучшаются")
+        elif up or _demand_signal(ev):
+            w.head(
+                "условия в отрасли компании улучшаются"
+                if up
+                else f"дополнительный спрос поддержит цены на {comm_label}"
+            )
             w.opp(
                 "Улучшение условий в отрасли поддержит спрос и цены на продукцию компании.",
                 "quarters",
@@ -869,6 +879,15 @@ def _consequences(w: _Writer, news_refs: list[str]) -> str:
                     ["динамика цен"],
                     basis,
                 )
+        elif seller and _demand_signal(ev):
+            w.head(f"дополнительный спрос поддержит цены на {comm_label}")
+            w.opp(
+                f"Крупные закупки на рынке поддерживают цены на {comm_label}: выручка и маржа компании выигрывают.",
+                "months",
+                ["цены на бирже", "объём закупок"],
+                basis,
+                0.55,
+            )
         else:
             w.risk(
                 "Изменения в отрасли могут повлиять на спрос и условия работы компании.",

@@ -307,3 +307,37 @@ async def test_cheap_import_is_pressure_for_seller_and_saving_for_buyer(backend,
             r.insight, context_for(r.insight["company_id"])["features"], CHUNKS, PRODUCT_IDS
         )  # type: ignore[index]
         assert problems == []
+
+
+def test_normalize_event_fx_direction_and_mortgage_tags() -> None:
+    from alfa_ml.profile import normalize_event
+
+    ev = {"event_type": "fx", "direction": "up", "title": "Рубль в пятницу вырос в паре с юанем", "tags": {}}
+    assert normalize_event(ev)["direction"] == "down"  # the yuan went down
+    assert ev["direction"] == "up"  # the backend's event is not mutated
+    weak = {"event_type": "fx", "direction": "down", "title": "Рубль ослаб к доллару", "tags": {}}
+    assert normalize_event(weak)["direction"] == "up"
+    yuan = {"event_type": "fx", "direction": "up", "title": "Курс юаня резко вырос", "tags": {}}
+    assert normalize_event(yuan)["direction"] == "up"
+    mort = {
+        "event_type": "industry",
+        "title": "Льготную ИТ-ипотеку могут завершить",
+        "tags": {"industry_tags": ["it"]},
+    }
+    assert {"developer", "construction"} <= set(normalize_event(mort)["tags"]["industry_tags"])
+
+
+def test_currency_match_counts_only_for_fx_stories() -> None:
+    from alfa_ml.profile import compute_exposure
+
+    feats = {
+        "fts_countries": {"value": ["ИТАЛИЯ"], "source": "csv"},
+        "industry_tags": {"value": ["agriculture"], "source": "csv"},
+    }
+    story = {
+        "event_type": "industry",
+        "tags": {"industry_tags": ["real_estate"], "countries": ["ГЕРМАНИЯ"], "currencies": ["EUR"]},
+    }
+    assert "fx_country" not in compute_exposure(feats, story, "U_1").items
+    fx = {"event_type": "fx", "tags": {"currencies": ["EUR"]}}
+    assert "fx_country" in compute_exposure(feats, fx, "U_1").items
