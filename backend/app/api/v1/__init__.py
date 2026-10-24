@@ -12,6 +12,7 @@ from app.api.v1 import (
     engagement,
     feed,
     insights,
+    news_submit,
     notifications,
     qa,
 )
@@ -22,6 +23,7 @@ router.include_router(companies.router)
 router.include_router(feed.router)
 router.include_router(insights.router)
 router.include_router(catalog.router)
+router.include_router(news_submit.router)
 router.include_router(analytics.router)
 router.include_router(qa.router)
 router.include_router(notifications.router)

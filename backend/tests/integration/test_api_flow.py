@@ -833,6 +833,95 @@ async def test_admin_manages_news_sources(env: dict[str, Any], monkeypatch: pyte
         await sync_sources(conn, catalog, False, fixture)
 
 
+ARTICLE = """<html><head><meta property="og:title" content="Металлурги подняли цены на арматуру и прокат">
+<meta property="og:site_name" content="Металл Инфо"></head><body><article>
+<p>Крупнейшие металлургические комбинаты подняли отпускные цены на арматуру и сортовой прокат на 8%.</p>
+<p>Металлотрейдеры ожидают дефицита стали до конца квартала: строительный спрос растёт, запасы снижаются.</p>
+</article></body></html>"""
+
+
+async def test_user_sends_link_or_text_and_gets_an_insight_for_their_company(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.integrations.news.http import PoliteFetcher
+    from app.services import news_submit
+    from app.services.tools import search_news
+
+    pages = {"/steel": (200, ARTICLE), "/down": (503, "unavailable"), "/feed.xml": (200, RSS.decode())}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        code, body = pages.get(request.url.path, (404, "not found"))
+        return httpx.Response(code, text=body)
+
+    def fake_fetcher(*args: Any, **kwargs: Any) -> PoliteFetcher:
+        return PoliteFetcher("test", min_interval_s=0, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(news_submit, "PoliteFetcher", fake_fetcher)
+    c = env["client"]
+    h = await login(c)
+    url = "/api/v1/news/submit"
+
+    before = len(env["stats"])
+    sent = await c.post(url, headers=h, json={"company_id": METALS, "url": "https://metal.example.com/steel"})
+    body = sent.json()
+    assert sent.status_code == 200 and body["status"] == "processed", body
+    assert body["relevant"] and body["generation_queued"] and len(env["stats"]) == before + 1
+    async with pg_connection(
+        env["url"]
+    ) as conn:  # private to the sender's company until a real source has it
+        private = await conn.fetchval(
+            "SELECT private_company_ids FROM core.events WHERE id = $1", uuid.UUID(body["event_id"])
+        )
+        assert private == [METALS]
+        others = await conn.fetchval(
+            "SELECT count(*) FROM core.candidate_matches WHERE event_id = $1 AND company_id <> $2",
+            uuid.UUID(body["event_id"]),
+            METALS,
+        )
+        assert others == 0
+        hits = await search_news(conn, {"query": "арматура прокат", "limit": 10}, RETAIL)
+        assert body["news_id"] not in {h["news_id"] for h in hits}
+
+    again = (
+        await c.post(url, headers=h, json={"company_id": METALS, "url": "https://metal.example.com/steel"})
+    ).json()
+    assert again["status"] == "duplicate" and again["event_id"] == body["event_id"]
+
+    down = (
+        await c.post(url, headers=h, json={"company_id": METALS, "url": "https://metal.example.com/down"})
+    ).json()
+    assert down["status"] == "unavailable" and down["message"] == "Ресурс сейчас недоступен для просмотра"
+    assert "503" in down["reason"]
+    feed_link = await c.post(
+        url, headers=h, json={"company_id": METALS, "url": "https://metal.example.com/feed.xml"}
+    )
+    assert feed_link.json()["status"] == "not_article"
+    registry = await c.post(url, headers=h, json={"company_id": METALS, "url": "https://meduza.io/news/x"})
+    assert registry.json()["status"] == "blocked"
+
+    text = {
+        "company_id": METALS,
+        "title": "Экспортёры стали теряют рынки",
+        "text": "Аналитики отмечают, что после вторжения России экспорт стали сократился, "
+        "и металлурги ищут новые рынки сбыта в Азии и на Ближнем Востоке.",
+    }
+    blocked = (await c.post(url, headers=h, json=text)).json()
+    assert blocked["status"] == "blocked" and "20.3.3" in blocked["reason"]
+    text["text"] = (
+        "Металлотрейдеры сообщают о росте закупочных цен на арматуру и листовой прокат у комбинатов на 6%; "
+        "склады пустеют."
+    )
+    plain = (await c.post(url, headers=h, json=text)).json()
+    assert plain["status"] == "processed" and plain["url"] is None
+
+    assert (await c.post(url, headers=h, json={"company_id": METALS})).status_code == 422
+    assert (
+        await c.post(url, headers=h, json={"company_id": AGRO, "url": "https://x.example.com/a"})
+    ).status_code == 403
+
+
 async def test_admin_manual_news_goes_through_the_pipeline(env: dict[str, Any]) -> None:
     c = env["client"]
     ah = await admin_headers(c)

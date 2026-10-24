@@ -41,6 +41,7 @@ Swagger `http://localhost:8000/docs`. Внутренние API для ML опи�
 | GET | `/insights/{id}/trace` | На чём основан вывод: признаки, источники, шаги агента, вызовы инструментов и LLM, скоринг, проверка |
 | POST | `/insights/{id}/state` | `open`, `hide`, `unhide`, `save`, `unsave`, `watch` |
 | POST | `/insights/{id}/feedback` | Полезно или бесполезно + причина; ответ — что сделано с отзывом |
+| POST | `/news/submit` | Прислать ссылку или текст новости для своей компании: `processed`, `duplicate`, `unavailable` («ресурс недоступен для просмотра»), `blocked`, `not_article` (ADR-038) |
 | POST | `/insights/{id}/source-click` | Ссылка на первоисточник: новость или страница PDF (через API, 15 мин) |
 | POST | `/insights/{id}/actions` | Менеджер, обратный звонок, заявка → мок-CRM |
 | **Вопросы к аналитике** | | |

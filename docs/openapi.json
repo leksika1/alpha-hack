@@ -1117,6 +1117,54 @@
         }
       }
     },
+    "/api/v1/news/submit": {
+      "post": {
+        "tags": [
+          "news"
+        ],
+        "summary": "Прислать ссылку или текст новости: обработка тем же конвейером, инсайт — для своей компании",
+        "operationId": "submit_api_v1_news_submit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewsSubmitIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsSubmitOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нет доступа к компании"
+          },
+          "422": {
+            "description": "Нужна ссылка или заголовок с текстом; неверная ссылка"
+          },
+          "429": {
+            "description": "Не больше 30 новостей в сутки"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/analytics/documents": {
       "get": {
         "tags": [
@@ -5026,6 +5074,164 @@
           "is_fixture"
         ],
         "title": "NewsOut"
+      },
+      "NewsSubmitIn": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Company Id"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "Ссылка на новость"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 5
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Или заголовок и текст"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20000,
+                "minLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "company_id"
+        ],
+        "title": "NewsSubmitIn"
+      },
+      "NewsSubmitOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "processed",
+              "duplicate",
+              "unavailable",
+              "blocked",
+              "not_article"
+            ],
+            "title": "Status",
+            "description": "processed — обработана; duplicate — уже известна; unavailable — ресурс недоступен для просмотра; blocked — нарушает законодательство РФ или из реестра; not_article — не статья"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Что показать пользователю"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Подробность: почему недоступна или заблокирована"
+          },
+          "news_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "News Id"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "relevant": {
+            "type": "boolean",
+            "title": "Relevant",
+            "description": "Событие значимо для компании"
+          },
+          "generation_queued": {
+            "type": "boolean",
+            "title": "Generation Queued",
+            "description": "Инсайт готовится — придёт в ленту и уведомлением"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "message",
+          "reason",
+          "news_id",
+          "event_id",
+          "title",
+          "url",
+          "relevant",
+          "generation_queued"
+        ],
+        "title": "NewsSubmitOut"
       },
       "NotificationOut": {
         "properties": {

@@ -280,14 +280,19 @@ async def reprocess_raw(
 
 
 async def ingest_manual(
-    conn: Any, store: ObjectStore, items: list[dict[str, Any]], now: datetime | None = None
+    conn: Any,
+    store: ObjectStore,
+    items: list[dict[str, Any]],
+    now: datetime | None = None,
+    source_id: str = MANUAL_SOURCE_ID,
+    source_name: str = "Ручной ввод (аналитики банка)",
 ) -> PollResult:
     """News submitted by hand go through the same steps as a polled feed: raw JSON to S3, parse, dedup,
     clustering, source health. The manual source is never polled itself (enabled = false)."""
     now = now or datetime.now(UTC)
-    await ensure_source(conn, MANUAL_SOURCE_ID, "Ручной ввод (аналитики банка)", "manual", None, False)
-    await conn.execute("UPDATE core.sources SET enabled = false WHERE id = $1", MANUAL_SOURCE_ID)
-    src = await conn.fetchrow("SELECT * FROM core.sources WHERE id = $1", MANUAL_SOURCE_ID)
+    await ensure_source(conn, source_id, source_name, "manual", None, False)
+    await conn.execute("UPDATE core.sources SET enabled = false WHERE id = $1", source_id)
+    src = await conn.fetchrow("SELECT * FROM core.sources WHERE id = $1", source_id)
     body = json.dumps({"items": items}, ensure_ascii=False, default=str).encode()
     fetch = FetchResult("manual", "ok", 200, body, "application/json")
     result = PollResult()
