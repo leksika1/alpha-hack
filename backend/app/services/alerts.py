@@ -1,8 +1,9 @@
 """Operational alerts (ADR-034): one periodic check of the system state instead of hooks in every pipeline.
 
-Conditions: news sources down, LLM budget nearly or fully spent, a high share of insights rejected by the
-validator in the last hour, stuck agent runs, the ML service unreachable. The scheduler task sends each
-active condition once per cooldown (a Redis key per condition); `GET /admin/alerts` shows them live.
+Conditions: most news sources down (a single one is skipped quietly), LLM budget nearly or fully spent, a
+high share of insights rejected by the validator in the last hour, stuck agent runs, the ML service
+unreachable. The scheduler task sends each active condition once per cooldown (a Redis key per condition);
+`GET /admin/alerts` shows them live.
 """
 
 from typing import Any
@@ -15,23 +16,26 @@ from app.services import generation_monitor, llm_gateway
 log = get_logger(__name__)
 
 BUDGET_WARNING_SHARE = 0.8
+SOURCES_DOWN_SHARE = 0.5
 REJECT_MIN_RUNS = 5
 
 
 async def evaluate(conn: Any, settings: Settings) -> list[Alert]:
     alerts: list[Alert] = []
-    down = await conn.fetch(
-        """SELECT id, name, last_error FROM core.sources
-           WHERE enabled AND NOT is_fixture AND health_status = 'down' ORDER BY id"""
+    # One unavailable source is skipped quietly (a foreign site may be unreachable from the server); only a
+    # mass outage — a network problem of the server — is an alert (ADR-039)
+    live = await conn.fetch(
+        "SELECT name, health_status FROM core.sources WHERE enabled AND NOT is_fixture ORDER BY priority, id"
     )
-    for s in down:
+    down = [s["name"] for s in live if s["health_status"] == "down"]
+    if live and len(down) >= SOURCES_DOWN_SHARE * len(live):
         alerts.append(
             Alert(
-                f"source-down:{s['id']}",
-                "warning",
-                f"Источник новостей недоступен: {s['name']}",
-                f"{s['last_error'] or 'нет ответа'}. Опрашивается резервный, если он есть "
-                "(/admin/sources/health).",
+                "sources-down",
+                "critical",
+                "Недоступна большая часть источников новостей",
+                f"Недоступно {len(down)} из {len(live)}: {', '.join(down[:5])}"
+                f"{' и др.' if len(down) > 5 else ''}. Проверьте сеть сервера (/admin/sources).",
             )
         )
 
