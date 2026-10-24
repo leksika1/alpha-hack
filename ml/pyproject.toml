@@ -10,6 +10,7 @@ dependencies = [
     "pydantic>=2.9",
     "jsonschema[format-nongpl]>=4.23",
     "structlog>=24.4",
+    "fastembed>=0.9,<0.10",  # ONNX embeddings + cross-encoder reranker on CPU (ADR-ML-011)
 ]
 
 [dependency-groups]
@@ -53,5 +54,5 @@ packages = ["alfa_ml"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["jsonschema.*"]
+module = ["jsonschema.*", "fastembed.*"]
 ignore_missing_imports = true

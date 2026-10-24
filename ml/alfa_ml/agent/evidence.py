@@ -70,6 +70,7 @@ class Evidence:
     group: dict[str, Any] | None = None
     products: list[dict[str, Any]] = field(default_factory=list)
     queries_done: set[str] = field(default_factory=set)
+    learned: dict[str, Any] | None = None  # ml-ranker@2 verdict (score, threshold, top features), ADR-ML-011
 
     @property
     def features(self) -> dict[str, Any]:
