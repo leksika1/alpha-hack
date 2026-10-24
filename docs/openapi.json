@@ -2604,7 +2604,7 @@
         "tags": [
           "admin"
         ],
-        "summary": "Добавить источник (RSS/Atom): сначала проверка ленты, затем опрос в очереди",
+        "summary": "Добавить источник: ссылка на ленту или на сайт (лента найдётся сама); сначала проверка, затем опрос",
         "operationId": "create_api_v1_admin_sources_post",
         "security": [
           {
@@ -2697,6 +2697,51 @@
           },
           "422": {
             "description": "Неверный URL"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/sources/discover": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Найти ленты сайта по названию (справочник известных сайтов) или по ссылке на сайт; каждая проверена",
+        "operationId": "discover_api_v1_admin_sources_discover_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoverOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          },
+          "422": {
+            "description": "Неверная ссылка"
           }
         },
         "security": [
@@ -3636,6 +3681,71 @@
         ],
         "title": "DigestOut"
       },
+      "DiscoverIn": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 2,
+            "title": "Query",
+            "examples": [
+              "BBC",
+              "vedomosti.ru",
+              "https://www.cnbc.com"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "DiscoverIn"
+      },
+      "DiscoverOut": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "name",
+              "site"
+            ],
+            "title": "Kind"
+          },
+          "blocked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked",
+            "description": "Сайт из реестра (ADR-037): не добавляется"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/FeedCandidate"
+            },
+            "type": "array",
+            "title": "Candidates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "query",
+          "kind",
+          "blocked",
+          "candidates"
+        ],
+        "title": "DiscoverOut"
+      },
       "DownloadOut": {
         "properties": {
           "document_id": {
@@ -3717,6 +3827,98 @@
           "source"
         ],
         "title": "FeatureOut"
+      },
+      "FeedCandidate": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "description": "ok | empty (не лента) | http_error | network_error (в т.ч. непубличный адрес) | robots_disallowed | too_large"
+          },
+          "status_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Code"
+          },
+          "items": {
+            "type": "integer",
+            "title": "Items"
+          },
+          "sample": {
+            "items": {
+              "$ref": "#/components/schemas/FeedSampleItem"
+            },
+            "type": "array",
+            "title": "Sample",
+            "description": "До 5 последних новостей ленты"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "Название сайта из справочника"
+          },
+          "found_by": {
+            "type": "string",
+            "title": "Found By",
+            "description": "directory — справочник; page — объявлена на странице; link — сама ссылка; guess — типовой путь (/rss, /feed)"
+          },
+          "already_added": {
+            "type": "boolean",
+            "title": "Already Added"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ok",
+          "url",
+          "outcome",
+          "status_code",
+          "items",
+          "sample",
+          "error",
+          "title",
+          "name",
+          "found_by",
+          "already_added"
+        ],
+        "title": "FeedCandidate"
       },
       "FeedCheckIn": {
         "properties": {
