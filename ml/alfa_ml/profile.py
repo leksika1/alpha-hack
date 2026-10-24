@@ -151,6 +151,7 @@ _RUSSIA = re.compile(
     r"russia|russian|ruble|rouble|moscow",
     re.IGNORECASE,
 )
+FOREIGN_FACTOR = 0.35  # a story about another country with no link to Russia or the company's trade
 _CYRILLIC = re.compile(r"[а-яё]", re.IGNORECASE)
 # market conditions of an industry (prices, tariffs, demand, shortages) — what reaches a company via counterparties;
 # a single firm's incident or expansion does not
@@ -494,7 +495,7 @@ def _apply_screen(res: "ExposureResult", event: dict[str, Any], etype: str) -> "
         for k, e in items.items():
             if k not in direct:
                 items[k] = Exposure(
-                    e.name, round(e.value * 0.5, 4), e.features, e.reason
+                    e.name, round(e.value * FOREIGN_FACTOR, 4), e.features, e.reason
                 )  # foreign-only story
     return res
 
