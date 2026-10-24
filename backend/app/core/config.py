@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Generative LLMs allowed by the case (appendix 3). Alias -> display name.
@@ -14,6 +14,16 @@ ALLOWED_LLM_MODELS: dict[str, str] = {
     "deepseek-v4.1-flash": "DeepSeek-V4.1-Flash",
     "qwen3-vl-30b-a3b-instruct": "Qwen3-VL-30B-A3B-Instruct",
     "kimi-k2.6": "Kimi-K2.6",
+}
+# The organisers' provider (not secrets; the key is LLM_API_KEY): alias -> provider model id
+DEFAULT_LLM_BASE_URL = "https://changellenge.up.railway.app/v1"
+DEFAULT_LLM_MODEL_MAP: dict[str, str] = {
+    "gemma-4-26b-a4b": "google/gemma-4-26b-a4b-it",
+    "glm-5.3-flash": "z-ai/glm-5.3-flash",
+    "qwen3.6-35b-a3b": "qwen/qwen3.6-35b-a3b",
+    "deepseek-v4.1-flash": "deepseek/deepseek-v4.1-flash",
+    "qwen3-vl-30b-a3b-instruct": "qwen/qwen3-vl-30b-a3b-instruct",
+    "kimi-k2.6": "moonshotai/kimi-k2.6",
 }
 
 
@@ -69,9 +79,10 @@ class Settings(BaseSettings):
 
     # LLM Gateway (ADR-028)
     llm_provider: Literal["openai", "fake"] = "openai"  # fake: deterministic answers, tests/e2e only
-    llm_base_url: str | None = None
-    llm_api_key: SecretStr | None = None
-    llm_model_map: dict[str, str] = Field(default_factory=dict)  # alias -> provider model id
+    llm_base_url: str | None = DEFAULT_LLM_BASE_URL
+    llm_api_key: SecretStr | None = None  # without it the gateway answers llm-not-configured
+    # alias -> provider model id; entries from the environment override the defaults one by one
+    llm_model_map: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_LLM_MODEL_MAP))
     # alias -> [RUB per 1M input tokens, RUB per 1M output tokens]; models without a price use the default
     llm_prices: dict[str, tuple[float, float]] = Field(default_factory=dict)
     llm_default_price_rub_per_1m: tuple[float, float] = (100.0, 300.0)  # conservative until tariffs are known
@@ -130,6 +141,12 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_public_per_min: int = 120
     rate_limit_internal_per_min: int = 1200
+
+    @field_validator("llm_model_map")
+    @classmethod
+    def _model_map_over_defaults(cls, value: dict[str, str]) -> dict[str, str]:
+        """An old `.env` with LLM_MODEL_MAP={} must not drop the provider ids."""
+        return {**DEFAULT_LLM_MODEL_MAP, **value}
 
 
 # Development defaults of secrets (code and docker-compose/.env.example); refused in APP_ENV=prod.

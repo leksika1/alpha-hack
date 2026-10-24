@@ -70,7 +70,7 @@ SERVICE_TOKEN=<openssl rand -hex 32>
 ML_SERVICE_TOKEN=<openssl rand -hex 32>   # такой же — в сервисе ML
 POSTGRES_PASSWORD=<openssl rand -hex 32>
 MINIO_ROOT_PASSWORD=<openssl rand -hex 32>
-# когда выданы ключи LLM (без них ML работает на правилах rules@1): LLM_BASE_URL, LLM_API_KEY, LLM_MODEL_MAP
+LLM_API_KEY=<ключ команды>           # адрес провайдера и ID моделей заданы по умолчанию; без ключа — правила rules@1
 ```
 
 **Frontend → Environment**
@@ -107,7 +107,7 @@ ML_SERVICE_TOKEN=<как у Backend>
 | Что | Настройка | После изменения |
 |---|---|---|
 | ML-сервис команды ML | `INSIGHT_GENERATOR=remote`, `ML_SERVICE_URL`, `ML_SERVICE_TOKEN` | `POST /api/v1/admin/insights/regenerate` для нужных компаний |
-| LLM организаторов | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL_MAP` (алиас → ID), `LLM_PRICES` (₽ за 1M токенов) | проверка: `make smoke-live` |
+| LLM организаторов | `LLM_API_KEY` (ключ команды). Адрес `https://changellenge.up.railway.app/v1` и ID моделей (`google/gemma-4-26b-a4b-it`, `z-ai/glm-5.3-flash`, `qwen/qwen3.6-35b-a3b`, `deepseek/deepseek-v4.1-flash`, `qwen/qwen3-vl-30b-a3b-instruct`, `moonshotai/kimi-k2.6`) заданы по умолчанию; `LLM_BASE_URL`, `LLM_MODEL_MAP` — только для замены; `LLM_PRICES` (₽ за 1M токенов) — когда будут тарифы | проверка: `make smoke-live` |
 | Модель эмбеддингов (выбирает ML) | `EMBEDDING_PROVIDER=local` + `EMBEDDING_MODEL`, или `remote` + `EMBEDDING_REMOTE_URL`; размерность 384 | `docker compose exec api python scripts/ingest.py analytics --reembed` |
 | Фронтенд | `CORS_ORIGINS` | — |
 
