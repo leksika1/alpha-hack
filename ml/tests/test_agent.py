@@ -341,3 +341,12 @@ def test_currency_match_counts_only_for_fx_stories() -> None:
     assert "fx_country" not in compute_exposure(feats, story, "U_1").items
     fx = {"event_type": "fx", "tags": {"currencies": ["EUR"]}}
     assert "fx_country" in compute_exposure(feats, fx, "U_1").items
+
+
+def test_ocr_table_rows_are_not_bank_positions() -> None:
+    from alfa_ml.agent.rules import _ocr_noise
+
+    assert _ocr_noise("TOT -1,5% факт -2,0% 2027 -1,1% 3,4 YoY 12,0")
+    assert not _ocr_noise(
+        "Если раньше мы ориентировались на ставку 13,5% на конец 2026 г., то теперь ожидаем её сохранения на 14,0%."
+    )
