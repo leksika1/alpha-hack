@@ -17,6 +17,7 @@ def _settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ML_SERVICE_TOKEN", "")
     get_settings.cache_clear()
     llm_mod._MODELS_CACHE.clear()
+    llm_mod.breaker_reset()
 
 
 @pytest.fixture
