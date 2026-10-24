@@ -11,6 +11,7 @@ from tests.fakes import (
     SPORT_EVENT,
     STEEL_CHUNK,
     STEEL_EVENT,
+    STEEL_IMPORT_DOWN_EVENT,
     LLMScript,
     context_for,
     generate_request,
@@ -264,3 +265,45 @@ async def test_budget_guard_uses_rules_for_background_events(
     res = await Agent(generate_request(RATE_EVENT["event_id"])).run()
     assert res.status == "completed" and llm_script.calls == []
     assert any(t["name"] == "llm_budget_guard" for t in res.trace)
+
+
+def test_market_side_seller_vs_buyer() -> None:
+    from alfa_ml.agent.rules import market_side
+
+    assert market_side("46.72", ["steel"]) == "seller"  # metal wholesale
+    assert market_side("24.10", ["steel"]) == "seller"  # steel mill
+    assert market_side("41.20", ["steel", "cement"]) == "buyer"  # developer
+    assert market_side("01.11", ["fertilizers"]) == "buyer"  # farm buys fertilizers
+    assert market_side("20.15", ["fertilizers"]) == "seller"
+    assert market_side("41.20", []) == "none"
+    assert market_side("46.3", ["steel"]) == "buyer"  # food wholesale is not a metal trader
+
+
+async def test_steel_price_up_is_cost_for_developer(backend) -> None:  # type: ignore[no-untyped-def]
+    res = await Agent(generate_request(STEEL_EVENT["event_id"], company_id="U_410001", allow_llm=False)).run()
+    assert res.status == "completed", res.error
+    title = res.insight["title"]  # type: ignore[index]
+    assert "закупки компании подорожают" in title
+    assert "поддержит выручку" not in title
+
+
+async def test_steel_price_up_is_opportunity_for_metal_trader(backend) -> None:  # type: ignore[no-untyped-def]
+    res = await Agent(generate_request(STEEL_EVENT["event_id"], allow_llm=False)).run()
+    assert "поддержит выручку" in res.insight["title"]  # type: ignore[index]
+
+
+async def test_cheap_import_is_pressure_for_seller_and_saving_for_buyer(backend, backend_validator) -> None:  # type: ignore[no-untyped-def]
+    seller = await Agent(generate_request(STEEL_IMPORT_DOWN_EVENT["event_id"], allow_llm=False)).run()
+    assert seller.status == "completed", seller.error
+    assert "давит на цены" in seller.insight["title"]  # type: ignore[index]
+    assert "подорожа" not in seller.insight["title"]  # type: ignore[index]
+    buyer = await Agent(
+        generate_request(STEEL_IMPORT_DOWN_EVENT["event_id"], company_id="U_410001", allow_llm=False)
+    ).run()
+    assert buyer.status == "completed", buyer.error
+    assert "подешеве" in buyer.insight["title"]  # type: ignore[index]
+    for r in (seller, buyer):
+        problems = backend_validator(
+            r.insight, context_for(r.insight["company_id"])["features"], CHUNKS, PRODUCT_IDS
+        )  # type: ignore[index]
+        assert problems == []

@@ -1,5 +1,6 @@
 """Impact scale v1 (docs/IMPACT_SCALE.md): score = 100 · exposure · magnitude · proximity, level from score."""
 
+import re
 from typing import Any
 
 from alfa_ml.profile import ExposureResult
@@ -19,6 +20,13 @@ MAGNITUDE_BY_TYPE = {
     "labor": 0.35,
     "other": 0.3,
 }
+_POLICY_CHANGE = re.compile(
+    r"(ужесточ|смягч|отмен|ввод[яиу]т|введ[её]н|повыш[еа]н|снижен|продлен|продлён).{0,60}"
+    r"(ипотек|льгот|субсиди|пошлин|сбор|налог|квот|лимит)|"
+    r"(ипотек|льгот|субсиди|пошлин|сбор|налог|квот|лимит).{0,60}"
+    r"(ужесточ|смягч|отмен|ввод[яиу]т|введ[её]н|повыш[еа]н|снижен|продлен|продлён)",
+    re.IGNORECASE,
+)
 # The model may move the deterministic score towards its own level by at most this many points.
 MAX_LLM_SHIFT = 15
 
@@ -45,6 +53,10 @@ def magnitude(event: dict[str, Any]) -> float:
     )
     if pct is not None and etype in {"commodities", "fx", "regulation_tax"}:
         m = max(m, min(0.9, 0.4 + pct / 25))
+    if etype in {"industry", "macro_stat", "other"} and _POLICY_CHANGE.search(
+        f"{event.get('title') or ''} {event.get('summary') or ''}"
+    ):
+        m = max(m, MAGNITUDE_BY_TYPE["regulation_tax"])  # a rule/subsidy change typed as an industry story
     if event.get("urgent"):
         m = max(m, 0.8)
     return m
