@@ -237,6 +237,7 @@ class Agent:
                     "plan": plan.as_dict(),
                     "exposure": {k: round(v.value, 3) for k, v in exposure.items.items()},
                     "pre_score": pre["score"],
+                    "event_screen": event.get("ml_screen"),  # ADR-ML-010: why channels were gated
                 },
             )
             if not exposure.items or pre["score"] < self.s.ml_skip_threshold:

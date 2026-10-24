@@ -13,7 +13,7 @@
 | Сторонние модели и библиотеки | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
 | Критерии кейса → где это в коде | [`docs/CRITERIA.md`](docs/CRITERIA.md) |
 | Метрики, мониторинг, деградация, бюджет | [`docs/QUALITY.md`](docs/QUALITY.md) |
-| Офлайн-оценка (ранжирование, качество инсайтов) | [`reports/eval.md`](reports/eval.md), [`reports/heldout.md`](reports/heldout.md), [`reports/real_profiles.md`](reports/real_profiles.md), [`reports/real_analytics.md`](reports/real_analytics.md) |
+| Офлайн-оценка (ранжирование, качество инсайтов) | [`reports/eval.md`](reports/eval.md), [`reports/heldout.md`](reports/heldout.md), [`reports/live_feed.md`](reports/live_feed.md), [`reports/real_profiles.md`](reports/real_profiles.md), [`reports/real_analytics.md`](reports/real_analytics.md) |
 | EDA данных организаторов для ML | [`reports/eda_ml.md`](reports/eda_ml.md) |
 
 ## Результаты офлайн-оценки (rules@1, без LLM)
@@ -30,6 +30,10 @@
 `reports/heldout.md`): доля нерелевантного 0,355 у baseline → 0,073 у ml-ranker на первом (чистом) прогоне при
 том же recall 0,94; найденные на нём общие ошибки (знак курса «рубль вырос», валюта события как связь с ВЭД,
 ипотека → застройщики) исправлены, после правок — 0,033 и recall 1,0.
+
+**Живая лента dev-стенда** (331 событие RSS × 5 компаний, `reports/live_feed.md`): до скрининга событий 74% показанного
+было нерелевантно, из них 164 карточки с уровнем «высокое/критическое»; после ADR-ML-010 — 41% и 9, все важные
+события остаются в ленте. Это честная цифра для «грязного» потока; основные остаточные причины — теги бэкенда.
 
 Инсайты: 100% проходят валидатор бэкенда, 100% утверждений со ссылкой на источник, 100% с гипотезами.
 На 65 реальных клиентах: медиана 3 события из 15 в ленте, 0 ошибок (`reports/real_profiles.md`).
