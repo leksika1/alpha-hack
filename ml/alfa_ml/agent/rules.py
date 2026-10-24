@@ -74,6 +74,48 @@ COMMODITY_LABELS = {
     "fish": "рыбу",
 }
 FINANCE_ROLES = {"cfo", "treasurer", "chief_accountant"}
+# OKVED prefixes of companies that SELL a commodity (producers, wholesale traders); everyone else exposed to it buys it.
+# Without this a developer would read "steel is up: good for your revenue" (feedback 24.10, P0).
+COMMODITY_SELLERS: dict[str, tuple[str, ...]] = {
+    "steel": ("24", "25", "46.72", "46.77"),
+    "nonferrous": ("24", "46.72", "46.77"),
+    "iron_ore": ("07", "46.72"),
+    "gold": ("07.29", "24.41", "46.72"),
+    "cement": ("23", "46.73"),
+    "construction_materials": ("23", "46.73"),
+    "timber": ("02", "16", "46.73"),
+    "fertilizers": ("20", "46.75"),
+    "chemicals": ("20", "46.75"),
+    "grain": ("01", "46.21"),
+    "food": ("01", "03", "10", "46.3"),
+    "fish": ("03", "10.2", "46.38"),
+    "sugar": ("10.81", "46.36"),
+    "fuel": ("06", "19", "46.71", "47.3"),
+    "oil": ("06", "09", "19", "46.71"),
+    "gas": ("06", "35.2"),
+    "coal": ("05", "46.71"),
+}
+
+
+def _okved_match(code: str, prefix: str) -> bool:
+    return code == prefix or code.startswith(prefix + ".") or (len(prefix) > 2 and code.startswith(prefix))
+
+
+def market_side(okved_code: str | None, commodities: list[str]) -> str:
+    """'seller' if the company produces or trades one of the commodities, 'buyer' otherwise, 'none' if no commodity."""
+    if not commodities:
+        return "none"
+    code = str(okved_code or "")
+    for c in commodities:
+        if any(_okved_match(code, p) for p in COMMODITY_SELLERS.get(c, ())):
+            return "seller"
+    return "buyer"
+
+
+def _plural(label: str) -> bool:
+    return " и " in label
+
+
 ROLE_ORDER = {
     "cfo": [
         "rate",
@@ -343,7 +385,10 @@ def _consequences(w: _Writer, news_refs: list[str]) -> str:
         set(tags.get("commodities") or [])
         & {str(c) for c in fv(ev.features, "sensitivities.commodity_exposure", []) or []}
     )
-    seller = "industry" in names
+    ev_comm = sorted(set(tags.get("commodities") or []))
+    side = market_side(fv(ev.features, "okved.code"), comm or ev_comm)
+    # without a commodity in the event the company "sells" what its industry sells
+    seller = side == "seller" or (side == "none" and "industry" in names)
     exporter = bool(fv(ev.features, "sensitivities.export_oriented"))
     importer = bool(fv(ev.features, "sensitivities.import_dependent")) or bool(
         fv(ev.features, "fts_countries")
@@ -388,7 +433,8 @@ def _consequences(w: _Writer, news_refs: list[str]) -> str:
                 )
         else:
             if has_debt:
-                w.head(f"{debt_label} компании не подешевеют в ближайшие кварталы")
+                verb = "не подешевеют" if _plural(debt_label) else "не подешевеет"
+                w.head(f"{debt_label} компании {verb} в ближайшие кварталы")
                 w.risk(
                     f"Стоимость обслуживания долга ({debt_label}) останется высокой ближайшие 1–2 квартала; рефинансирование под более низкую ставку откладывается.",
                     "quarters",
@@ -578,14 +624,88 @@ def _consequences(w: _Writer, news_refs: list[str]) -> str:
                 basis,
             )
         w.action("analyze", "Оценить влияние изменения на себестоимость, цены и налоговую нагрузку.")
+    elif t == "trade_logistics" and comm and down:
+        if seller:
+            w.head("дешёвый импорт давит на цены и маржу компании")
+            w.risk(
+                f"Снижение цен на импортные {comm_label} потянет вниз внутренние цены: маржа по текущим запасам сократится.",
+                "weeks",
+                ["импортные цены", "курс юаня", "пошлины"],
+                basis,
+            )
+            w.opp(
+                "Если компания сама закупает импорт, это окно для закупки по более низкой цене.",
+                "weeks",
+                ["условия поставщиков", "курс"],
+                basis,
+                0.5,
+            )
+        else:
+            w.head("закупки компании могут подешеветь")
+            w.opp(
+                f"Снижение цен на импортные {comm_label} уменьшит затраты на закупки компании.",
+                "months",
+                ["импортные цены", "курс", "логистика"],
+                basis,
+            )
+        w.action("analyze", "Сравнить текущие закупочные цены с импортными предложениями.")
+    elif t == "trade_logistics" and ev_comm and not comm and not {"fuel", "oil"} & set(ev_comm):
+        # a foreign price story about goods the company neither sells nor buys: it matters through flows
+        own = set(fv(ev.features, "industry_tags", []) or [])
+        ev_label = _commodity_label(ev_comm) or "товары"
+        if {"logistics", "trucking", "shipping", "rail", "transport"} & own:
+            w.head("объём перевозок импорта для компании может измениться")
+            w.opp(
+                f"Изменение цен на импортные {ev_label} меняет объём ввоза: у перевозчика растёт или падает грузопоток клиентов.",
+                "months",
+                ["объём импорта", "ставки перевозки", "загрузка маршрутов"],
+                basis,
+                0.5,
+            )
+        else:
+            w.head("заказы и оплаты контрагентов компании могут измениться")
+            w.risk(
+                f"Изменение цен на импортные {ev_label} отразится на выручке и закупках контрагентов компании.",
+                "months",
+                ["финансовое положение контрагентов", "импортные цены"],
+                basis + (["sk"] if "sk" in ev.all_sources() else []),
+                0.5,
+            )
+        w.action("monitor", "Следить за объёмами и оплатами клиентов из затронутой отрасли.")
     elif t == "trade_logistics":
-        w.head("поставки компании замедлятся и подорожают")
-        w.risk(
-            "Задержки и рост ставок перевозки увеличат сроки поставок и затраты на логистику.",
-            "weeks",
-            ["пропускная способность маршрутов", "ставки фрахта"],
-            basis,
-        )
+        text = _event_text(ev).lower()
+        fuel = bool({"fuel", "oil"} & set(ev_comm)) or "топлив" in text or "дизел" in text
+        delays = any(k in text for k in ("задерж", "очеред", "контрол", "границ", "пропуск", "перегруж"))
+        if fuel and up:
+            w.head("логистика компании подорожает")
+            w.risk(
+                "Рост цен на топливо увеличит тарифы перевозчиков и транспортные расходы компании.",
+                "weeks",
+                ["цены на дизель", "тарифы перевозчиков"],
+                basis,
+            )
+        elif "водител" in text:
+            w.head("перевозки для компании подорожают")
+            w.risk(
+                "Дефицит водителей поднимает ставки перевозок и увеличивает риск срыва сроков доставки.",
+                "months",
+                ["ставки перевозчиков", "доступность транспорта"],
+                basis,
+            )
+        else:
+            w.head(
+                "поставки компании замедлятся и подорожают"
+                if delays
+                else "логистика компании может подорожать"
+            )
+            w.risk(
+                "Задержки и рост ставок перевозки увеличат сроки поставок и затраты на логистику."
+                if delays
+                else "Изменения в логистике увеличат затраты на доставку и сроки поставок.",
+                "weeks",
+                ["пропускная способность маршрутов", "ставки фрахта"],
+                basis,
+            )
         if {"logistics", "trucking", "shipping", "rail"} & set(fv(ev.features, "industry_tags", []) or []):
             w.opp(
                 "Спрос на альтернативные маршруты и перевозки может вырасти.",
@@ -687,6 +807,27 @@ def _consequences(w: _Writer, news_refs: list[str]) -> str:
                 "analyze",
                 "Пересмотреть план продаж, закупок и запасов на квартал с учётом замедления спроса.",
             )
+    elif not comm and not seller:
+        # the company is reached through counterparties or a factor, not through a commodity it trades
+        if "counterparty" in names:
+            w.head("заказы и оплаты контрагентов компании могут измениться")
+            w.risk(
+                "Ухудшение условий в отрасли контрагентов может снизить объём их заказов и замедлить оплаты."
+                if not up
+                else "Изменения в отрасли контрагентов повлияют на объёмы заказов и условия расчётов.",
+                "months",
+                ["финансовое положение контрагентов", "спрос в их отрасли"],
+                basis + (["sk"] if "sk" in ev.all_sources() else []),
+            )
+        else:
+            w.risk(
+                "Изменения могут повлиять на условия работы компании.",
+                "months",
+                ["развитие ситуации"],
+                basis,
+                0.5,
+            )
+        w.action("analyze", "Проверить зависимость выручки и закупок от затронутых контрагентов.")
     else:
         if up:
             if seller:

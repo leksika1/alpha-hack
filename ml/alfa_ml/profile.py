@@ -161,6 +161,8 @@ def compute_exposure(features: dict[str, Any], event: dict[str, Any], company_id
                 "Событие касается одного из крупнейших контрагентов компании.",
             )
     match_tags = tags["industry_tags"] - MATCH_GENERIC_TAGS
+    ev_countries = {c.upper() for c in tags["countries"]} - {"РОССИЯ"}
+    fts_upper = {str(c).upper() for c in (fv(features, "fts_countries", []) or [])}
     for tag in sorted(match_tags):
         for d, who in (("in", "покупателей"), ("out", "поставщиков")):
             path = f"counterparties.industry_share_{d}.{tag}"
@@ -168,6 +170,8 @@ def compute_exposure(features: dict[str, Any], event: dict[str, Any], company_id
             strength = counterparty_strength(share) * SECOND_ORDER_DISCOUNT
             if d == "in" and etype == "commodities":
                 strength *= 0.5  # a price move of the customers' goods barely changes what they buy from you
+            if ev_countries and not ev_countries & fts_upper:
+                strength *= 0.5  # a foreign-route story reaches the company's carriers only partly
             if isinstance(share, int | float) and strength > 0:
                 res.offer(
                     "counterparty",
@@ -191,7 +195,11 @@ def compute_exposure(features: dict[str, Any], event: dict[str, Any], company_id
     trade_type = (
         etype in FX_COUNTRY_TYPES
         or (etype == "trade_logistics" and not match_tags)
-        or (etype == "trade_logistics" and bool(match_tags & (industry | _cp_tags(features))))
+        or (
+            etype == "trade_logistics"
+            # a foreign price story counts the country only with an own exposure, not via counterparties
+            and bool(match_tags & (industry if tags["commodities"] else industry | _cp_tags(features)))
+        )
     )
     if overlap_countries and trade_type:
         res.offer(
