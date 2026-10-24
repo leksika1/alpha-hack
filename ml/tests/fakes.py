@@ -93,7 +93,20 @@ RATE_EVENT = {
     "direction": "hold",
     "summary": "Совет директоров Банка России сохранил ключевую ставку 14% годовых после снижения на 50 б.п. в июле.",
 }
-EVENTS = {e["event_id"]: e for e in (RATE_EVENT, STEEL_EVENT, SPORT_EVENT)}
+STEEL_IMPORT_DOWN_EVENT = {
+    **copy.deepcopy(STEEL_EVENT),
+    "event_id": "3b6f2c0e-3d7a-4c8e-9a51-6f1d2e3a4b04",
+    "title": "Экспортёры стали из Китая снизили цены на 8%",
+    "summary": "Китайские экспортёры стального проката снизили цены поставок на 8% на фоне слабого внутреннего спроса.",
+    "event_type": "trade_logistics",
+    "direction": "down",
+}
+STEEL_IMPORT_DOWN_EVENT["tags"] = {
+    **STEEL_EVENT["tags"],
+    "countries": ["КИТАЙ"],
+    "numbers": [{"kind": "percent", "value": 8.0, "unit": "%"}],
+}
+EVENTS = {e["event_id"]: e for e in (RATE_EVENT, STEEL_EVENT, SPORT_EVENT, STEEL_IMPORT_DOWN_EVENT)}
 
 STEEL_CHUNK = {
     "chunk_id": "9a1d2b3c-4e5f-4a6b-8c7d-9e0f1a2b3c4e",
@@ -192,6 +205,12 @@ def context_for(company_id: str) -> dict[str, Any]:
         "source": "csv",
     }
     ctx["features"]["products.deposit"] = {"value": False, "source": "csv"}
+    if company_id == "U_410001":  # developer: buys steel, does not sell it
+        ctx["features"]["okved.code"]["value"] = "41.20"
+        ctx["features"]["okved.section"]["value"] = "F"
+        ctx["features"]["okved.name"]["value"] = "Строительство жилых и нежилых зданий"
+        ctx["features"]["industry_tags"]["value"] = ["construction", "developer"]
+        ctx["features"]["sensitivities.commodity_exposure"]["value"] = ["steel", "cement"]
     if company_id == "U_999999":  # cold profile: no products, no foreign trade
         for k in list(ctx["features"]):
             if k.startswith(

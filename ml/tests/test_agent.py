@@ -11,6 +11,7 @@ from tests.fakes import (
     SPORT_EVENT,
     STEEL_CHUNK,
     STEEL_EVENT,
+    STEEL_IMPORT_DOWN_EVENT,
     LLMScript,
     context_for,
     generate_request,
@@ -264,3 +265,114 @@ async def test_budget_guard_uses_rules_for_background_events(
     res = await Agent(generate_request(RATE_EVENT["event_id"])).run()
     assert res.status == "completed" and llm_script.calls == []
     assert any(t["name"] == "llm_budget_guard" for t in res.trace)
+
+
+def test_market_side_seller_vs_buyer() -> None:
+    from alfa_ml.agent.rules import market_side
+
+    assert market_side("46.72", ["steel"]) == "seller"  # metal wholesale
+    assert market_side("24.10", ["steel"]) == "seller"  # steel mill
+    assert market_side("41.20", ["steel", "cement"]) == "buyer"  # developer
+    assert market_side("01.11", ["fertilizers"]) == "buyer"  # farm buys fertilizers
+    assert market_side("20.15", ["fertilizers"]) == "seller"
+    assert market_side("41.20", []) == "none"
+    assert market_side("46.3", ["steel"]) == "buyer"  # food wholesale is not a metal trader
+
+
+async def test_steel_price_up_is_cost_for_developer(backend) -> None:  # type: ignore[no-untyped-def]
+    res = await Agent(generate_request(STEEL_EVENT["event_id"], company_id="U_410001", allow_llm=False)).run()
+    assert res.status == "completed", res.error
+    title = res.insight["title"]  # type: ignore[index]
+    assert "закупки компании подорожают" in title
+    assert "поддержит выручку" not in title
+
+
+async def test_steel_price_up_is_opportunity_for_metal_trader(backend) -> None:  # type: ignore[no-untyped-def]
+    res = await Agent(generate_request(STEEL_EVENT["event_id"], allow_llm=False)).run()
+    assert "поддержит выручку" in res.insight["title"]  # type: ignore[index]
+
+
+async def test_cheap_import_is_pressure_for_seller_and_saving_for_buyer(backend, backend_validator) -> None:  # type: ignore[no-untyped-def]
+    seller = await Agent(generate_request(STEEL_IMPORT_DOWN_EVENT["event_id"], allow_llm=False)).run()
+    assert seller.status == "completed", seller.error
+    assert "давит на цены" in seller.insight["title"]  # type: ignore[index]
+    assert "подорожа" not in seller.insight["title"]  # type: ignore[index]
+    buyer = await Agent(
+        generate_request(STEEL_IMPORT_DOWN_EVENT["event_id"], company_id="U_410001", allow_llm=False)
+    ).run()
+    assert buyer.status == "completed", buyer.error
+    assert "подешеве" in buyer.insight["title"]  # type: ignore[index]
+    for r in (seller, buyer):
+        problems = backend_validator(
+            r.insight, context_for(r.insight["company_id"])["features"], CHUNKS, PRODUCT_IDS
+        )  # type: ignore[index]
+        assert problems == []
+
+
+def test_normalize_event_fx_direction_and_mortgage_tags() -> None:
+    from alfa_ml.profile import normalize_event
+
+    ev = {"event_type": "fx", "direction": "up", "title": "Рубль в пятницу вырос в паре с юанем", "tags": {}}
+    assert normalize_event(ev)["direction"] == "down"  # the yuan went down
+    assert ev["direction"] == "up"  # the backend's event is not mutated
+    weak = {"event_type": "fx", "direction": "down", "title": "Рубль ослаб к доллару", "tags": {}}
+    assert normalize_event(weak)["direction"] == "up"
+    yuan = {"event_type": "fx", "direction": "up", "title": "Курс юаня резко вырос", "tags": {}}
+    assert normalize_event(yuan)["direction"] == "up"
+    mort = {
+        "event_type": "industry",
+        "title": "Льготную ИТ-ипотеку могут завершить",
+        "tags": {"industry_tags": ["it"]},
+    }
+    assert {"developer", "construction"} <= set(normalize_event(mort)["tags"]["industry_tags"])
+
+
+def test_currency_match_counts_only_for_fx_stories() -> None:
+    from alfa_ml.profile import compute_exposure
+
+    feats = {
+        "fts_countries": {"value": ["ИТАЛИЯ"], "source": "csv"},
+        "industry_tags": {"value": ["agriculture"], "source": "csv"},
+    }
+    story = {
+        "event_type": "industry",
+        "tags": {"industry_tags": ["real_estate"], "countries": ["ГЕРМАНИЯ"], "currencies": ["EUR"]},
+    }
+    assert "fx_country" not in compute_exposure(feats, story, "U_1").items
+    fx = {"event_type": "fx", "tags": {"currencies": ["EUR"]}}
+    assert "fx_country" in compute_exposure(feats, fx, "U_1").items
+
+
+def test_ocr_table_rows_are_not_bank_positions() -> None:
+    from alfa_ml.agent.rules import _ocr_noise
+
+    assert _ocr_noise("TOT -1,5% факт -2,0% 2027 -1,1% 3,4 YoY 12,0")
+    assert not _ocr_noise(
+        "Если раньше мы ориентировались на ставку 13,5% на конец 2026 г., то теперь ожидаем её сохранения на 14,0%."
+    )
+
+
+async def test_strong_ruble_is_a_risk_for_exporter(backend, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from tests import fakes
+
+    ev = {
+        **fakes.RATE_EVENT,
+        "event_id": "4b6f2c0e-3d7a-4c8e-9a51-6f1d2e3a4b05",
+        "title": "Рубль вырос и обновил максимум с начала августа в паре с юанем",
+        "summary": "Курс юаня опустился до 12,06 рубля.",
+        "event_type": "fx",
+        "direction": "up",
+        "tags": {**fakes.RATE_EVENT["tags"], "currencies": ["CNY"], "industry_tags": [], "commodities": []},
+    }
+    monkeypatch.setitem(fakes.EVENTS, ev["event_id"], ev)
+    orig = fakes.context_for
+
+    def exporter_ctx(cid: str) -> dict[str, Any]:
+        ctx = orig(cid)
+        ctx["features"]["sensitivities.export_oriented"] = {"value": True, "source": "derived"}
+        return ctx
+
+    monkeypatch.setattr(fakes, "context_for", exporter_ctx)
+    res = await Agent(generate_request(ev["event_id"], allow_llm=False)).run()
+    assert res.status == "completed", res.error
+    assert "выручка от экспорта снизится" in res.insight["title"]  # type: ignore[index]

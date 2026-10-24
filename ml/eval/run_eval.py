@@ -46,8 +46,9 @@ HERE = Path(__file__).resolve().parent
 NS = uuid.UUID("6f1c2b8e-0f4a-4c55-9a0e-5d3c1b2a9e10")
 
 
-def load_events(now: datetime) -> dict[str, dict[str, Any]]:
-    items = json.loads((SYN / "news" / "fixture_news.json").read_text(encoding="utf-8"))["items"]
+def load_events(now: datetime, path: Path | None = None) -> dict[str, dict[str, Any]]:
+    path = path or SYN / "news" / "fixture_news.json"
+    items = json.loads(path.read_text(encoding="utf-8"))["items"]
     clusters: dict[str, list[dict[str, Any]]] = {}
     for n in items:
         clusters.setdefault(n.get("cluster") or n["id"], []).append(n)
@@ -78,8 +79,8 @@ def load_events(now: datetime) -> dict[str, dict[str, Any]]:
                 {
                     "news_id": str(uuid.uuid5(NS, n["id"])),
                     "title": n["title"],
-                    "url": f"https://example.org/{n['id']}",
-                    "publisher": "Демо-лента",
+                    "url": n.get("url") or f"https://example.org/{n['id']}",
+                    "publisher": "Интерфакс" if n.get("url") else "Демо-лента",
                     "published_at": (now - timedelta(hours=n["age_hours"])).isoformat(),
                     "body": {"trust": "untrusted", "content": n["body"], "truncated": False, "flags": []},
                 }
@@ -178,13 +179,25 @@ async def main() -> None:
     ap.add_argument("--roles", default="cfo,ceo")
     ap.add_argument("--llm-base-url", default=None)
     ap.add_argument("--llm-token", default=None)
+    ap.add_argument("--news", default=None, help="news JSON (default: backend fixture feed)")
+    ap.add_argument("--labels", default=str(HERE / "labels.json"))
+    ap.add_argument("--data-dir", default=str(SYN), help="CSV dir (synthetic or data/raw)")
+    ap.add_argument("--report", default=str(HERE.parent / "reports" / "eval.md"))
+    ap.add_argument("--title", default="Оценка ML-сервиса (офлайн)")
+    ap.add_argument(
+        "--analytics", default=None, help="chunks JSON from eval.real_analytics (default: demo PDFs)"
+    )
     args = ap.parse_args()
     now = datetime.now(UTC)
-    labels = json.loads((HERE / "labels.json").read_text(encoding="utf-8"))
+    labels = json.loads(Path(args.labels).read_text(encoding="utf-8"))
     companies = list(labels["companies"])
-    cc = CsvCompanies(SYN)
-    events = load_events(now)
-    chunks = load_analytics()
+    cc = CsvCompanies(Path(args.data_dir))
+    events = load_events(now, Path(args.news) if args.news else None)
+    chunks = (
+        [c for d in json.loads(Path(args.analytics).read_text(encoding="utf-8")) for c in d["chunks"]]
+        if args.analytics
+        else load_analytics()
+    )
     products = [
         {
             "product_id": p["id"],
@@ -202,8 +215,8 @@ async def main() -> None:
     tools_client.TRANSPORT = transport
     if not args.llm_base_url:
         llm_mod.TRANSPORT = transport
-    out_dir = HERE / "out"
-    out_dir.mkdir(exist_ok=True)
+    out_dir = HERE / "out" / ("heldout" if args.news else "")
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     rows: list[dict[str, Any]] = []
     for role in args.roles.split(","):
@@ -304,6 +317,23 @@ async def main() -> None:
                         quant=len(ins["impact"]["quantitative"]),
                         hypotheses=sum(1 for s in ins["statements"] if s["kind"] == "hypothesis"),
                         insight_title=ins["title"],
+                        bank_docs=sorted(
+                            {
+                                c["doc_title"]
+                                for c in chunks
+                                for p in ins["bank_view"]["positions"]
+                                if c["chunk_id"] == p["analytics_chunk_id"]
+                            }
+                        ),
+                        bank_quote_ok=all(
+                            not p.get("quote")
+                            or any(
+                                p["quote"] in c["text"]
+                                for c in chunks
+                                if c["chunk_id"] == p["analytics_chunk_id"]
+                            )
+                            for p in ins["bank_view"]["positions"]
+                        ),
                         quality_issues=[i["code"] for i in q.quality],
                     )
                     (out_dir / f"{cid}_{key}_{role}.json").write_text(
@@ -311,20 +341,22 @@ async def main() -> None:
                     )
                 rows.append(row)
     (out_dir / "rows.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
-    report = render(rows, bool(args.llm_base_url))
-    (HERE.parent / "reports" / "eval.md").write_text(report, encoding="utf-8")
+    report = render(rows, bool(args.llm_base_url), args.title)
+    Path(args.report).write_text(report, encoding="utf-8")
     print(report)
 
 
-def render(rows: list[dict[str, Any]], llm: bool) -> str:
+def render(rows: list[dict[str, Any]], llm: bool, title: str = "Оценка ML-сервиса (офлайн)") -> str:
     lines = [
-        "# Оценка ML-сервиса (офлайн)",
+        f"# {title}",
         "",
         f"Сгенерировано `ml/eval/run_eval.py` · аналитик: {'LLM через Gateway' if llm else 'rules@1 (без LLM)'} · {datetime.now(UTC):%Y-%m-%d}",
         "",
     ]
     lines += [
-        "Данные: 5 демо-компаний и 15 событий демо-ленты бэкенда (синтетика, повторяет особенности реальных данных); профили собраны тем же `build_context`, что и в Tools API; разметка — `ml/eval/labels.json` (0 — нерелевантно, 1 — фон, 2 — важно).",
+        "Данные: 5 демо-компаний и 15 событий демо-ленты бэкенда (синтетика, повторяет особенности реальных данных); профили собраны тем же `build_context`, что и в Tools API; разметка — `ml/eval/labels.json` (0 — нерелевантно, 1 — фон, 2 — важно)."
+        if "Оценка ML-сервиса" in title
+        else "Отложенный набор: реальные новости и профили реальных клиентов; разметка сделана по профилям до прогона, порог показа не менялся (`ml/eval/heldout/`).",
         "",
     ]
     lines += [
@@ -346,7 +378,8 @@ def render(rows: list[dict[str, Any]], llm: bool) -> str:
                 p5.append(precision_at(ranked, gold, 5))
                 shown = [r for r in cr if r[key] > 0]
                 important = [r for r in cr if r["gold"] == 2]
-                rec.append(sum(1 for r in important if r[key] > 0) / max(1, len(important)))
+                if important:  # companies without important events do not count towards recall
+                    rec.append(sum(1 for r in important if r[key] > 0) / len(important))
                 noise.append(sum(1 for r in shown if r["gold"] == 0) / max(1, len(shown)))
             lines.append(
                 f"| {role} | {name} | {statistics.mean(nd):.3f} | {statistics.mean(p3):.3f} | {statistics.mean(p5):.3f} | {statistics.mean(rec):.3f} | {statistics.mean(noise):.3f} |"

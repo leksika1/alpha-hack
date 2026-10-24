@@ -21,7 +21,7 @@ from alfa_ml.agent.rules import rule_draft
 from alfa_ml.config import Settings, get_settings
 from alfa_ml.llm import BudgetExhausted, LLMClient, LLMError
 from alfa_ml.log import get_logger
-from alfa_ml.profile import compute_exposure
+from alfa_ml.profile import compute_exposure, normalize_event
 from alfa_ml.ranker import RANKER_NAME, score_exposure
 from alfa_ml.tools_client import Tools
 
@@ -214,6 +214,7 @@ class Agent:
             )
             context = await self.tools.timed("get_company_context", {"company_id": cid})
             event = await self.tools.timed("get_event", {"event_id": req["event_id"], "max_chars": 3000})
+            event = normalize_event(event)
             features = context.get("features") or {}
             exposure = compute_exposure(features, event, cid)
             ev = Evidence(
