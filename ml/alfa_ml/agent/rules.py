@@ -495,14 +495,6 @@ def _consequences(w: _Writer, news_refs: list[str]) -> str:
 
     if t == "fx":
         if up:
-            if importer or "fx_country" in names:
-                w.head("импорт и валютные платежи компании подорожают")
-                w.risk(
-                    "Ослабление рубля удорожит импортные закупки и платежи в валюте в рублёвом выражении.",
-                    "weeks",
-                    ["курс валюты расчётов", "условия оплаты с поставщиками"],
-                    basis,
-                )
             if exporter:
                 w.head("рублёвая выручка от экспорта вырастет")
                 w.opp(
@@ -511,7 +503,20 @@ def _consequences(w: _Writer, news_refs: list[str]) -> str:
                     ["курс валюты", "экспортные цены"],
                     basis,
                 )
+            if importer or "fx_country" in names:
+                w.head("импорт и валютные платежи компании подорожают")
+                w.risk(
+                    "Ослабление рубля удорожит импортные закупки и платежи в валюте в рублёвом выражении.",
+                    "weeks",
+                    ["курс валюты расчётов", "условия оплаты с поставщиками"],
+                    basis,
+                )
         elif down:
+            if exporter:
+                w.head("рублёвая выручка от экспорта снизится")
+                w.risk(
+                    "Укрепление рубля снизит рублёвую выручку от экспорта.", "weeks", ["курс валюты"], basis
+                )
             if importer or "fx_country" in names:
                 w.head("импорт для компании дешевеет — окно для закупок")
                 w.opp(
@@ -519,11 +524,6 @@ def _consequences(w: _Writer, news_refs: list[str]) -> str:
                     "weeks",
                     ["курс валюты расчётов"],
                     basis,
-                )
-            if exporter:
-                w.head("рублёвая выручка от экспорта снизится")
-                w.risk(
-                    "Укрепление рубля снизит рублёвую выручку от экспорта.", "weeks", ["курс валюты"], basis
                 )
         if not w.risks and not w.opportunities:
             w.risk(
