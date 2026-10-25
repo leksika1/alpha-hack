@@ -35,6 +35,10 @@ NAME = "ml-ranker@2"
 MODEL_PATH = Path(__file__).resolve().parent / "models" / "ranker2.json"
 MEMORY_PATH = MODEL_PATH.with_name("ranker2_memory.npz")
 KNN_K, KNN_EVENT_POW, KNN_COMPANY_POW = 15, 4, 2
+# The same news (or its verbatim copy) is never its own neighbour: in training a row never sees its own set, so on
+# the stand, where live events are in the memory, an exact match would inflate knn_mass (seen on 25.10: a coin
+# release scored 0.999). Neighbours with cos(event) >= KNN_SAME_EVENT are skipped everywhere.
+KNN_SAME_EVENT = 0.985
 EVENT_TYPES = (
     "monetary_policy", "fx", "sanctions", "regulation_tax", "trade_logistics", "commodities", "industry",
     "macro_stat", "labor", "company", "other",
@@ -101,7 +105,8 @@ def knn_features(
         return {"knn_rel": 0.0, "knn_imp": 0.0, "knn_mass": 0.0}
     import numpy as np
 
-    se = np.clip(mem.events @ np.asarray(ev_vec, dtype=np.float32), 0.0, None)
+    se = mem.events @ np.asarray(ev_vec, dtype=np.float32)
+    se = np.where(se >= KNN_SAME_EVENT, 0.0, np.clip(se, 0.0, None))
     sc = np.clip(mem.companies @ np.asarray(co_vec, dtype=np.float32), 0.0, None)
     w = se[mem.ev_idx] ** KNN_EVENT_POW * sc[mem.co_idx] ** KNN_COMPANY_POW
     if exclude_set is not None:

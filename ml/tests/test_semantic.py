@@ -89,9 +89,12 @@ def test_knn_memory_carries_labels_of_similar_pairs() -> None:
         events=e, companies=e[:2], ev_idx=np.array([0, 1, 2]), co_idx=np.array([0, 0, 1]),
         gold=np.array([2, 0, 1], dtype=np.int8), sets=np.array(["a", "a", "b"]),
     )  # fmt: skip
-    near = ranker2.knn_features([1.0, 0, 0, 0], [1.0, 0, 0, 0], mem)
-    assert near["knn_rel"] > 0.99 and near["knn_imp"] > 0.99
-    assert ranker2.knn_features([1.0, 0, 0, 0], [1.0, 0, 0, 0], mem, exclude_set="a")["knn_mass"] < 1e-6
+    q = [0.9, 0.436, 0.0, 0.0]  # close to event 0 (gold 2), far from event 1 (gold 0)
+    near = ranker2.knn_features(q, [1.0, 0, 0, 0], mem)
+    assert near["knn_rel"] > 0.9 and near["knn_imp"] > 0.9
+    assert ranker2.knn_features(q, [1.0, 0, 0, 0], mem, exclude_set="a")["knn_mass"] < 1e-6
+    # the same news is not its own neighbour (as in training, where a row never sees its own set)
+    assert ranker2.knn_features([1.0, 0, 0, 0], [1.0, 0, 0, 0], mem)["knn_imp"] < 1e-6
     assert ranker2.knn_features([1.0, 0], [1.0, 0], mem)["knn_mass"] == 0.0  # other embedding dimension
 
 
