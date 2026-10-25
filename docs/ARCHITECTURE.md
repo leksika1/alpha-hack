@@ -152,5 +152,6 @@ sequenceDiagram
   Эмбеддинги — `EMBEDDING_PROVIDER=local|remote` и `EMBEDDING_MODEL` (выбор ML-команды).
 - **Развёртывание** — каждая часть (бэкенд, ML, фронтенд) — свой compose и свой сервис Dokploy; связь через общую
   сеть по алиасам; автодеплой из CI после зелёных тестов (ADR-032, `docs/RUNBOOK.md`).
-- **Наблюдаемость** — JSON-логи с `request_id`/`trace_id`, `/metrics` (Prometheus: HTTP, LLM, бюджет),
+- **Наблюдаемость** — JSON-логи с `request_id`/`trace_id`, `/metrics` (Prometheus: HTTP, LLM, бюджет, сбор
+  новостей и генерация),
   `/ready`, `/api/v1/admin/*`. Эксплуатация — в `docs/RUNBOOK.md`.

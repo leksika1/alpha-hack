@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from typing import Literal
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -13,9 +13,12 @@ from sqlalchemy import text
 from app import __version__
 from app.core.config import get_settings
 from app.core.db import get_engine
+from app.core.logging import get_logger
 from app.core.s3 import all_buckets, get_s3_client
+from app.services import ops_metrics
 
 router = APIRouter(tags=["service"])
+log = get_logger(__name__)
 
 CHECK_TIMEOUT_S = 3.0
 
@@ -80,6 +83,18 @@ async def ready(response: Response) -> ReadyOut:
     return ReadyOut(status="ready" if ok else "not_ready", checks=checks)
 
 
+async def _refresh_pipeline_metrics(request: Request) -> None:
+    pool = getattr(request.app.state, "pool", None)
+    if pool is None:
+        return
+    try:
+        async with pool.acquire() as conn:
+            await asyncio.wait_for(ops_metrics.refresh(conn), timeout=CHECK_TIMEOUT_S)
+    except Exception as exc:  # the scrape still returns the process metrics and the previous gauges
+        log.warning("pipeline_metrics_failed", error=f"{type(exc).__name__}: {exc}")
+
+
 @router.get("/metrics", summary="Prometheus metrics", include_in_schema=False)
-async def metrics() -> Response:
+async def metrics(request: Request) -> Response:
+    await _refresh_pipeline_metrics(request)
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)

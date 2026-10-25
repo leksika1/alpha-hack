@@ -60,6 +60,7 @@ x-app-env: &app-env
   NEWS_LIVE_SOURCES_ENABLED: ${NEWS_LIVE_SOURCES_ENABLED:-true}
   NEWS_POLL_INTERVAL_MIN: ${NEWS_POLL_INTERVAL_MIN:-15}
   FEED_TOPIC_CAP: ${FEED_TOPIC_CAP:-2}
+  MARKET_DATA_ENABLED: ${MARKET_DATA_ENABLED:-true}
 
 x-app: &app
   build:
@@ -127,6 +128,58 @@ services:
         mc mb --ignore-existing local/analytics local/news-raw local/snapshots &&
         echo "buckets ready"
     restart: "no"
+
+  # Backups (ADR-046): a Postgres dump and a copy of the S3 buckets every BACKUP_INTERVAL_H hours into the
+  # `backups` volume, the last BACKUP_KEEP dumps are kept; BACKUP_INTERVAL_H=0 switches them off. Restore —
+  # docs/RUNBOOK.md, «Резервные копии».
+  backup-db:
+    image: pgvector/pgvector:0.8.0-pg16  # the server's pg_dump
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-alfa}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-alfa}
+      PGDATABASE: ${POSTGRES_DB:-alfa}
+      BACKUP_INTERVAL_H: ${BACKUP_INTERVAL_H:-24}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+    volumes: [backups:/backups]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mkdir -p /backups/postgres
+        while true; do
+          [ "$$BACKUP_INTERVAL_H" -gt 0 ] || exec sleep infinity
+          f="/backups/postgres/$$PGDATABASE-$$(date -u +%Y%m%dT%H%M%SZ).dump"
+          if pg_dump -Fc -f "$$f.part"; then mv "$$f.part" "$$f"; echo "backup ok $$f"
+          else rm -f "$$f.part"; echo "backup failed" >&2; fi
+          ls -1t /backups/postgres/*.dump 2>/dev/null | tail -n +$$((BACKUP_KEEP + 1)) | xargs -r rm -f
+          sleep $$((BACKUP_INTERVAL_H * 3600))
+        done
+    restart: unless-stopped
+
+  backup-s3:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z  # ships the mc client
+    depends_on:
+      minio-init: { condition: service_completed_successfully }
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      BACKUP_INTERVAL_H: ${BACKUP_INTERVAL_H:-24}
+    volumes: [backups:/backups]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mc alias set src http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" > /dev/null
+        while true; do
+          [ "$$BACKUP_INTERVAL_H" -gt 0 ] || exec sleep infinity
+          for b in analytics news-raw snapshots; do
+            if mc mirror --overwrite --quiet "src/$$b" "/backups/s3/$$b" > /dev/null; then echo "backup ok s3/$$b"
+            else echo "backup failed s3/$$b" >&2; fi
+          done
+          sleep $$((BACKUP_INTERVAL_H * 3600))
+        done
+    restart: unless-stopped
 
   migrate:
     <<: *app
@@ -197,6 +250,7 @@ networks:
 
 volumes:
   pgdata:
+  backups:
   models:
   redisdata:
   miniodata:

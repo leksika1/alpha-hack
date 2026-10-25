@@ -120,6 +120,8 @@ ML_SERVICE_TOKEN=<как у Backend>
 |---|---|
 | Жив ли сервис и его зависимости | `GET /health`, `GET /ready` |
 | HTTP, LLM, бюджет (Prometheus) | `GET /metrics`: `http_requests_total`, `llm_requests_total`, `llm_cost_rub_total`, `llm_budget_remaining_rub`, `llm_budget_exhausted_total` |
+| Сбор и генерация (Prometheus) | `GET /metrics`, считается из базы при каждом запросе: `news_sources{status}`, `news_source_last_success_age_seconds{source}`, `news_fetches_last_hour{outcome}`, `news_items_last_24h`, `events_last_24h`, `generation_candidates{status}`, `market_rate_age_days{indicator}` |
+| Ставка и курсы ЦБ | `GET /api/v1/market`; обновить сразу — `POST /api/v1/admin/market/refresh` (иначе раз в час, ADR-043) |
 | Качество и продукт | `GET /api/v1/admin/metrics` (`docs/METRICS.md`) |
 | Расход LLM | `GET /api/v1/admin/llm-usage` |
 | Источники новостей | `GET /api/v1/admin/sources/health` |
@@ -146,6 +148,8 @@ ML_SERVICE_TOKEN=<как у Backend>
 | В ленте дубли про одно решение ЦБ, карточки онлайн-трансляций или демо-новость смешана с реальной | `POST /api/v1/admin/news/cleanup?days=14` — перетегирует, склеит, снимет, разделит, перегенерирует; повторный запуск безопасен |
 | В ленте мало карточек о ставке и курсе | Так задумано: в «Все» — не больше `FEED_TOPIC_CAP` (2) карточек одной макротемы (ADR-042); `0` — без ограничения |
 | Один источник `down` (часто зарубежный) | Нормально: источник пропускается, алерта нет (ADR-039). Если недоступна половина и больше — алерт `sources-down`: проверить сеть и DNS сервера |
+| Источник вида `html` опрашивается без ошибок, но новостей 0 | Сайт сменил вёрстку: открыть страницу, найти адреса новостей и поправить `config.link_pattern` в каталоге (ADR-044) |
+| `get_market_data` отвечает 404, `/market` пуст | Данные ЦБ ещё не загружены или сайт ЦБ недоступен с сервера: `POST /api/v1/admin/market/refresh` покажет ошибку по каждому индикатору; `MARKET_DATA_ENABLED=true` |
 | Источник `down` в `/admin/sources/health` | После 3 неудачных опросов опрашивается резервный (`fallback_for`). Причина — в `last_error`; `robots_disallowed` не повторяется до правки каталога |
 | PDF аналитики `failed` | Причина — в `GET /api/v1/admin/analytics` (поле `error`). Загрузить файл заново — `POST /api/v1/admin/analytics?file_name=…` (тело — PDF). Лимиты: `ANALYTICS_MAX_BYTES`, `ANALYTICS_MAX_PAGES`. Пустой результат OCR не публикуется |
 | Поиск по аналитике не находит смысловые совпадения | `EMBEDDING_PROVIDER=fake` или модель недоступна: работает только полнотекстовая часть (`vector_rank=null`). Подключить модель (см. выше) и переиндексировать |
@@ -158,4 +162,18 @@ ML_SERVICE_TOKEN=<как у Backend>
 - **Миграция 0006** добавляет `scoring_features` и `counterparty_tags_any`. На существующей базе пересоберите
   контекст (`make ingest-companies`), иначе для старых записей используются полные признаки.
 - **Синтетика** перегенерируется детерминированно: `make synthetic`.
-- **Бэкапы** (`pg_dump` и `mc mirror` по расписанию) — `docs/ROADMAP.md`; на стенде не настроены.
+- **Справочник регионов** (ADR-045): после обновления на существующей базе — `make ingest-companies`, чтобы
+  `REGION` и `CITY` компаний привелись к одному написанию.
+
+## Резервные копии
+
+Сервисы `backup-db` и `backup-s3` (ADR-046) раз в `BACKUP_INTERVAL_H` часов (24) пишут в том `backups`:
+`postgres/<база>-<время>.dump` (последние `BACKUP_KEEP` = 7) и `s3/<бакет>/…` (копия бакетов). Результат — в логах
+сервисов (`backup ok …` / `backup failed …`). `BACKUP_INTERVAL_H=0` — выключено.
+
+- **Вынести копию с сервера** (том лежит на том же диске): `docker run --rm -v <проект>_backups:/b -v $PWD:/out
+  alpine tar czf /out/backups.tgz -C /b .`, затем скопировать архив в другое хранилище.
+- **Восстановить базу:** остановить `api`, `worker`, `scheduler`; затем
+  `docker compose exec backup-db pg_restore --clean --if-exists -d "$PGDATABASE" /backups/postgres/<файл>.dump`;
+  запустить сервисы.
+- **Восстановить файлы S3:** `docker compose exec backup-s3 mc mirror --overwrite /backups/s3/<бакет> src/<бакет>`.

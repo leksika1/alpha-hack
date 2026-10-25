@@ -1,5 +1,5 @@
 {
-  "_comment": "Каталог источников новостей (ADR-012, ADR-039): российские и зарубежные RSS. Ленты проверены сборщиком бэкенда (HTTP 200, разбор, robots.txt разрешает): российские 2026-10-22, зарубежные 2026-10-24. Источник, недоступный с сервера, просто пропускается (health down, без алерта по одному источнику). Подробности — docs/SOURCES.md. fallback_for: резервный источник опрашивается, когда основной в статусе down.",
+  "_comment": "Каталог источников новостей (ADR-012, ADR-039): российские и зарубежные RSS, страницы новостей министерств без RSS (kind html, ADR-044). Ленты проверены сборщиком бэкенда (HTTP 200, разбор, robots.txt разрешает): российские 2026-10-22, зарубежные 2026-10-24, отраслевые 2026-10-26. Источник, недоступный с сервера, просто пропускается (health down, без алерта по одному источнику). Подробности — docs/SOURCES.md. fallback_for: резервный источник опрашивается, когда основной в статусе down.",
   "sources": [
     {"id": "cbr_press", "name": "Банк России — пресс-релизы", "kind": "rss", "url": "https://www.cbr.ru/rss/RssPress", "priority": 10, "topics": ["regulator", "monetary_policy"]},
     {"id": "cbr_events", "name": "Банк России — события", "kind": "rss", "url": "https://www.cbr.ru/rss/eventrss", "priority": 15, "fallback_for": "cbr_press", "topics": ["regulator"]},
@@ -18,6 +18,15 @@
     {"id": "new_retail", "name": "New Retail", "kind": "rss", "url": "https://new-retail.ru/rss/", "priority": 45, "fallback_for": "retail_ru", "topics": ["retail"]},
     {"id": "zerno", "name": "Zerno.ru — зерновой рынок", "kind": "rss", "url": "https://www.zerno.ru/rss.xml", "priority": 30, "topics": ["agriculture"]},
     {"id": "vedomosti_business", "name": "Ведомости — Бизнес", "kind": "rss", "url": "https://www.vedomosti.ru/rss/rubric/business", "priority": 40, "topics": ["business"]},
+    {"id": "vedomosti_industry", "name": "Ведомости — Промышленность", "kind": "rss", "url": "https://www.vedomosti.ru/rss/rubric/business/industry", "priority": 35, "topics": ["industry", "metals"]},
+    {"id": "vedomosti_transport", "name": "Ведомости — Транспорт", "kind": "rss", "url": "https://www.vedomosti.ru/rss/rubric/business/transport", "priority": 35, "topics": ["logistics"]},
+    {"id": "vedomosti_energy", "name": "Ведомости — ТЭК", "kind": "rss", "url": "https://www.vedomosti.ru/rss/rubric/business/energy", "priority": 35, "topics": ["oil_gas", "energy"]},
+    {"id": "vedomosti_agriculture", "name": "Ведомости — Агропром", "kind": "rss", "url": "https://www.vedomosti.ru/rss/rubric/business/agriculture", "priority": 35, "topics": ["agriculture"]},
+    {"id": "vedomosti_realty", "name": "Ведомости — Недвижимость", "kind": "rss", "url": "https://www.vedomosti.ru/rss/rubric/realty", "priority": 40, "topics": ["construction", "realty"]},
+    {"id": "mintrans_news", "name": "Минтранс России — новости", "kind": "html", "url": "https://mintrans.gov.ru/press-center/news", "priority": 35, "topics": ["regulator", "logistics"], "config": {"link_pattern": "^/press-center/news/\\d+$", "max_items": 20}},
+    {"id": "mcx_news", "name": "Минсельхоз России — новости", "kind": "html", "url": "https://mcx.gov.ru/press-service/news/", "priority": 35, "topics": ["regulator", "agriculture"], "config": {"link_pattern": "^/press-service/news/[a-z0-9-]+/$", "max_items": 20}},
+    {"id": "minek_news", "name": "Минэкономразвития России — новости", "kind": "html", "url": "https://www.economy.gov.ru/material/news/", "priority": 35, "topics": ["regulator", "economics"], "config": {"link_pattern": "^/material/news/[a-z0-9_]+\\.html$", "max_items": 20}},
+    {"id": "fns_news", "name": "ФНС России — новости", "kind": "html", "url": "https://www.nalog.gov.ru/rn77/news/", "priority": 35, "topics": ["regulator", "tax"], "config": {"link_pattern": "^/rn77/news/activities_fts/\\d+/$", "max_items": 20}},
     {"id": "bbc_business", "name": "BBC — Business", "kind": "rss", "url": "https://feeds.bbci.co.uk/news/business/rss.xml", "priority": 50, "topics": ["world", "business"]},
     {"id": "cnbc_world", "name": "CNBC — World", "kind": "rss", "url": "https://www.cnbc.com/id/100727362/device/rss/rss.html", "priority": 50, "topics": ["world", "markets"]},
     {"id": "cnbc_economy", "name": "CNBC — Economy", "kind": "rss", "url": "https://www.cnbc.com/id/20910258/device/rss/rss.html", "priority": 50, "topics": ["world", "macro"]},

@@ -1,8 +1,8 @@
 # Источники новостей
 
 Каталог — `backend/data/reference/news_sources.json` (загружается в `core.sources` при каждом сборе).
-Только законные бесплатные способы — публичные RSS (FAQ п.35). Проверка — 2026-10-22, с машины разработки:
-HTTP-статус, валидная лента (число записей), разрешение `robots.txt` для нашего User-Agent.
+Только законные бесплатные способы — публичные RSS и открытые страницы новостей (FAQ п.35). Проверка — с машины
+разработки: HTTP-статус, валидная лента (число записей), разрешение `robots.txt` для нашего User-Agent.
 
 ## Работающие источники (в каталоге)
 
@@ -24,10 +24,30 @@ HTTP-статус, валидная лента (число записей), ра
 | `retail_ru` | Retail.ru | `https://www.retail.ru/rss/news/` | ритейл | основной |
 | `new_retail` | New Retail | `https://new-retail.ru/rss/` | ритейл | резерв для `retail_ru` |
 | `zerno` | Zerno.ru | `https://www.zerno.ru/rss.xml` | агро, зерно | основной |
+| `vedomosti_industry` | Ведомости — Промышленность | `https://www.vedomosti.ru/rss/rubric/business/industry` | промышленность, металлургия | основной |
+| `vedomosti_transport` | Ведомости — Транспорт | `https://www.vedomosti.ru/rss/rubric/business/transport` | логистика | основной |
+| `vedomosti_energy` | Ведомости — ТЭК | `https://www.vedomosti.ru/rss/rubric/business/energy` | нефтегаз, энергетика | основной |
+| `vedomosti_agriculture` | Ведомости — Агропром | `https://www.vedomosti.ru/rss/rubric/business/agriculture` | агро | основной |
+| `vedomosti_realty` | Ведомости — Недвижимость | `https://www.vedomosti.ru/rss/rubric/realty` | строительство | основной |
 | `fixture` | Демо-лента (синтетика) | `backend/data/synthetic/news/fixture_news.json` | демо | только при `NEWS_FIXTURES_ENABLED=true` |
 
 Живой прогон 2026-10-22: 11 основных лент — 200 OK, 587 новостей за один опрос, ошибок разбора нет; Интерфакс,
 Ведомости и Retail.ru поддерживают условные запросы (повторный опрос — 304 Not Modified).
+
+Отраслевые рубрики «Ведомостей» проверены 2026-10-26 сборщиком бэкенда: по 200 новостей в ленте.
+
+## Страницы новостей без RSS (ADR-044)
+
+Источник вида `html`: страница со списком новостей; новость — ссылка, чей путь подходит под `config.link_pattern`,
+дата — напечатанная рядом со ссылкой. Проверены 2026-10-26 сборщиком бэкенда (robots.txt разрешает, даты
+совпадают с вёрсткой).
+
+| id | Источник | Страница | `link_pattern` | Темы |
+|---|---|---|---|---|
+| `mintrans_news` | Минтранс России | `https://mintrans.gov.ru/press-center/news` | `^/press-center/news/\d+$` | регулятор, логистика |
+| `mcx_news` | Минсельхоз России | `https://mcx.gov.ru/press-service/news/` | `^/press-service/news/[a-z0-9-]+/$` | регулятор, агро |
+| `minek_news` | Минэкономразвития России | `https://www.economy.gov.ru/material/news/` | `^/material/news/[a-z0-9_]+\.html$` | регулятор, экономика |
+| `fns_news` | ФНС России | `https://www.nalog.gov.ru/rn77/news/` | `^/rn77/news/activities_fts/\d+/$` | регулятор, налоги |
 
 ## Зарубежные источники (ADR-039)
 
@@ -49,7 +69,7 @@ Business, Global Times, OilPrice.com, World Grain, FreightWaves, Hellenic Shippi
 | ТАСС | `tass.ru/rss/v2.xml` | 200, но `robots.txt` → 403 | по RFC 9309 4xx допускает доступ, но не берём из осторожности до явного разрешения |
 | РИА — экономика | `ria.ru/export/rss2/economy/index.xml` | 404 | заменено общей лентой `ria` (резерв) |
 | Минфин России | `minfin.gov.ru/...?rss=Y`, `/press-center/rss/` | HTML / 404 | нет RSS |
-| Минэкономразвития | `economy.gov.ru/material/news/rss/`, `/material/rss/` | 404 | нет RSS |
+| Минэкономразвития | `economy.gov.ru/material/news/rss/`, `/material/rss/` | 404 | нет RSS — собирается со страницы (`minek_news`) |
 | Металлоснабжение и сбыт | `metalinfo.ru/ru/news/rss.xml`, `/ru/rss/news.xml` | 503 | недоступен |
 | Металлторг | `metaltorg.ru/rss/` | 200, HTML | не лента |
 | Агроинвестор | `agroinvestor.ru/rss/...` | 404 / HTML | нет RSS |
@@ -57,9 +77,12 @@ Business, Global Times, OilPrice.com, World Grain, FreightWaves, Hellenic Shippi
 | Нефть и капитал | `oilcapital.ru/rss` | 200, HTML | не лента |
 | RZD-Partner | `rzd-partner.ru/rss/` | 404 | нет RSS |
 | Logirus | `logirus.ru/rss/news/` | 404 | нет RSS |
+| Гудок, Портньюс, Эксперт РА | `gudok.ru/rss/`, `portnews.ru/rss/`, `eprussia.ru/rss/` | 404 | нет RSS |
+| Нефть и капитал, AgroXXI | `oilcapital.ru/rss.xml`, `agroxxi.ru/rss.xml` | 200, страница проверки | защита от ботов |
+| Коммерсантъ — отраслевые рубрики | `kommersant.ru/rss/section-*.xml` | 200 | **`robots.txt` запрещает** |
 
-Отраслевые металлургия, логистика и нефтегаз покрываются общими деловыми лентами (тегер распознаёт отрасли
-по словарям). Публичные RSS отраслевых изданий — `docs/ROADMAP.md`.
+Отраслевые темы покрывают рубрики «Ведомостей», страницы министерств и общие деловые ленты (тегер распознаёт
+отрасли по словарям).
 
 ## Правила сбора
 
@@ -85,7 +108,8 @@ Business, Global Times, OilPrice.com, World Grain, FreightWaves, Hellenic Shippi
 
 ## Сырые данные и повторная обработка
 
-Тело ответа сохраняется в S3: `news-raw/<source>/<YYYY>/<MM>/<DD>/<HHMMSS>_<sha256[:16]>.xml`; новость ссылается
+Тело ответа сохраняется в S3: `news-raw/<source>/<YYYY>/<MM>/<DD>/<HHMMSS>_<sha256[:16]>.xml` (`.html` — для
+страниц новостей); новость ссылается
 на свою выгрузку через `news_items.raw_id`. Повторная обработка без скачивания (например, после исправления парсера
 или тегера) — `python scripts/ingest.py news --reprocess <raw_id> …`.
 

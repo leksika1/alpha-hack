@@ -89,9 +89,11 @@ docker compose exec api python scripts/demo_check.py
   связи, демо-лента новостей, демо-PDF аналитики. Все синтетические материалы помечены «ДЕМО (синтетика)».
 - **Данные организаторов** в репозиторий не входят. Положить в `data/raw/` и указать `DATA_DIR=data/raw` в `.env`
   (`docs/DATA.md`). Seed загрузит 85 тыс. компаний (~2 мин) и выберет демо-компании; PDF-сканы аналитики пройдут OCR.
-- **Новости**: 32 реальных RSS-источника — российские и зарубежные издания (`docs/SOURCES.md`), опрос каждые
-  15 минут; недоступный источник пропускается. Админ добавляет и отключает источники без деплоя. Для офлайн-демо
+- **Новости**: 41 реальный источник — RSS российских и зарубежных изданий, отраслевые рубрики и страницы новостей
+  министерств (`docs/SOURCES.md`), опрос каждые 15 минут; недоступный источник пропускается. Админ добавляет и отключает источники без деплоя. Для офлайн-демо
   есть синтетическая лента; с реальными новостями она не смешивается.
+- **Ставка и курсы ЦБ**: официальные данные Банка России раз в час — агенту (`get_market_data`) и виджету
+  (`GET /api/v1/market`).
 - **Аналитика банка**: на стенде — демо-PDF; PDF организаторов загружаются через `POST /api/v1/admin/analytics`
   или из `data/raw/analytics` (`make ingest-analytics`).
 
@@ -100,7 +102,7 @@ docker compose exec api python scripts/demo_check.py
 Бэкенд: FastAPI (`api`), Taskiq (`worker`, `scheduler`), PostgreSQL 16 + pgvector, Redis, MinIO (S3), `ml-stub`.
 ML-сервис (`ml`) и фронтенд (nginx, `frontend`) — свои compose-файлы в своих папках, корневой `docker-compose.yml`
 подключает все три. Подробно — [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), решения —
-[`docs/DECISIONS.md`](docs/DECISIONS.md) (ADR-001…042).
+[`docs/DECISIONS.md`](docs/DECISIONS.md) (ADR-001…046).
 
 ```mermaid
 flowchart LR
@@ -122,7 +124,8 @@ flowchart LR
 - **Генерация:** матчинг события с компаниями → агент ML-сервиса через Tools API и LLM Gateway →
   валидатор → инсайт.
 - **Доставка:** лента, виджет, уведомления (SSE), дайджест, вопросы (SSE), действия, метрики по CJM.
-- **Эксплуатация:** монитор генерации, алерты в Telegram, автодеплой из CI после зелёных тестов.
+- **Эксплуатация:** монитор генерации, алерты в Telegram, метрики Prometheus, резервные копии, автодеплой из CI
+  после зелёных тестов.
 
 ## Основные переменные окружения
 
@@ -138,13 +141,15 @@ flowchart LR
 | `NEWS_LIVE_SOURCES_ENABLED`, `NEWS_FIXTURES_ENABLED` | реальные RSS и синтетическая демо-лента |
 | `FEED_TOPIC_CAP` | сколько карточек одной макротемы (ставка, курс) показывать в ленте «Все» |
 | `ALERTS_PROVIDER`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | алерты в Telegram (по умолчанию — в лог) |
+| `MARKET_DATA_ENABLED` | ставка и курсы ЦБ раз в час (офлайн — `false`) |
+| `BACKUP_INTERVAL_H`, `BACKUP_KEEP` | резервные копии Postgres и S3 в том `backups` (24 ч, 7 копий; `0` — выкл.) |
 | `JWT_SECRET`, `SERVICE_TOKEN`, `ML_SERVICE_TOKEN` | секреты; с `APP_ENV=prod` dev-значения запрещены |
 
 ## Тесты и проверки
 
 | Команда | Что |
 |---|---|
-| `make check` | lint + типы + unit (359) + integration (81, testcontainers) |
+| `make check` | lint + типы + unit (396) + integration (84, testcontainers) |
 | `make e2e` | весь стек в профиле `test`, все 12 сценариев SPEC §11.2 (23 теста) — `docs/TESTING.md` |
 | `make smoke-live` | один реальный RSS и один реальный вызов LLM через Gateway (нужны ключи; вне CI) |
 

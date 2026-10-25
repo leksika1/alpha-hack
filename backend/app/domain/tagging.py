@@ -1,9 +1,9 @@
 """Baseline (rule/dictionary) news tagging — ADR-007: the ML team may replace it behind the same output.
 
 Extracts from a news text: industry tags (same vocabulary as data/reference/okved_*.csv), commodities,
-countries (spelled as in FTS data), regions (spelled as in REGION), currencies, event type, direction
-(up/down/hold), numbers (key rate), urgency reasons and prompt-injection flags. Matching is on lowercase
-word stems, so unseen news are handled the same way as fixtures (case criterion 05).
+countries (spelled as in FTS data), regions (official names, app/domain/regions.py), currencies, event type,
+direction (up/down/hold), numbers (key rate), urgency reasons and prompt-injection flags. Matching is on
+lowercase word stems, so unseen news are handled the same way as fixtures (case criterion 05).
 
 Foreign sources (ADR-039): English stems map to the same keys (industries, commodities, countries as spelled
 in FTS data, currencies, event types, direction, urgency), so an English news item matches companies exactly
@@ -13,6 +13,8 @@ like a Russian one; `language` is detected from the alphabet. Short English root
 
 import re
 from dataclasses import dataclass, field
+
+from app.domain.regions import REGION_STEMS
 
 INDUSTRY_STEMS: dict[str, tuple[str, ...]] = {
     "metals": (
@@ -136,18 +138,6 @@ COUNTRY_STEMS: dict[str, tuple[str, ...]] = {
     "ИЗРАИЛЬ": ("израил",),
     "КЫРГЫЗСТАН": ("киргиз", "кыргыз"),
     "СЕРБИЯ": ("серби",),
-}
-
-REGION_STEMS: dict[str, tuple[str, ...]] = {
-    "Москва": ("москв", "московск"),
-    "Санкт-Петербург": ("санкт-петербург", "петербург"),
-    "Свердловская область": ("свердловск", "екатеринбург"),
-    "Приморский край": ("приморь", "приморск", "владивосток"),
-    "Краснодарский край": ("краснодар", "кубан", "новороссийск"),
-    "Новосибирская область": ("новосибирск",),
-    "Республика Татарстан": ("татарстан", "казан"),
-    "Челябинская область": ("челябинск", "магнитогорск"),
-    "Ростовская область": ("ростовск", "ростов-на-дону"),
 }
 
 CURRENCY_STEMS: dict[str, tuple[str, ...]] = {

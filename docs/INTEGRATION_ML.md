@@ -24,7 +24,8 @@ ML-сервис — [`ml/`](../ml/README.md), генератор по умолч
 
 - **Tools API** (`contracts/tools-api.openapi.yaml`): контекст компании (признаки + источник + полнота), группа, контрагенты с долями и отраслями,
   гибридный поиск новостей, событие со всеми новостями, RAG по аналитике банка (цитата + страница + `chunk_id`), каталог продуктов,
-  рыночные данные (если есть), `log_step` для трейса.
+  рыночные данные (`get_market_data`: `key_rate`, `usd_rub`, `eur_rub`, `cny_rub` — официальные данные Банка России
+  с источником, ADR-043; другие индикаторы — 404 `not-available`), `log_step` для трейса.
 - **LLM Gateway** (`contracts/llm-gateway.openapi.yaml`): OpenAI-совместимый `chat/completions`, только 6 моделей из белого списка, бюджет, кэш.
 - В каждом запросе — `tools.token` (run-scoped) и `tools.run_id`. Передавайте их в `Authorization: Bearer` и `X-Run-Id`.
 

@@ -538,3 +538,26 @@ async def news_cleanup(
     if stats["companies_to_regenerate"]:
         await request.app.state.enqueue(stats["companies_to_regenerate"])
     return FeedCleanupOut(**stats)
+
+
+class MarketRefreshOut(BaseModel):
+    points: dict[str, int] = Field(description="Сколько значений получено по каждому индикатору")
+    errors: dict[str, str] = Field(description="Индикаторы, которые не удалось обновить, и причина")
+
+
+@router.post(
+    "/market/refresh",
+    response_model=MarketRefreshOut,
+    responses=ADMIN_ERRS,
+    summary="Обновить ключевую ставку и курсы Банка России сейчас (иначе — по расписанию, ADR-043)",
+)
+async def market_refresh(admin: Admin, conn: Conn, settings: SettingsDep) -> MarketRefreshOut:
+    from app.integrations.cbr import CbrClient
+    from app.services.market import refresh
+
+    client = CbrClient(settings.news_user_agent)
+    try:
+        result = await refresh(conn, client, settings.market_data_history_days)
+    finally:
+        await client.aclose()
+    return MarketRefreshOut(points=result.points, errors=result.errors)

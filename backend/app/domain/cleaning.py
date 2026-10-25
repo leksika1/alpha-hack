@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
+from app.domain.regions import normalize_city, normalize_region
+
 REVENUE_STUB_RUB = Decimal(1000)  # technical placeholder (FAQ #15) -> NULL
 LARGE_BUSINESS_RUB = Decimal(15_000_000_000)  # case: large business = group revenue > 15 bn RUB
 MID_BUSINESS_RUB = Decimal(800_000_000)  # lower bound of mid-size by revenue (ADR-016)
@@ -165,8 +167,8 @@ def clean_company_rows(
         revenue_rub=revenue,
         revenue_stub=stub,
         group_id=blank_to_none(r.get("group_id")),
-        city=blank_to_none(r.get("city")),
-        region=blank_to_none(r.get("region")),
+        city=normalize_city(blank_to_none(r.get("city"))),
+        region=normalize_region(blank_to_none(r.get("region"))),
         products=products,
         countries=countries,
         issues=issues,

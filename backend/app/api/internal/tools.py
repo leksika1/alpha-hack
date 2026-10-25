@@ -7,6 +7,7 @@ every call (including refused ones) is written to core.tool_audit_log; per-run c
 import json
 import time
 from collections.abc import Awaitable, Callable
+from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Body
@@ -14,7 +15,9 @@ from fastapi.responses import JSONResponse
 
 from app.api.deps import Conn, RunScope, Scope, SettingsDep
 from app.core.errors import ProblemError, problem_body
+from app.integrations.cbr import INDICATORS
 from app.integrations.embeddings import get_embedder
+from app.services import market
 from app.services import tools as svc
 from app.services.generation import add_step
 
@@ -74,6 +77,10 @@ def _require_same_company(scope: RunScope, company_id: str | None) -> None:
         raise ProblemError(
             403, "out-of-scope", "Company is outside the scope of this run", f"company_id={company_id}"
         )
+
+
+def _date(value: Any) -> date | None:
+    return date.fromisoformat(str(value)) if value else None
 
 
 def _not_found(what: str) -> ProblemError:
@@ -184,9 +191,20 @@ async def get_market_data(
     conn: Conn, scope: Scope, settings: SettingsDep, args: dict[str, Any] = Body(...)
 ) -> Any:
     async def run() -> tuple[int, Any]:
-        raise ProblemError(
-            404, "not-available", "No external market data source is connected", args.get("indicator")
-        )
+        indicator = str(args.get("indicator") or "")
+        try:
+            date_from, date_to = (_date(args.get(k)) for k in ("date_from", "date_to"))
+        except ValueError as exc:
+            raise ProblemError(422, "validation", "date_from and date_to are ISO dates", str(exc)) from exc
+        data = await market.series(conn, indicator, date_from, date_to)
+        if data is None:
+            raise ProblemError(
+                404,
+                "not-available",
+                "No data for this indicator",
+                f"{indicator}; available: {', '.join(INDICATORS)}",
+            )
+        return 200, data
 
     return await _run_tool(conn, scope, "get_market_data", args, settings.tool_calls_per_run, run)
 

@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     news_failures_to_down: int = 3
     news_public_hosts_only: bool = True  # SSRF guard of the collector (ADR-036)
 
+    # Bank of Russia market data: key rate and exchange rates for the agent and the widget (ADR-043)
+    market_data_enabled: bool = True  # false in e2e/offline: nothing is fetched, the tool answers 404
+    market_data_cron: str = "10 * * * *"
+    market_data_history_days: int = 400  # first load; afterwards only the last week is refreshed
+
     # Matching / generation
     match_min_score: float = 0.2
     match_max_per_company: int = 50
@@ -121,7 +126,7 @@ class Settings(BaseSettings):
     insight_ttl_days: int = 14
     tool_calls_per_run: int = 120
 
-    # Delivery (phase 6): notifications SSE, digests, questions to the analytics
+    # Delivery: notifications SSE, digests, questions to the analytics
     notifications_poll_s: float = 2.0
     notifications_stream_max_s: int = 300  # the client reconnects with Last-Event-ID
     notifications_retry_ms: int = 3000

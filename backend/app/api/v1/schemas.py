@@ -1,5 +1,6 @@
 """Public API v1 request/response models (Pydantic v2). The full insight body is the contract model."""
 
+from datetime import date as date_type
 from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -338,3 +339,25 @@ class NewsOut(_Model):
     tags: dict[str, Any]
     flags: list[str]
     is_fixture: bool
+
+
+class MarketSourceOut(_Model):
+    title: str
+    url: str | None
+
+
+class MarketIndicatorOut(_Model):
+    indicator: str = Field(description="key_rate, usd_rub, eur_rub, cny_rub")
+    title: str
+    unit: str
+    value: float
+    date: date_type = Field(description="Дата значения (курс ЦБ устанавливается на следующий день)")
+    previous_value: float | None = Field(description="Предыдущее отличающееся значение")
+    previous_date: date_type | None
+    change: float | None
+    fetched_at: datetime
+    source: MarketSourceOut
+
+
+class MarketOut(_Model):
+    items: list[MarketIndicatorOut] = Field(description="Пусто, если данные ЦБ ещё не загружены")

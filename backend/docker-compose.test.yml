@@ -16,6 +16,7 @@ x-test-env: &test-env
   LLM_API_KEY: ""
   LLM_PROVIDER: fake                 # deterministic answers through the real gateway path
   LLM_DAILY_BUDGET_RUB: "0.3"        # small: scenario 11 spends it and checks the degradation
+  MARKET_DATA_ENABLED: "false"       # nothing leaves the stack
   NEWS_SOURCES_PATH: data/synthetic/news/e2e_sources.json  # primary on .invalid + local reserve (scenario 11)
 
 services:

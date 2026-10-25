@@ -1063,6 +1063,35 @@
         ]
       }
     },
+    "/api/v1/market": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Ключевая ставка и официальные курсы Банка России",
+        "operationId": "market_indicators_api_v1_market_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/news/{news_id}": {
       "get": {
         "tags": [
@@ -2621,6 +2650,38 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/admin/market/refresh": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Обновить ключевую ставку и курсы Банка России сейчас (иначе — по расписанию, ADR-043)",
+        "operationId": "market_refresh_api_v1_admin_market_refresh_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketRefreshOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/admin/sources": {
@@ -5255,6 +5316,161 @@
           "companies_queued"
         ],
         "title": "ManualNewsOut"
+      },
+      "MarketIndicatorOut": {
+        "properties": {
+          "indicator": {
+            "type": "string",
+            "title": "Indicator",
+            "description": "key_rate, usd_rub, eur_rub, cny_rub"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date",
+            "description": "Дата значения (курс ЦБ устанавливается на следующий день)"
+          },
+          "previous_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Value",
+            "description": "Предыдущее отличающееся значение"
+          },
+          "previous_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Date"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Fetched At"
+          },
+          "source": {
+            "$ref": "#/components/schemas/MarketSourceOut"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "indicator",
+          "title",
+          "unit",
+          "value",
+          "date",
+          "previous_value",
+          "previous_date",
+          "change",
+          "fetched_at",
+          "source"
+        ],
+        "title": "MarketIndicatorOut"
+      },
+      "MarketOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MarketIndicatorOut"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Пусто, если данные ЦБ ещё не загружены"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "MarketOut"
+      },
+      "MarketRefreshOut": {
+        "properties": {
+          "points": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Points",
+            "description": "Сколько значений получено по каждому индикатору"
+          },
+          "errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Errors",
+            "description": "Индикаторы, которые не удалось обновить, и причина"
+          }
+        },
+        "type": "object",
+        "required": [
+          "points",
+          "errors"
+        ],
+        "title": "MarketRefreshOut"
+      },
+      "MarketSourceOut": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "url"
+        ],
+        "title": "MarketSourceOut"
       },
       "MeOut": {
         "properties": {

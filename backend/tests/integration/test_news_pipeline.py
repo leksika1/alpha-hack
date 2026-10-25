@@ -168,3 +168,35 @@ async def test_matching_after_poll_is_safe_for_any_event_set(env: dict[str, Any]
     companies = await match_new_events(conn, get_settings(), ids)
     assert isinstance(companies, list)
     assert await match_new_events(conn, get_settings(), []) == []
+
+
+async def test_site_without_rss_is_collected_from_its_news_page(
+    env: dict[str, Any], tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    conn = env["conn"]
+    catalog = tmp_path_factory.mktemp("html") / "sources.json"
+    catalog.write_text(json.dumps({"sources": [
+        {"id": "t_ministry", "name": "Министерство", "kind": "html", "url": "https://ministry.test/news",
+         "priority": 5, "config": {"link_pattern": r"^/news/\d+$"}},
+    ]}), encoding="utf-8")  # fmt: skip
+    await sync_sources(conn, Path(catalog), live_enabled=True, fixture_path=None)
+    page = """<html><body><div><span>14.01.2025</span>
+        <a href="/news/101">Министерство изменило порядок экспорта металлопроката</a></div>
+        <div><span>13 января 2025</span>
+        <a href="/news/100">Утверждены новые правила маркировки товаров</a></div>
+        <a href="/about">О министерстве и его структуре подразделений</a></body></html>"""
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get("https://ministry.test/robots.txt").respond(404)
+        mock.get("https://ministry.test/news").respond(200, html=page)
+        async with PoliteFetcher("TestBot/1", min_interval_s=0) as fetcher:
+            result = await poll(conn, env["store"], fetcher, source_ids=["t_ministry"], now=NOW)
+    assert [(r.outcome, r.n_new) for r in result.sources] == [("ok", 2)]
+    rows = await conn.fetch(
+        "SELECT url, published_at FROM core.news_items WHERE source_id = 't_ministry' ORDER BY url"
+    )
+    assert [(r["url"], r["published_at"].day) for r in rows] == [
+        ("https://ministry.test/news/100", 12),  # Moscow midnight of 13 Jan
+        ("https://ministry.test/news/101", 13),
+    ]
+    key = await conn.fetchval("SELECT s3_key FROM core.news_raw WHERE source_id = 't_ministry'")
+    assert key.endswith(".html")

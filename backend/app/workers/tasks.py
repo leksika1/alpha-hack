@@ -1,4 +1,4 @@
-"""Task registry: generation, news, analytics, digests and metrics snapshots."""
+"""Task registry: generation, news, market data, analytics, digests and metrics snapshots."""
 
 import asyncio
 import uuid
@@ -9,12 +9,14 @@ import httpx
 from app.core.config import get_settings
 from app.core.pg import pg_connection
 from app.integrations.alerts import get_alert_sink
+from app.integrations.cbr import CbrClient
 from app.integrations.generators import get_generator
 from app.services.alerts import evaluate as evaluate_alerts
 from app.services.alerts import notify as notify_alerts
 from app.services.analytics_run import run_analytics_ingest
 from app.services.analytics_upload import process_upload
 from app.services.generation import generate_pending
+from app.services.market import refresh as refresh_market
 from app.services.metrics import snapshot_day
 from app.services.news_run import run_news_collection
 from app.services.notifications import create_digests
@@ -77,6 +79,22 @@ async def poll_news_task(source_ids: list[str] | None = None) -> dict[str, objec
     summary = result.as_dict()
     log.info("news_poll_done", **{k: v for k, v in summary.items() if k != "sources"})
     return summary
+
+
+@broker.task(task_name="market.refresh", schedule=[{"cron": get_settings().market_data_cron}])
+async def market_refresh_task() -> dict[str, object]:
+    """Key rate and exchange rates of the Bank of Russia (ADR-043)."""
+    settings = get_settings()
+    if not settings.market_data_enabled:
+        return {"skipped": "MARKET_DATA_ENABLED=false"}
+    client = CbrClient(settings.news_user_agent)
+    try:
+        async with pg_connection() as conn:
+            result = await refresh_market(conn, client, settings.market_data_history_days)
+    finally:
+        await client.aclose()
+    log.info("market_refresh_done", points=result.points, errors=result.errors)
+    return {"points": result.points, "errors": result.errors}
 
 
 @broker.task(task_name="analytics.ingest")

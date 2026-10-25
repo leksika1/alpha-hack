@@ -67,19 +67,20 @@ async def sync_sources(conn: Any, catalog_path: Path, live_enabled: bool, fixtur
     data = json.loads(await asyncio.to_thread(catalog_path.read_text, encoding="utf-8"))
     rows = [
         (s["id"], s["name"], s["kind"], s["url"], int(s.get("priority", 100)), s.get("fallback_for"),
-         live_enabled, False, list(s.get("topics", [])))
+         live_enabled, False, list(s.get("topics", [])), json.dumps(s.get("config", {})))
         for s in data["sources"]
     ]  # fmt: skip
     if fixture_path is not None:
         rows.append((FIXTURE_SOURCE_ID, "Демо-лента (синтетические новости)", "fixture", str(fixture_path), 1,
-                     None, True, True, ["demo"]))  # fmt: skip
+                     None, True, True, ["demo"], "{}"))  # fmt: skip
     await conn.executemany(
-        """INSERT INTO core.sources (id, name, kind, url, priority, fallback_for, enabled, is_fixture, topics)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        """INSERT INTO core.sources
+               (id, name, kind, url, priority, fallback_for, enabled, is_fixture, topics, config)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, kind = EXCLUDED.kind, url = EXCLUDED.url,
                priority = EXCLUDED.priority, fallback_for = EXCLUDED.fallback_for,
                enabled = EXCLUDED.enabled AND NOT core.sources.disabled_by_admin,
-               is_fixture = EXCLUDED.is_fixture, topics = EXCLUDED.topics""",
+               is_fixture = EXCLUDED.is_fixture, topics = EXCLUDED.topics, config = EXCLUDED.config""",
         rows,
     )
     await conn.execute(
@@ -92,6 +93,8 @@ async def sync_sources(conn: Any, catalog_path: Path, live_enabled: bool, fixtur
 
 def _raw_key(source_id: str, at: datetime, sha: str, content_type: str | None) -> str:
     ext = "json" if content_type and "json" in content_type else "xml"
+    if content_type and "html" in content_type:
+        ext = "html"
     return f"{source_id}/{at:%Y/%m/%d}/{at:%H%M%S}_{sha[:16]}.{ext}"
 
 
@@ -142,7 +145,7 @@ async def process_raw(
     conn: Any, src: Any, raw_id: Any, body: bytes, now: datetime
 ) -> tuple[int, StoreResult]:
     """Parse a raw body with the source's connector and store the news; updates the news_raw row."""
-    info = SourceInfo(src["id"], src["name"], src["kind"], src["url"])
+    info = SourceInfo(src["id"], src["name"], src["kind"], src["url"], json.loads(src["config"] or "{}"))
     drafts = connector_for(src["kind"]).parse(body, info, now)
     stored = await store_news(conn, src["id"], drafts, raw_id)
     await conn.execute(
@@ -268,7 +271,7 @@ async def reprocess_raw(
     now = now or datetime.now(UTC)
     result = PollResult()
     rows = await conn.fetch(
-        """SELECT r.id AS raw_id, r.s3_key, s.id, s.name, s.kind, s.url
+        """SELECT r.id AS raw_id, r.s3_key, s.id, s.name, s.kind, s.url, s.config
            FROM core.news_raw r JOIN core.sources s ON s.id = r.source_id
            WHERE r.id = ANY($1::uuid[]) AND r.s3_key IS NOT NULL""",
         raw_ids,

@@ -1224,3 +1224,75 @@ async def test_skipped_regeneration_retires_the_previous_card(env: dict[str, Any
         )
         status = await conn.fetchval("SELECT status FROM core.candidate_matches WHERE id = $1", cand["id"])
     assert stats.skipped == 1 and status == "skipped" and live == 0
+
+
+async def test_market_data_of_the_bank_of_russia_for_the_agent_and_the_widget(env: dict[str, Any]) -> None:
+    from datetime import date
+    from decimal import Decimal
+
+    from app.integrations.cbr import CbrError
+    from app.services.market import refresh
+
+    class Source:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, date]] = []
+
+        async def series(self, code: str, date_from: date, date_to: date) -> list[tuple[date, Decimal]]:
+            self.calls.append((code, date_from))
+            if code == "eur_rub":
+                raise CbrError("HTTP 503")
+            if code == "key_rate":
+                return [(date(2026, 9, 12), Decimal("14.50")), (date(2026, 10, 24), Decimal("14.00"))]
+            return [(date(2026, 10, 24), Decimal("82.1")), (date(2026, 10, 25), Decimal("81.9"))]
+
+    c = env["client"]
+    h = await login(c)
+    today = date(2026, 10, 25)
+    async with pg_connection(env["url"]) as conn:
+        assert (await c.get("/api/v1/market", headers=h)).json() == {"items": []}
+        source = Source()
+        result = await refresh(conn, source, 400, today=today)
+        assert result.errors == {"eur_rub": "HTTP 503"} and result.points["key_rate"] == 2
+        assert all(since == date(2025, 9, 20) for _, since in source.calls)  # empty table: full history
+        again = Source()
+        await refresh(conn, again, 400, today=today)  # idempotent; only the last week of known indicators
+        assert dict(again.calls)["key_rate"] == date(2026, 10, 18) and dict(again.calls)["eur_rub"] == date(
+            2025, 9, 20
+        )
+
+    items = {i["indicator"]: i for i in (await c.get("/api/v1/market", headers=h)).json()["items"]}
+    assert set(items) == {"key_rate", "usd_rub", "cny_rub"}
+    rate = items["key_rate"]
+    assert rate["value"] == 14.0 and rate["previous_value"] == 14.5 and rate["change"] == -0.5
+    assert rate["previous_date"] == "2026-09-12" and rate["source"]["title"] == "Банк России"
+    assert (await c.get("/api/v1/market")).status_code == 401
+
+    token = issue_run_token(env["settings"], "run_market", METALS, 60)
+    hdr = {"Authorization": f"Bearer {token}", "X-Run-Id": "run_market"}
+    tool = "/internal/tools/get_market_data"
+    resp = await c.post(tool, headers=hdr, json={"indicator": "key_rate", "date_from": "2026-09-01"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert [p["value"] for p in body["points"]] == [14.5, 14.0] and body["unit"] == "%"
+    assert body["source"]["url"].startswith("https://cbr.ru/")
+    missing = await c.post(tool, headers=hdr, json={"indicator": "brent"})
+    assert missing.status_code == 404 and missing.json()["type"].endswith("not-available")
+    assert (await c.post(tool, headers=hdr, json={"indicator": "eur_rub"})).status_code == 404
+    bad = await c.post(tool, headers=hdr, json={"indicator": "usd_rub", "date_from": "вчера"})
+    assert bad.status_code == 422
+
+
+async def test_prometheus_shows_the_pipeline_state_of_the_worker(env: dict[str, Any]) -> None:
+    resp = await env["client"].get("/metrics")
+    assert resp.status_code == 200
+    text = resp.text
+    async with pg_connection(env["url"]) as conn:
+        generated = await conn.fetchval(
+            "SELECT count(*) FROM core.candidate_matches WHERE status = 'generated'"
+        )
+        news = await conn.fetchval(
+            "SELECT count(*) FROM core.news_items WHERE fetched_at > now() - interval '1 day'"
+        )
+    assert f'generation_candidates{{status="generated"}} {float(generated)}' in text
+    assert f"news_items_last_24h {float(news)}" in text
+    assert 'news_sources{status="down"}' in text and "news_fetches_last_hour" in text
