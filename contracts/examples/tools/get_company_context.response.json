@@ -1,0 +1,31 @@
+{
+  "company_id": "U_110108",
+  "context_version": 3,
+  "is_valid": true,
+  "features": {
+    "okved.code": { "value": "46.72", "source": "csv" },
+    "okved.section": { "value": "G", "source": "derived" },
+    "industry_tags": { "value": ["wholesale", "metals"], "source": "derived" },
+    "region": { "value": "Свердловская область", "source": "csv" },
+    "revenue_rub": { "value": 1104149000.0, "source": "csv", "as_of": "2025-12-31T00:00:00Z" },
+    "group.id": { "value": "group_120345_sb", "source": "csv" },
+    "group.size": { "value": 9, "source": "derived" },
+    "group.revenue_rub": { "value": 5320000000.0, "source": "derived" },
+    "segment": { "value": "mid", "source": "derived" },
+    "products.loan": { "value": true, "source": "csv" },
+    "products.leasing": { "value": true, "source": "csv" },
+    "products.deposit": { "value": false, "source": "csv" },
+    "sensitivities.rate_sensitive": { "value": true, "source": "derived", "note": "loan ∨ leasing" },
+    "sensitivities.fx_sensitive": { "value": true, "source": "derived", "note": "FTS_FLAG ∨ fts_countries" },
+    "sensitivities.commodity_exposure": { "value": ["steel", "nonferrous"], "source": "derived" },
+    "fts_countries": { "value": ["КИТАЙ"], "source": "csv" },
+    "counterparties.n_out": { "value": 142, "source": "derived" },
+    "counterparties.hhi_out": { "value": 1830.5, "source": "derived" },
+    "counterparties.unknown_share_out": { "value": 0.37, "source": "derived" },
+    "counterparties.industry_share_in.construction": { "value": 0.28, "source": "derived", "note": "доля входящих платежей от компаний строительной отрасли" },
+    "links.shared_person_companies": { "value": ["U_120001", "U_120417"], "source": "derived", "note": "компании с общими физлицами: 2 (ID физлиц не раскрываются)" },
+    "links.shared_person_count": { "value": 2, "source": "derived" },
+    "user_provided.currencies": { "value": ["CNY"], "source": "user", "as_of": "2026-10-20T09:12:00Z" }
+  },
+  "completeness": { "score": 0.86, "missing": ["eco_stage"], "stubs": [] }
+}

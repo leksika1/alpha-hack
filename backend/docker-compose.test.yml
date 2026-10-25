@@ -1,0 +1,60 @@
+# E2E overlay: `make e2e` runs
+#   docker compose -p alfa-e2e -f backend/docker-compose.yml -f backend/docker-compose.test.yml --profile test up ...
+# Synthetic data, fixture news, ml-stub, fake embeddings/OCR/LLM; no host ports: the override file is not used (isolated from the demo stack).
+
+x-test-env: &test-env
+  APP_ENV: test
+  DATA_DIR: data/synthetic
+  NEWS_FIXTURES_ENABLED: "true"
+  NEWS_LIVE_SOURCES_ENABLED: "true"   # only the e2e catalog above: nothing leaves the stack
+  INSIGHT_GENERATOR: stub
+  ML_SERVICE_URL: http://ml-stub:8100  # e2e scenarios are written against the deterministic stub
+  INTERNAL_API_URL: http://api:8000    # one project: ml-stub is not in the shared network
+  EMBEDDING_PROVIDER: fake
+  OCR_PROVIDER: fake
+  LLM_BASE_URL: ""
+  LLM_API_KEY: ""
+  LLM_PROVIDER: fake                 # deterministic answers through the real gateway path
+  LLM_DAILY_BUDGET_RUB: "0.3"        # small: scenario 11 spends it and checks the degradation
+  NEWS_SOURCES_PATH: data/synthetic/news/e2e_sources.json  # primary on .invalid + local reserve (scenario 11)
+
+services:
+  postgres:
+  redis:
+  minio:
+  migrate:
+    environment: *test-env
+    volumes: !reset []
+  seed:
+    environment: *test-env
+    volumes: !reset []
+  api:
+    environment: *test-env
+    volumes: !reset []
+  worker:
+    environment: *test-env
+    volumes: !reset []
+  scheduler:
+    environment: *test-env
+    volumes: !reset []
+  ml-stub:
+    environment: *test-env
+    volumes: !reset []
+
+  e2e-runner:
+    profiles: ["test"]
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+      target: test
+    image: alfa-future-backend-test:${IMAGE_TAG:-local}
+    environment:
+      E2E_BASE_URL: http://api:8000
+      E2E_ML_STUB_URL: http://ml-stub:8100
+      E2E_ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:-dev-only-ml-token}
+    depends_on:
+      api: { condition: service_healthy }
+      ml-stub: { condition: service_healthy }
+      worker: { condition: service_started }
+    command: ["pytest", "tests/e2e", "-m", "e2e", "-q", "-p", "no:cacheprovider"]
+    restart: "no"

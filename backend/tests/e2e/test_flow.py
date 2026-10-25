@@ -1,0 +1,178 @@
+"""E2E against the compose stack (`make e2e`): seed -> queued pre-generation in the worker -> ml-stub calls
+the Tools API -> validated insights in the feed. Remaining scenarios of SPEC §11.2 are added in phase 7."""
+
+import json
+import os
+import time
+from typing import Any
+
+import httpx
+import pytest
+
+pytestmark = pytest.mark.e2e
+
+BASE_URL = os.environ.get("E2E_BASE_URL", "")
+FEED_WAIT_S = 180
+METALS, RETAIL, AGRO = "U_700001", "U_700002", "U_700004"
+
+
+@pytest.fixture(scope="module")
+def api() -> httpx.Client:
+    if not BASE_URL:
+        pytest.fail("E2E_BASE_URL is not set: run e2e via `make e2e`")
+    return httpx.Client(base_url=BASE_URL, timeout=30)
+
+
+@pytest.fixture(scope="module")
+def auth(api: httpx.Client) -> dict[str, str]:
+    resp = api.post("/api/v1/auth/login", json={"login": "demo", "password": "demo12345"})
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
+def wait_feed(api: httpx.Client, auth: dict[str, str], company: str) -> list[dict[str, Any]]:
+    deadline = time.monotonic() + FEED_WAIT_S
+    while True:
+        resp = api.get("/api/v1/feed", headers=auth, params={"company_id": company})
+        assert resp.status_code == 200, resp.text
+        items: list[dict[str, Any]] = resp.json()["items"]
+        if items or time.monotonic() > deadline:
+            return items
+        time.sleep(3)
+
+
+def test_scenario_1_login_companies_profile(api: httpx.Client, auth: dict[str, str]) -> None:
+    me = api.get("/api/v1/me", headers=auth).json()
+    assert {c["company_id"] for c in me["companies"]} >= {METALS, RETAIL}
+    prof = api.get(f"/api/v1/companies/{METALS}/profile", headers=auth).json()
+    assert prof["sections"] and "score" in prof["completeness"]
+
+
+def test_scenario_2_feed_is_personalized_and_valid(api: httpx.Client, auth: dict[str, str]) -> None:
+    metals = wait_feed(api, auth, METALS)
+    retail = wait_feed(api, auth, RETAIL)
+    assert metals and retail, "pre-generated insights must appear after the seed"
+    assert [i["relevance_score"] for i in metals] == sorted(
+        (i["relevance_score"] for i in metals), reverse=True
+    )
+    assert [i["event_id"] for i in metals] != [i["event_id"] for i in retail]
+    full = api.get(f"/api/v1/insights/{metals[0]['insight_id']}", headers=auth).json()["insight"]
+    assert any(d["code"] == "not_investment_advice" for d in full["disclaimers"])
+    assert full["sources"] and {s["kind"] for s in full["statements"]} <= {
+        "fact",
+        "bank_analytics",
+        "model_inference",
+        "hypothesis",
+    }
+
+
+def test_scenario_4_trace(api: httpx.Client, auth: dict[str, str]) -> None:
+    card = wait_feed(api, auth, METALS)[0]
+    tr = api.get(f"/api/v1/insights/{card['insight_id']}/trace", headers=auth).json()
+    assert tr["company_features"] and tr["steps"] and tr["tool_calls"]
+
+
+def test_scenario_7_callback_goes_to_mock_crm(api: httpx.Client, auth: dict[str, str]) -> None:
+    card = wait_feed(api, auth, METALS)[0]
+    resp = api.post(f"/api/v1/insights/{card['insight_id']}/actions", headers=auth, json={"type": "callback"})
+    assert resp.status_code == 201 and resp.json()["external_ref"].startswith("CRM-")
+
+
+def test_scenario_11_foreign_company_is_forbidden(api: httpx.Client, auth: dict[str, str]) -> None:
+    assert api.get(f"/api/v1/companies/{AGRO}/profile", headers=auth).status_code == 403
+
+
+def test_bank_analytics_indexed_and_cited(api: httpx.Client, auth: dict[str, str]) -> None:
+    docs = api.get("/api/v1/analytics/documents", headers=auth).json()
+    assert len(docs) >= 2 and all(d["chunks"] > 0 for d in docs), docs
+    link = api.get(
+        f"/api/v1/analytics/documents/{docs[0]['document_id']}/download", headers=auth, params={"page": 1}
+    ).json()
+    assert link["url"].endswith("#page=1")
+    cited = []
+    for card in wait_feed(api, auth, METALS)[:5]:
+        full = api.get(f"/api/v1/insights/{card['insight_id']}", headers=auth).json()["insight"]
+        cited += [s for s in full["sources"] if s["type"] == "bank_analytics"]
+    assert cited and all(s["page"] and s["ref_id"] for s in cited)
+
+
+def test_scenario_11_llm_gateway_allowlist_and_budget(api: httpx.Client) -> None:
+    service = {"Authorization": f"Bearer {os.environ.get('E2E_ML_SERVICE_TOKEN', '')}"}
+    msg = {"messages": [{"role": "user", "content": "Проверка"}], "max_tokens": 20}
+    forbidden = api.post("/internal/llm/chat/completions", headers=service, json={"model": "gpt-4o", **msg})
+    assert forbidden.status_code == 403 and forbidden.json()["type"].endswith("/model-not-allowed")
+    ok = api.post("/internal/llm/chat/completions", headers=service, json={"model": "glm-5.3-flash", **msg})
+    assert ok.status_code == 200 and float(ok.headers["x-budget-remaining-rub"]) >= 0
+    budget = api.get("/internal/llm/budget", headers=service).json()
+    assert budget["limit_rub"] > 0 and budget["spent_rub"] > 0 and budget["exhausted"] is False
+    assert api.get("/internal/llm/models").status_code == 401
+
+
+def test_agent_llm_calls_are_traced(api: httpx.Client, auth: dict[str, str]) -> None:
+    card = wait_feed(api, auth, METALS)[0]
+    run_id = api.get(f"/api/v1/insights/{card['insight_id']}/trace", headers=auth).json()["trace_id"]
+    service = {"Authorization": f"Bearer {os.environ.get('E2E_ML_SERVICE_TOKEN', '')}", "X-Run-Id": run_id}
+    msg = {"model": "glm-5.3-flash", "messages": [{"role": "user", "content": "тест F_77"}], "max_tokens": 20}
+    assert api.post("/internal/llm/chat/completions", headers=service, json=msg).status_code == 200
+    tr = api.get(f"/api/v1/insights/{card['insight_id']}/trace", headers=auth).json()
+    assert tr["llm_calls"] and tr["llm_calls"][-1]["status"] in {"ok", "cached"}
+    assert all("F_77" not in (c["prompt_preview"] or "") for c in tr["llm_calls"])
+
+
+def _sse(text: str) -> list[tuple[str, Any]]:
+    out = []
+    for block in text.strip().split("\n\n"):
+        lines = [x for x in block.splitlines() if x and not x.startswith(":")]
+        event = next((x[6:].strip() for x in lines if x.startswith("event:")), None)
+        data = "\n".join(x[5:].strip() for x in lines if x.startswith("data:"))
+        if event:
+            out.append((event, json.loads(data) if data else None))
+    return out
+
+
+def test_scenario_8_question_gets_sse_answer_with_sources(api: httpx.Client, auth: dict[str, str]) -> None:
+    card = wait_feed(api, auth, METALS)[0]
+    resp = api.post(
+        f"/api/v1/insights/{card['insight_id']}/ask",
+        headers=auth,
+        json={"question": "Как это повлияет на наши кредиты?"},
+        timeout=120,
+    )
+    events = _sse(resp.text)
+    assert events[0][0] == "run" and events[-1][0] == "done", [e for e, _ in events]
+    final = events[-1][1]
+    assert final["answer"] and final["sources"]
+    assert any(d["code"] == "not_investment_advice" for d in final["disclaimers"])
+
+
+def test_notifications_stream_and_digest(api: httpx.Client, auth: dict[str, str]) -> None:
+    wait_feed(api, auth, METALS)
+    listed = api.get("/api/v1/notifications", headers=auth).json()
+    assert listed["items"] and listed["items"][0]["kind"] == "urgent_insight"
+    stream = api.get(
+        "/api/v1/notifications/stream",
+        headers={**auth, "Last-Event-ID": "0"},
+        params={"max_s": 2},
+        timeout=30,
+    )
+    events = _sse(stream.text)
+    assert events[0][0] == "ready" and any(e == "notification" for e, _ in events)
+    digest = api.get("/api/v1/digest", headers=auth, params={"company_id": METALS, "period": "week"}).json()
+    assert digest["counts"]["new"] > 0 and digest["top"]
+
+
+def test_scenario_5_feedback_is_visible_in_admin_metrics(api: httpx.Client, auth: dict[str, str]) -> None:
+    card = wait_feed(api, auth, RETAIL)[-1]
+    fb = api.post(
+        f"/api/v1/insights/{card['insight_id']}/feedback",
+        headers=auth,
+        json={"useful": False, "reason": "irrelevant"},
+    ).json()
+    assert fb["hidden"] is True
+    admin = api.post("/api/v1/auth/login", json={"login": "admin", "password": "admin12345"}).json()
+    m = api.get(
+        "/api/v1/admin/metrics",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        params={"days": 1},
+    ).json()
+    assert m["cjm"]["08_return"]["not_useful_reasons"].get("irrelevant", 0) >= 1

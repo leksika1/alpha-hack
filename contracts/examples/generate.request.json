@@ -1,0 +1,23 @@
+{
+  "request_id": "gen_U_110108_0b6f2c0e_cfo_v3",
+  "company_id": "U_110108",
+  "event_id": "0b6f2c0e-3d7a-4c8e-9a51-6f1d2e3a4b01",
+  "role": "cfo",
+  "mode": "sync",
+  "deadline_ms": 60000,
+  "schema_version": "1.0.0",
+  "candidate": {
+    "score": 0.81,
+    "breakdown": { "rate": 0.35, "bank_analytics": 0.15, "fx_country": 0.08, "industry": 0.05, "recency": 0.18 },
+    "matched_features": ["products.loan", "products.leasing", "fts_countries"],
+    "urgent": true
+  },
+  "tools": {
+    "base_url": "http://api:8000/internal/tools",
+    "llm_base_url": "http://api:8000/internal/llm",
+    "token": "<run-scoped JWT>",
+    "run_id": "run_7f3a9c2e",
+    "allowed_tools": ["get_company_context", "get_group", "get_counterparties", "search_news", "get_event", "search_bank_analytics", "get_bank_products", "get_market_data", "log_step"]
+  },
+  "options": { "allow_llm": true, "preferred_model": "qwen3.6-35b-a3b" }
+}

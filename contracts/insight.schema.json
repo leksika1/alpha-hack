@@ -1,0 +1,325 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfa-future.local/contracts/insight.schema.json",
+  "title": "Insight",
+  "description": "Персонализированный бизнес-инсайт: интерпретация события для конкретной компании и роли пользователя. Версия контракта — поле schema_version (semver). Изменения — только через ADR + contracts/CHANGELOG.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "company_id",
+    "event_id",
+    "role_variant",
+    "trace_id",
+    "title",
+    "summary",
+    "polarity",
+    "urgent",
+    "event",
+    "why_it_matters",
+    "consequences",
+    "impact",
+    "actions",
+    "bank_view",
+    "statements",
+    "relevance",
+    "sources",
+    "disclaimers",
+    "models_used",
+    "generated_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$",
+      "description": "Версия контракта. Мажорная версия 1."
+    },
+    "insight_id": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "Присваивается бэкендом при сохранении. ML может не заполнять."
+    },
+    "company_id": { "type": "string", "pattern": "^U_[0-9]+$", "description": "ID компании (SYNTHETIC_U)." },
+    "event_id": { "type": "string", "format": "uuid", "description": "ID события (кластер новостей)." },
+    "role_variant": { "$ref": "#/$defs/role" },
+    "trace_id": { "type": "string", "minLength": 1, "description": "ID трассировки = run_id запуска агента." },
+    "language": { "type": "string", "const": "ru", "default": "ru" },
+    "title": { "type": "string", "minLength": 5, "maxLength": 160, "description": "Заголовок инсайта с акцентом на влияние на компанию, а не пересказ новости." },
+    "summary": { "type": "string", "minLength": 20, "maxLength": 600, "description": "1–3 предложения: суть для ЛПР." },
+    "polarity": { "type": "string", "enum": ["risk", "opportunity", "mixed", "neutral"] },
+    "urgent": { "type": "boolean", "description": "Требует быстрой доставки (см. docs/IMPACT_SCALE.md)." },
+    "event": { "$ref": "#/$defs/event" },
+    "why_it_matters": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "description": "Почему важно именно этой компании. Каждая причина ссылается на признаки компании.",
+      "items": { "$ref": "#/$defs/reason" }
+    },
+    "consequences": { "$ref": "#/$defs/consequences" },
+    "impact": { "$ref": "#/$defs/impact" },
+    "actions": {
+      "type": "array",
+      "maxItems": 6,
+      "items": { "$ref": "#/$defs/action" }
+    },
+    "bank_view": { "$ref": "#/$defs/bank_view" },
+    "statements": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Все существенные утверждения инсайта с явным типом происхождения.",
+      "items": { "$ref": "#/$defs/statement" }
+    },
+    "relevance": { "$ref": "#/$defs/relevance" },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "disclaimers": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/disclaimer" },
+      "contains": {
+        "type": "object",
+        "properties": { "code": { "const": "not_investment_advice" } },
+        "required": ["code"]
+      },
+      "description": "Обязателен дисклеймер с code=not_investment_advice."
+    },
+    "models_used": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/model_used" }
+    },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": ["string", "null"], "format": "date-time", "description": "После этой даты инсайт считается устаревшим." }
+  },
+  "$defs": {
+    "role": {
+      "type": "string",
+      "enum": ["owner", "ceo", "cfo", "chief_accountant", "treasurer", "other"]
+    },
+    "id_ref": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,31}$", "description": "Локальный ID внутри инсайта (s1, st3)." },
+    "feature_ref": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_]*(\\.[a-z0-9_]+)*$",
+      "description": "Путь к признаку в company_context, например 'products.loan', 'fts_countries', 'counterparties.industry_share.metallurgy', 'user_provided.currencies'."
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "summary", "event_type", "key_facts"],
+      "properties": {
+        "title": { "type": "string", "minLength": 3, "maxLength": 300 },
+        "summary": { "type": "string", "minLength": 10, "maxLength": 1500 },
+        "event_type": {
+          "type": "string",
+          "enum": ["monetary_policy", "fx", "commodities", "sanctions", "regulation_tax", "trade_logistics", "industry", "company", "macro_stat", "labor", "other"]
+        },
+        "occurred_at": { "type": ["string", "null"], "format": "date-time" },
+        "participants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "type"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "type": { "type": "string", "enum": ["company", "government", "regulator", "country", "public_person", "industry", "other"] },
+              "company_id": { "type": ["string", "null"], "pattern": "^U_[0-9]+$" }
+            }
+          }
+        },
+        "key_facts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["text", "source_refs"],
+            "properties": {
+              "text": { "type": "string", "minLength": 3 },
+              "source_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/id_ref" } }
+            }
+          }
+        }
+      }
+    },
+    "reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "feature_refs"],
+      "properties": {
+        "text": { "type": "string", "minLength": 10 },
+        "feature_refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/feature_ref" } },
+        "statement_refs": { "type": "array", "items": { "$ref": "#/$defs/id_ref" } }
+      }
+    },
+    "consequence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "horizon"],
+      "properties": {
+        "text": { "type": "string", "minLength": 10 },
+        "horizon": { "type": "string", "enum": ["days", "weeks", "months", "quarters", "year_plus"] },
+        "drivers": {
+          "type": "array",
+          "description": "Факторы, которые могут повлиять на развитие ситуации.",
+          "items": { "type": "string", "minLength": 3 }
+        },
+        "statement_refs": { "type": "array", "items": { "$ref": "#/$defs/id_ref" } }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "logic", "plausibility"],
+      "properties": {
+        "name": { "type": "string", "minLength": 3 },
+        "logic": { "type": "string", "minLength": 10, "description": "Логика сценария." },
+        "plausibility": { "type": "string", "enum": ["low", "medium", "high"], "description": "Качественная правдоподобность; точные вероятности не требуются (FAQ п.45)." },
+        "signals": { "type": "array", "description": "Что подтвердит/опровергнет сценарий.", "items": { "type": "string" } },
+        "statement_refs": { "type": "array", "items": { "$ref": "#/$defs/id_ref" } }
+      }
+    },
+    "consequences": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["risks", "opportunities"],
+      "properties": {
+        "risks": { "type": "array", "items": { "$ref": "#/$defs/consequence" } },
+        "opportunities": { "type": "array", "items": { "$ref": "#/$defs/consequence" } },
+        "scenarios": { "type": "array", "items": { "$ref": "#/$defs/scenario" } }
+      }
+    },
+    "quantitative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "value", "unit", "basis"],
+      "properties": {
+        "metric": { "type": "string", "minLength": 2, "description": "См. docs/IMPACT_SCALE.md §Количественная оценка." },
+        "value": { "type": "number" },
+        "unit": { "type": "string", "minLength": 1 },
+        "basis": { "type": "string", "minLength": 10, "description": "Обоснование расчёта; неизвестные величины названы явно." },
+        "period": { "type": ["string", "null"] },
+        "feature_refs": { "type": "array", "items": { "$ref": "#/$defs/feature_ref" } }
+      }
+    },
+    "impact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "score", "scale_version", "rationale"],
+      "properties": {
+        "level": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "scale_version": { "type": "integer", "const": 1 },
+        "rationale": { "type": "string", "minLength": 10 },
+        "quantitative": { "type": "array", "items": { "$ref": "#/$defs/quantitative" } }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "type": "string", "enum": ["contact_manager", "callback", "application", "analyze", "monitor", "read_source"] },
+        "text": { "type": "string", "minLength": 5 },
+        "product_id": { "type": ["string", "null"], "description": "ID из каталога bank_products, если продукт уместен." },
+        "source_ref": { "anyOf": [{ "$ref": "#/$defs/id_ref" }, { "type": "null" }], "description": "Для read_source." }
+      }
+    },
+    "bank_position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "analytics_chunk_id", "document_id", "page", "source_ref"],
+      "properties": {
+        "text": { "type": "string", "minLength": 10, "description": "Позиция банка своими словами со ссылкой на материал." },
+        "quote": { "type": ["string", "null"], "maxLength": 600, "description": "Дословная цитата из чанка (короткая)." },
+        "analytics_chunk_id": { "type": "string", "format": "uuid" },
+        "document_id": { "type": "string", "format": "uuid" },
+        "page": { "type": "integer", "minimum": 1 },
+        "source_ref": { "$ref": "#/$defs/id_ref" }
+      }
+    },
+    "bank_view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coverage", "positions", "model_disagrees_with_bank"],
+      "properties": {
+        "coverage": {
+          "type": "string",
+          "enum": ["direct", "related", "none"],
+          "description": "direct — аналитика прямо про событие; related — про фактор события; none — аналитики банка нет (тогда positions пуст)."
+        },
+        "positions": { "type": "array", "items": { "$ref": "#/$defs/bank_position" } },
+        "model_disagrees_with_bank": { "type": "boolean" },
+        "disagreement_note": { "type": ["string", "null"], "description": "Обязательно при model_disagrees_with_bank=true." }
+      }
+    },
+    "statement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text", "kind", "confidence", "source_refs"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id_ref" },
+        "text": { "type": "string", "minLength": 3 },
+        "kind": {
+          "type": "string",
+          "enum": ["fact", "bank_analytics", "model_inference", "hypothesis"],
+          "description": "fact — подтверждено источником; bank_analytics — позиция/данные банка; model_inference — вывод модели; hypothesis — предположение, требующее проверки."
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "source_refs": { "type": "array", "items": { "$ref": "#/$defs/id_ref" }, "description": "Для fact и bank_analytics — минимум 1 (проверяет валидатор)." },
+        "feature_refs": { "type": "array", "items": { "$ref": "#/$defs/feature_ref" } }
+      }
+    },
+    "relevance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "breakdown"],
+      "properties": {
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "breakdown": {
+          "type": "object",
+          "description": "Вклад компонентов скоринга: industry, counterparty, fx_country, rate, commodity, region, group, user_provided, bank_analytics, recency, ...",
+          "additionalProperties": { "type": "number" }
+        },
+        "matched_features": { "type": "array", "items": { "$ref": "#/$defs/feature_ref" } },
+        "scorer": { "type": "string", "description": "Имя и версия скорера, например baseline@1." }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "title"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id_ref" },
+        "type": { "type": "string", "enum": ["news", "bank_analytics", "company_data", "user_input", "external_stat"] },
+        "ref_id": { "type": ["string", "null"], "description": "news_item_id | analytics_chunk_id | feature path | внешний ID." },
+        "url": { "type": ["string", "null"], "format": "uri" },
+        "title": { "type": "string", "minLength": 1 },
+        "publisher": { "type": ["string", "null"] },
+        "published_at": { "type": ["string", "null"], "format": "date-time" },
+        "page": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "disclaimer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "text"],
+      "properties": {
+        "code": { "type": "string", "enum": ["not_investment_advice", "model_generated", "model_disagrees_with_bank", "incomplete_data", "hypothesis_present"] },
+        "text": { "type": "string", "minLength": 5 }
+      }
+    },
+    "model_used": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "purpose"],
+      "properties": {
+        "name": { "type": "string", "description": "Модель из белого списка, embedding-модель или 'rules@N'." },
+        "purpose": { "type": "string", "enum": ["generation", "planning", "self_check", "embedding", "rerank", "scoring", "ocr", "template"] }
+      }
+    }
+  }
+}

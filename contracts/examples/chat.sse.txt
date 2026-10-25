@@ -1,0 +1,15 @@
+event: step
+data: {"type": "retrieval", "name": "search_bank_analytics"}
+
+event: token
+data: {"delta": "Если ставка сохранится на уровне 14% "}
+
+event: token
+data: {"delta": "до середины 2027 г., платежи по лизингу с плавающей ставкой останутся на текущем уровне…"}
+
+event: source
+data: {"id": "s1", "type": "bank_analytics", "ref_id": "8a1d2b3c-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "url": null, "title": "Ключевая ставка ЦБ РФ", "publisher": "Альфа-Банк", "published_at": "2026-09-11T00:00:00Z", "page": 1}
+
+event: done
+data: {"answer": "Если ставка сохранится на уровне 14% до середины 2027 г., платежи по лизингу с плавающей ставкой останутся на текущем уровне…", "sources": [{"id": "s1", "type": "bank_analytics", "ref_id": "8a1d2b3c-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "url": null, "title": "Ключевая ставка ЦБ РФ", "publisher": "Альфа-Банк", "published_at": "2026-09-11T00:00:00Z", "page": 1}], "statements": [{"id": "st1", "text": "Альфа-Банк прогнозирует ставку 12% на конец 2027 г.", "kind": "bank_analytics", "confidence": 0.9, "source_refs": ["s1"]}], "disclaimers": [{"code": "not_investment_advice", "text": "Материал носит информационный характер и не является инвестиционной рекомендацией."}]}
+

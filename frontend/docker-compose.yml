@@ -1,0 +1,23 @@
+# Dokploy service "Frontend" (Compose Path: ./frontend/docker-compose.yml, docs/RUNBOOK.md "Деплой", ADR-032):
+# nginx with the built frontend; /api is proxied to the backend api over the shared network by BACKEND_ALIAS.
+# Locally it is part of the whole app: the root docker-compose.yml includes it with docker-compose.override.yml
+# (host port) and .env.example (a project network instead of dokploy-network).
+# Dokploy: Domains -> service frontend, port 80. Environment (required):
+#   BACKEND_ALIAS   — same value as in the Backend service of this environment: alfa-backend-prod / alfa-backend-dev
+
+services:
+  frontend:
+    build:
+      context: .
+    image: alfa-future-frontend:${IMAGE_TAG:-local}
+    expose: ["80"]
+    environment:
+      BACKEND_UPSTREAM: http://${BACKEND_ALIAS:?Задайте BACKEND_ALIAS (как у сервиса Backend)}:8000
+    networks: [default, shared]
+    restart: unless-stopped
+
+networks:
+  # The same block as in backend/docker-compose.yml: Dokploy's network; locally (.env.example) a project one
+  shared:
+    external: ${SHARED_NETWORK_EXTERNAL:-true}
+    name: ${SHARED_NETWORK:-dokploy-network}

@@ -1,0 +1,46 @@
+# Dokploy service "ML" (Compose Path: ./ml/docker-compose.yml, docs/RUNBOOK.md "Деплой", ADR-032):
+# ML service of the ML team (insight agent with planner/critic, chat, ml-ranker@1). The backend calls it by
+# ML_ALIAS over the shared network and hands it the Tools API / LLM Gateway URLs in each request.
+# Locally it is part of the whole app: the root docker-compose.yml includes it with docker-compose.override.yml
+# (host port) and .env.example (a project network instead of dokploy-network).
+# Dokploy Environment (required):
+#   ML_ALIAS          — name in dokploy-network: alfa-ml-prod / alfa-ml-dev (the same value in the Backend service)
+#   ML_SERVICE_TOKEN  — the same value as in the Backend service
+# Optional: ML_LLM_*, ML_MODEL_*, ML_MAX_ITERATIONS, ML_LLM_MIN_SCORE (ml/README.md).
+
+services:
+  ml:
+    # Works without an LLM key (rules@1 analyst); with LLM_* set in the backend it uses the gateway.
+    build:
+      context: ..
+      dockerfile: ml/Dockerfile
+    image: alfa-future-ml:${IMAGE_TAG:-local}
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:-dev-only-ml-token}
+      ML_LLM_ENABLED: ${ML_LLM_ENABLED:-true}
+      ML_LLM_PLANNER: ${ML_LLM_PLANNER:-true}
+      ML_LLM_CRITIC: ${ML_LLM_CRITIC:-true}
+      ML_MODEL_PLANNER: ${ML_MODEL_PLANNER:-gemma-4-26b-a4b}
+      ML_MODEL_ANALYST: ${ML_MODEL_ANALYST:-qwen3.6-35b-a3b}
+      ML_MODEL_CRITIC: ${ML_MODEL_CRITIC:-glm-5.3-flash}
+      ML_MODEL_CHAT: ${ML_MODEL_CHAT:-qwen3.6-35b-a3b}
+      ML_MAX_ITERATIONS: ${ML_MAX_ITERATIONS:-1}
+      ML_LLM_MIN_SCORE: ${ML_LLM_MIN_SCORE:-0.5}
+    expose: ["8200"]
+    networks:
+      default: {}
+      shared:
+        aliases: ["${ML_ALIAS:?Задайте ML_ALIAS (alfa-ml-prod / alfa-ml-dev)}"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8200/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+networks:
+  # The same block as in backend/docker-compose.yml: Dokploy's network; locally (.env.example) a project one
+  shared:
+    external: ${SHARED_NETWORK_EXTERNAL:-true}
+    name: ${SHARED_NETWORK:-dokploy-network}

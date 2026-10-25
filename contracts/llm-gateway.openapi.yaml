@@ -1,0 +1,146 @@
+openapi: 3.1.0
+info:
+  title: LLM Gateway (ML → бэкенд → LLM-провайдер)
+  version: 1.0.0
+  description: |
+    Единственная точка доступа к генеративным LLM. OpenAI-совместимый `chat/completions`.
+
+    - **Белый список** (кейс, прил. 3): `Gemma 4 26B A4B`, `GLM-5.3-Flash`, `Qwen3.6 35B A3B`, `DeepSeek-V4.1-Flash`,
+      `Qwen3-VL-30B-A3B-Instruct`, `Kimi-K2.6`. В поле `model` передаётся алиас (см. `GET /models`); маппинг алиас → ID провайдера —
+      в конфиге (`LLM_MODEL_MAP`). Иная модель → `403 model_not_allowed`.
+    - **Бюджет:** дневной лимит в ₽ (`LLM_DAILY_BUDGET_RUB`) и токенах; при достижении — `429 budget_exhausted` (жёсткий стоп) и алерт
+      (лог `level=error`, метрика). Цены моделей — `LLM_PRICES` (₽ за 1M токенов in/out).
+    - **Кэш:** идентичные запросы (`model`, `messages`, `temperature=0`, `tools`) отдаются из кэша (заголовок ответа `X-Cache: hit`), стоимость 0.
+    - **Логирование:** каждый вызов → `llm_usage` (модель, токены, ₽, латентность, run_id, purpose, cache_hit). Тексты промптов не логируются целиком (превью ≤ 500 символов после маскирования).
+    - **Маскирование:** перед отправкой провайдеру удаляются/заменяются идентификаторы физлиц (`F_\d+`), e-mail, телефоны, ИНН-подобные числа.
+    - **Стриминг:** `stream: true` поддерживается (SSE в формате OpenAI).
+servers:
+  - url: http://api:8000/internal/llm
+security:
+  - bearer: []
+paths:
+  /models:
+    get:
+      operationId: listModels
+      summary: Разрешённые модели (алиасы) и цены
+      responses:
+        "200":
+          description: Список
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object: { type: string, const: list }
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, display_name]
+                      properties:
+                        id: { type: string, example: qwen3.6-35b-a3b }
+                        display_name: { type: string, example: Qwen3.6 35B A3B }
+                        vision: { type: boolean }
+                        price_rub_per_1m_in: { type: number }
+                        price_rub_per_1m_out: { type: number }
+  /budget:
+    get:
+      operationId: getBudget
+      summary: Остаток дневного бюджета
+      responses:
+        "200":
+          description: Бюджет
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [date, limit_rub, spent_rub, remaining_rub, exhausted]
+                properties:
+                  date: { type: string, format: date }
+                  limit_rub: { type: number }
+                  spent_rub: { type: number }
+                  remaining_rub: { type: number }
+                  tokens_in: { type: integer }
+                  tokens_out: { type: integer }
+                  exhausted: { type: boolean }
+  /chat/completions:
+    post:
+      operationId: chatCompletions
+      summary: OpenAI-совместимый chat completions
+      parameters:
+        - { name: X-Run-Id, in: header, required: false, schema: { type: string }, description: "Привязка вызова к запуску агента (трейс)." }
+        - { name: X-Purpose, in: header, required: false, schema: { type: string, enum: [planning, generation, self_check, chat, ocr, other] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model, messages]
+              properties:
+                model: { type: string, description: "Алиас из GET /models." }
+                messages:
+                  type: array
+                  items:
+                    type: object
+                    required: [role]
+                    properties:
+                      role: { type: string, enum: [system, user, assistant, tool] }
+                      content: {}
+                      name: { type: string }
+                      tool_call_id: { type: string }
+                      tool_calls: { type: array, items: { type: object } }
+                temperature: { type: number, minimum: 0, maximum: 2 }
+                max_tokens: { type: integer, maximum: 8192 }
+                stream: { type: boolean, default: false }
+                tools: { type: array, items: { type: object } }
+                tool_choice: {}
+                response_format: { type: object }
+            examples:
+              req: { externalValue: ./examples/llm.request.json }
+      responses:
+        "200":
+          description: Ответ провайдера (OpenAI-формат) или SSE при stream=true
+          headers:
+            X-Cache: { schema: { type: string, enum: [hit, miss] } }
+            X-Budget-Remaining-Rub: { schema: { type: number } }
+          content:
+            application/json:
+              schema: { type: object }
+            text/event-stream:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403":
+          description: "`model_not_allowed` — модель не из белого списка"
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429":
+          description: "`budget_exhausted` или `rate_limited`"
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "502": { $ref: "#/components/responses/Problem" }
+        "504": { $ref: "#/components/responses/Problem" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: Run-scoped токен ML-запуска или сервисный токен (`ML_SERVICE_TOKEN`).
+  responses:
+    Problem:
+      description: Ошибка (RFC 7807)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, example: "https://alfa-future.local/problems/model-not-allowed" }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        trace_id: { type: string }

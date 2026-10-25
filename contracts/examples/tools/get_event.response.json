@@ -1,0 +1,26 @@
+{
+  "event_id": "0b6f2c0e-3d7a-4c8e-9a51-6f1d2e3a4b01",
+  "title": "Банк России сохранил ключевую ставку на уровне 14% годовых",
+  "event_type": "monetary_policy",
+  "urgent": true,
+  "urgency_reasons": ["cbr_key_rate_decision"],
+  "first_seen_at": "2026-09-11T10:31:12Z",
+  "tags": {
+    "industry_tags": [],
+    "okved_sections": [],
+    "countries": ["РОССИЯ"],
+    "regions": [],
+    "entities": ["Банк России"],
+    "numbers": [{ "kind": "key_rate", "value": 14.0, "unit": "%" }]
+  },
+  "news": [
+    {
+      "news_id": "c2a4e6f8-1b3d-4f5a-9c7e-0d2f4a6b8c0e",
+      "title": "Банк России сохранил ключевую ставку на уровне 14,00% годовых",
+      "url": "https://www.cbr.ru/press/pr/?file=11092026_133000key.htm",
+      "publisher": "Банк России",
+      "published_at": "2026-09-11T10:30:00Z",
+      "body": { "trust": "untrusted", "content": "Совет директоров Банка России 11 сентября 2026 года принял решение сохранить ключевую ставку на уровне 14,00% годовых…", "truncated": true, "flags": [] }
+    }
+  ]
+}

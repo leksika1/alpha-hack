@@ -1,0 +1,18 @@
+# Build context = repository root; the backend image copies backend/ + contracts/, the ML image ml/ + contracts/
+.git
+**/.venv
+**/__pycache__
+**/.mypy_cache
+**/.ruff_cache
+**/.pytest_cache
+.env
+.env.*
+data/
+materials/
+docs/
+frontend/
+ml/.venv/
+ml/reports/
+ml/eval/out/
+.claude/
+.github/

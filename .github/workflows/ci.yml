@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+defaults:
+  run:
+    working-directory: backend
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.13.5"
+
+jobs:
+  lint-type-unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install 3.12
+      - run: uv sync --frozen
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Typecheck
+        run: uv run mypy
+      - name: Unit tests
+        run: uv run pytest -m "not integration and not e2e and not live" -q
+
+  integration:
+    runs-on: ubuntu-24.04
+    needs: lint-type-unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install 3.12
+      - run: uv sync --frozen
+      - name: Integration tests (testcontainers)
+        run: uv run pytest -m integration -q
+
+  ml:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: ml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install 3.12
+      - run: uv sync --frozen
+      - name: Lint
+        run: |
+          uv run ruff check alfa_ml tests eval scripts
+          uv run ruff format --check alfa_ml tests eval scripts
+      - name: Typecheck
+        run: uv run mypy
+      - name: Tests (agent, chat, contract checks by the backend validator)
+        run: uv run pytest -q
+
+  # The same image Dokploy builds: npm ci, type check and vite build inside frontend/Dockerfile
+  frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build frontend image
+        working-directory: frontend
+        run: docker build -t alfa-future-frontend:ci .
+
+  e2e:
+    runs-on: ubuntu-24.04
+    needs: lint-type-unit
+    steps:
+      - uses: actions/checkout@v4
+      # Each part is deployed alone from its own compose file (ADR-032): it must stay valid in Dokploy mode
+      - name: Validate Dokploy compose files
+        working-directory: .
+        env:
+          BACKEND_ALIAS: alfa-backend-ci
+          ML_ALIAS: alfa-ml-ci
+        run: |
+          for part in backend ml frontend; do
+            if [ -f "$part/docker-compose.yml" ]; then
+              docker compose -f "$part/docker-compose.yml" config -q && echo "$part: ok"
+            fi
+          done
+      - name: E2E (docker compose, profile test; prints logs on failure)
+        working-directory: .
+        run: make e2e
+
+  # Auto-deploy to Dokploy after everything above is green, on push only: main -> environment prod, dev -> dev.
+  # GitHub -> Settings -> Environments (prod, dev), in each the secret DOKPLOY_WEBHOOK_<PART>
+  # (Dokploy -> service -> Deployments -> Webhook URL). A part without its compose file is not deployed yet.
+  deploy:
+    runs-on: ubuntu-24.04
+    needs: [integration, e2e, frontend, ml]
+    if: github.event_name == 'push'
+    environment: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
+    concurrency:
+      group: deploy-${{ github.ref }}-${{ matrix.part }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { part: backend, secret: DOKPLOY_WEBHOOK_BACKEND }
+          - { part: ml, secret: DOKPLOY_WEBHOOK_ML }
+          - { part: frontend, secret: DOKPLOY_WEBHOOK_FRONTEND }
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: ${{ matrix.part }}
+      # Dokploy accepts the webhook only as a GitHub push event and answers 301 when the branch does not match
+      # the service, so only 200 counts as success
+      - name: Trigger Dokploy deploy (${{ matrix.part }})
+        env:
+          PART: ${{ matrix.part }}
+          WEBHOOK_URL: ${{ secrets[matrix.secret] }}
+          SECRET_NAME: ${{ matrix.secret }}
+        run: |
+          if [ ! -f "$PART/docker-compose.yml" ]; then
+            echo "::notice::$PART/docker-compose.yml does not exist yet: nothing to deploy"
+            exit 0
+          fi
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::error::Secret $SECRET_NAME is not set in environment ${{ github.ref_name == 'main' && 'prod' || 'dev' }}"
+            exit 1
+          fi
+          code=$(curl -sS -o response.txt -w '%{http_code}' -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: push" \
+            -d"{\"ref\": \"$GITHUB_REF\", \"head_commit\": {\"message\": \"CI deploy $GITHUB_SHA\"}, \"commits\": []}")
+          echo "Dokploy answered HTTP $code: $(head -c 500 response.txt)"
+          [ "$code" = "200" ]

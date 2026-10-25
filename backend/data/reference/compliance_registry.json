@@ -1,0 +1,14 @@
+{
+  "_comment": "Сайты организаций из официальных реестров (нежелательные организации — Генпрокуратура; иностранные агенты — Минюст; блокировки — Роскомнадзор). Новости с этих доменов не собираются и не принимаются от пользователей, источник с таким адресом не добавить (ADR-037). Список нужно сверять с официальными реестрами перед каждым релизом: это не юридическое заключение.",
+  "checked_at": "2026-10-24",
+  "entries": [
+    {"domain": "meduza.io", "name": "Медуза", "status": "undesirable"},
+    {"domain": "theins.ru", "name": "The Insider", "status": "undesirable"},
+    {"domain": "bellingcat.com", "name": "Bellingcat", "status": "undesirable"},
+    {"domain": "istories.media", "name": "Важные истории", "status": "undesirable"},
+    {"domain": "tvrain.tv", "name": "Телеканал «Дождь»", "status": "undesirable"},
+    {"domain": "novayagazeta.eu", "name": "Новая газета Европа", "status": "undesirable"},
+    {"domain": "svoboda.org", "name": "Радио Свобода", "status": "undesirable"},
+    {"domain": "currenttime.tv", "name": "Настоящее время", "status": "undesirable"}
+  ]
+}

@@ -1,0 +1,15 @@
+# The whole application with one command: `docker compose up -d --build` (or `make up`) from the repo root.
+# Every part keeps its own compose file next to its code; in Dokploy each one is a separate Compose service
+# and they talk over dokploy-network by aliases (ADR-032, docs/RUNBOOK.md "Деплой"):
+#   backend/docker-compose.yml   — backend: api, worker, scheduler, ml-stub, Postgres, Redis, MinIO
+#   ml/docker-compose.yml        — ML service (team ML): insight agent, chat, ranker
+#   frontend/docker-compose.yml  — web UI: nginx with the built frontend, /api -> backend
+# Variables come from the root .env (cp .env.example .env); paths inside each file are relative to that file.
+
+include:
+  - path: [backend/docker-compose.yml, backend/docker-compose.override.yml]  # override = local host ports
+    env_file: .env.example  # defaults; the root .env (if any) overrides them
+  - path: [ml/docker-compose.yml, ml/docker-compose.override.yml]
+    env_file: .env.example
+  - path: [frontend/docker-compose.yml, frontend/docker-compose.override.yml]
+    env_file: .env.example

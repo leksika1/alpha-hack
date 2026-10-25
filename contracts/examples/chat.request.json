@@ -1,0 +1,17 @@
+{
+  "request_id": "chat_5b2e1c",
+  "company_id": "U_110108",
+  "role": "cfo",
+  "insight_id": "3f1e2d3c-4b5a-4968-8776-655443322110",
+  "insight": null,
+  "intent": "other_slice",
+  "messages": [
+    { "role": "user", "content": "А как это повлияет на лизинговые платежи, если ставка останется 14% до середины 2027 года?" }
+  ],
+  "tools": {
+    "base_url": "http://api:8000/internal/tools",
+    "llm_base_url": "http://api:8000/internal/llm",
+    "token": "<run-scoped JWT>",
+    "run_id": "run_chat_5b2e1c"
+  }
+}

@@ -1,0 +1,98 @@
+[project]
+name = "alfa-future-backend"
+version = "0.1.0"
+description = "Backend of the personalized business-insights service for Alfa-Business (Alfa Hack 2026)"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "pgvector>=0.3.6",
+    "redis>=5.2",
+    "taskiq>=0.11.10",
+    "taskiq-redis>=1.0.2",
+    "boto3>=1.35",
+    "httpx>=0.28",
+    "structlog>=24.4",
+    "prometheus-client>=0.21",
+    "jsonschema>=4.23",
+    "pyyaml>=6.0.2",
+    "pyjwt>=2.9",
+    "feedparser>=6.0.11",
+    "pypdfium2>=4.30",
+    "fastembed>=0.4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "respx>=0.21",
+    "testcontainers[postgres,redis,minio]>=4.8",
+    "openapi-spec-validator>=0.7.1",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-pyyaml>=6.0",
+    "types-jsonschema>=4.23",
+    "boto3-stubs[s3]>=1.35",
+    "fpdf2>=2.8",
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app", "ml_stub"]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "S", "ASYNC", "RUF", "SIM", "PTH", "TID"]
+ignore = [
+    "RUF001", "RUF002", "RUF003",  # Cyrillic in strings/docstrings/comments is intentional
+    "S101",                        # assert in tests
+    "B008",                        # FastAPI Depends() in defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "PTH"]
+"scripts/**" = ["S603", "S607"]
+# SQLAlchemy declarative idiom: __table_args__ / type_annotation_map are class-level containers
+"app/repositories/models.py" = ["RUF012"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"openai".msg = "LLM calls must go through the LLM Gateway (app/services/llm_gateway.py)"
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+files = ["app", "ml_stub"]
+
+[[tool.mypy.overrides]]
+module = ["app.domain.*", "app.services.*"]
+strict = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+testpaths = ["tests"]
+markers = [
+    "integration: needs Docker (testcontainers)",
+    "e2e: runs against a live docker-compose stack (E2E_BASE_URL)",
+    "live: real external sources / real LLM (excluded from CI)",
+]
+addopts = "-ra --strict-markers"

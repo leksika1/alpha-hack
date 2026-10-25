@@ -1,0 +1,202 @@
+# Backend stack: Postgres + pgvector, Redis, MinIO, migrations, seed, api, worker, scheduler, ml-stub.
+# Dokploy service "Backend" (Compose Path: ./backend/docker-compose.yml, docs/RUNBOOK.md "Деплой", ADR-032).
+# Defaults are for Dokploy: no host ports, `api` joins dokploy-network under BACKEND_ALIAS (Traefik, frontend, ML).
+# Locally it is part of the whole app: the root docker-compose.yml includes it with docker-compose.override.yml
+# (host ports) and .env.example (a project network instead of dokploy-network) — run it from the repo root.
+# Paths are relative to this file: the image is built from the repo root because it needs contracts/.
+# `docker-compose.test.yml` next to it adds the e2e profile (`make e2e`).
+#
+# Dokploy Environment (required):
+#   BACKEND_ALIAS   — unique name of `api` in dokploy-network: alfa-backend-prod / alfa-backend-dev
+#   APP_ENV=prod and secrets: JWT_SECRET, SERVICE_TOKEN, ML_SERVICE_TOKEN, POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD
+#   ML_ALIAS        — name of the ML service in dokploy-network (the same value as in the ML service)
+# LLM: only LLM_API_KEY (the team's key); the organisers' URL and model ids are the defaults.
+
+x-app-env: &app-env
+  APP_ENV: ${APP_ENV:-dev}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-alfa}:${POSTGRES_PASSWORD:-alfa}@postgres:5432/${POSTGRES_DB:-alfa}
+  REDIS_URL: redis://redis:6379/0
+  S3_ENDPOINT_URL: http://minio:9000
+  S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+  S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+  JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-change-me-in-env-0123456789}
+  SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-only-service-token}
+  ML_SERVICE_URL: ${ML_SERVICE_URL:-http://${ML_ALIAS:?Задайте ML_ALIAS (alfa-ml-prod / alfa-ml-dev)}:8200}  # ML service (ml/); ml-stub: http://ml-stub:8100
+  # Base of Tools API and LLM Gateway that the backend hands to the ML service in each request: the alias,
+  # because `api` exists in dokploy-network once per environment
+  INTERNAL_API_URL: ${INTERNAL_API_URL:-http://${BACKEND_ALIAS:?Задайте BACKEND_ALIAS (alfa-backend-prod / alfa-backend-dev)}:8000}
+  ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:-dev-only-ml-token}
+  INSIGHT_GENERATOR: ${INSIGHT_GENERATOR:-remote}
+  EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local}     # ADR-ML-006; offline/e2e: fake
+  FASTEMBED_CACHE_PATH: /home/appuser/.cache/fastembed
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+  EMBEDDING_DIM: ${EMBEDDING_DIM:-384}
+  EMBEDDING_REMOTE_URL: ${EMBEDDING_REMOTE_URL:-}
+  EMBEDDING_REMOTE_KEY: ${EMBEDDING_REMOTE_KEY:-}
+  OCR_PROVIDER: ${OCR_PROVIDER:-tesseract}
+  ANALYTICS_MAX_BYTES: ${ANALYTICS_MAX_BYTES:-50000000}
+  ANALYTICS_MAX_PAGES: ${ANALYTICS_MAX_PAGES:-150}
+  ANALYTICS_MAX_RENDER_PIXELS: ${ANALYTICS_MAX_RENDER_PIXELS:-25000000}
+  SCORER_PROVIDER: ${SCORER_PROVIDER:-baseline}
+  LLM_BASE_URL: ${LLM_BASE_URL:-}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  LLM_PROXY_URL: ${LLM_PROXY_URL:-}
+  LLM_DAILY_BUDGET_RUB: ${LLM_DAILY_BUDGET_RUB:-450}
+  LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+  LLM_MODEL_MAP: ${LLM_MODEL_MAP:-}
+  LLM_PRICES: ${LLM_PRICES:-}
+  LLM_DAILY_TOKEN_LIMIT: ${LLM_DAILY_TOKEN_LIMIT:-3000000}
+  LLM_CHAT_BUDGET_SHARE: ${LLM_CHAT_BUDGET_SHARE:-0.3}
+  MATCH_SCOPE: ${MATCH_SCOPE:-users}
+  RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+  ALERTS_PROVIDER: ${ALERTS_PROVIDER:-log}
+  ALERTS_LABEL: ${ALERTS_LABEL:-}
+  ALERT_COOLDOWN_MIN: ${ALERT_COOLDOWN_MIN:-60}
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+  DATA_DIR: ${DATA_DIR:-data/synthetic}
+  NEWS_FIXTURES_ENABLED: ${NEWS_FIXTURES_ENABLED:-true}
+  NEWS_LIVE_SOURCES_ENABLED: ${NEWS_LIVE_SOURCES_ENABLED:-true}
+  NEWS_POLL_INTERVAL_MIN: ${NEWS_POLL_INTERVAL_MIN:-15}
+  FEED_TOPIC_CAP: ${FEED_TOPIC_CAP:-2}
+
+x-app: &app
+  build:
+    context: ..
+    dockerfile: backend/Dockerfile
+    target: runtime
+  image: alfa-future-backend:${IMAGE_TAG:-local}
+  environment: *app-env
+  volumes:
+    - ../data/raw:/app/data/raw:ro
+    - models:/home/appuser/.cache
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-alfa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alfa}
+      POSTGRES_DB: ${POSTGRES_DB:-alfa}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alfa} -d ${POSTGRES_DB:-alfa}"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z  # community build of MinIO (ADR-004)
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes: [miniodata:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  minio-init:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z  # ships the mc client
+    depends_on:
+      minio: { condition: service_healthy }
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
+        mc mb --ignore-existing local/analytics local/news-raw local/snapshots &&
+        echo "buckets ready"
+    restart: "no"
+
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  seed:
+    <<: *app
+    command: ["python", "scripts/seed.py"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      minio-init: { condition: service_completed_successfully }
+    restart: "no"
+
+  api:
+    <<: *app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    expose: ["8000"]
+    networks:
+      default: {}
+      shared:
+        aliases: ["${BACKEND_ALIAS:?Задайте BACKEND_ALIAS (alfa-backend-prod / alfa-backend-dev)}"]
+    depends_on:
+      seed: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  worker:
+    <<: *app
+    command: ["taskiq", "worker", "app.workers.broker:broker", "app.workers.tasks", "--workers", "2"]
+    networks: [default, shared]  # reaches the ML service (ML_SERVICE_URL by ML_ALIAS)
+    depends_on:
+      seed: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  scheduler:
+    <<: *app
+    command: ["taskiq", "scheduler", "app.workers.broker:scheduler", "app.workers.tasks"]
+    depends_on:
+      redis: { condition: service_healthy }
+      worker: { condition: service_started }
+
+  ml-stub:
+    <<: *app
+    command: ["uvicorn", "ml_stub.main:app", "--host", "0.0.0.0", "--port", "8100"]
+    environment:
+      <<: *app-env
+      TOOLS_BASE_URL: http://api:8000/internal/tools
+      LLM_GATEWAY_URL: http://api:8000/internal/llm
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8100/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+networks:
+  # Shared with the ML and frontend services: Dokploy's network, where Traefik and the other services find `api`
+  # by BACKEND_ALIAS. Locally (.env.example) a network of the project: SHARED_NETWORK_EXTERNAL=false
+  shared:
+    external: ${SHARED_NETWORK_EXTERNAL:-true}
+    name: ${SHARED_NETWORK:-dokploy-network}
+
+volumes:
+  pgdata:
+  models:
+  redisdata:
+  miniodata:

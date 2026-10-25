@@ -1,0 +1,178 @@
+@import 'tailwindcss';
+
+/* Фирменный шрифт Alfa Interface Sans с CDN банка — подключение по гайду Core DS (Tokens & assets → Типографика). */
+@font-face {
+  font-family: 'Alfa Interface Sans';
+  src: url('https://alfabank.servicecdn.ru/media/fonts/alfa-interface-sans_regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Alfa Interface Sans';
+  src: url('https://alfabank.servicecdn.ru/media/fonts/alfa-interface-sans_medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Alfa Interface Sans';
+  src: url('https://alfabank.servicecdn.ru/media/fonts/alfa-interface-sans_bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Компоненты Core DS берут шрифт из --font-family-system / --font-family; html:root сильнее :root из бандла corp.css. */
+html:root {
+  --font-family-system: var(--font-family-alfasans);
+  --font-family: var(--font-family-alfasans);
+}
+
+/* Токены в духе веб-версии «Альфа-Бизнеса»; значения — из Alfa Core DS (core-components-vars). */
+@theme {
+  --font-sans: 'Alfa Interface Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --font-mono: ui-monospace, Menlo, monospace;
+
+  --color-accent: #ef3124;
+  --color-accent-hover: #e32a17;
+  --color-ink: rgba(3, 3, 6, 0.88);
+  --color-ink-2: rgba(4, 4, 19, 0.55);
+  --color-ink-3: rgba(5, 8, 29, 0.38);
+  --color-page: #f3f4f5;
+  --color-muted: #f2f3f5;
+  --color-muted-2: #e7e8ea;
+  --color-line: #e7e8ec;
+  --color-pos: #0d9336;
+  --color-pos-bg: #dff8e5;
+  --color-pos-dot: #0cc44d;
+  --color-neg: #ec2d20;
+  --color-neg-bg: #ffebeb;
+  --color-neg-soft: #fff5f4;
+  --color-att: #ea8313;
+  --color-att-bg: #ffefd9;
+  --color-att-dot: #fa9313;
+  --color-info: #2a77ef;
+  --color-info-bg: #e4f0ff;
+  --color-purple: #5a3fe0;
+  --color-purple-bg: #efebff;
+  --color-lime: #c8f06b;
+  --color-night: #111;
+
+  --radius-card: 20px;
+  --radius-tile: 16px;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --shadow-lift: 0 6px 24px rgba(0, 0, 0, 0.08);
+  --shadow-pop: 0 8px 40px rgba(0, 0, 0, 0.16);
+
+  --ease-alfa: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --animate-blink: blink 0.8s steps(2) infinite;
+  --animate-toast-in: toast-in 0.35s var(--ease-alfa) both;
+  --animate-toast-out: toast-out 0.22s var(--ease-alfa) both;
+  --animate-fade-up: fade-up 0.45s var(--ease-alfa) both;
+  --animate-fade-in: fade-in 0.3s var(--ease-alfa) both;
+  --animate-pop-in: pop-in 0.18s var(--ease-alfa) both;
+
+  @keyframes blink {
+    to {
+      visibility: hidden;
+    }
+  }
+
+  @keyframes toast-in {
+    from {
+      transform: translateX(32px) scale(0.98);
+      opacity: 0;
+    }
+  }
+
+  @keyframes toast-out {
+    to {
+      transform: translateX(32px);
+      opacity: 0;
+    }
+  }
+
+  @keyframes fade-up {
+    from {
+      transform: translateY(12px);
+      opacity: 0;
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes pop-in {
+    from {
+      transform: translateY(-4px) scale(0.97);
+      opacity: 0;
+    }
+  }
+}
+
+@layer base {
+  html,
+  body {
+    @apply bg-page text-[15px] leading-[1.45] text-ink antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-bold tracking-[-0.01em];
+  }
+
+  a {
+    @apply text-info hover:underline;
+  }
+
+  button:not(:disabled) {
+    @apply cursor-pointer;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Повторяющиеся блоки интерфейса. */
+@utility card {
+  @apply rounded-card bg-white shadow-card;
+}
+
+@utility eyebrow {
+  @apply inline-flex items-center gap-1.5 text-xs font-bold tracking-[0.06em] text-accent uppercase;
+}
+
+@utility label-caps {
+  @apply text-xs font-bold tracking-[0.04em] text-ink-2 uppercase;
+}
+
+/* Появление элементов списка по очереди: задержка из --i (порядковый номер, задаётся в style). */
+@utility stagger {
+  @apply motion-safe:animate-fade-up;
+  animation-delay: calc(var(--i, 0) * 35ms);
+}
+
+/* Интерактивный элемент: плавные наведение и сдвиг, при нажатии — лёгкое «проседание». */
+@utility pressable {
+  transition-property: scale, translate, background-color, border-color, box-shadow, color, opacity;
+  transition-duration: 200ms;
+  transition-timing-function: var(--ease-alfa);
+  @apply active:scale-[0.98];
+}
+
+@utility field-input {
+  @apply w-full resize-y rounded-xl border border-line bg-muted px-3 py-2.5 text-[15px] text-ink outline-none focus:border-ink-3;
+}
