@@ -209,6 +209,37 @@ _TAG_CUES: dict[tuple[str, str], re.Pattern[str]] = {
 }
 
 
+# Topics that move no business by themselves: sport, war reports, culture and celebrities, obituaries, weather,
+# commemorative coins. A headline on such a topic without any economic word is not business news, whatever the
+# tagger matched in its body ("«Рубин» уволил тренера" -> labour, "перемирие в Алешках" -> sanctions).
+_OFFTOPIC = re.compile(
+    r"тренер|футбол|хоккей|баскетбол|волейбол|теннис|\bматч|чемпионат|турнир|олимпи|\bрпл\b|\bкхл\b|"
+    r"\bнхл\b|болельщик|\bвсу\b|перемири|обстрел|\bсво\b|\bпво\b|ракетн\w* удар|концерт|фильм|сериал|"
+    r"альбом|спектакл|актер|актёр|актрис|певец|певиц|рэпер|режиссер|режиссёр|музе[йя]|\bумер\b|скончал|"
+    r"похорон|погод[аеуы]\b|землетрясени|памятн\w* монет|монет\w*,? посвящ|монета банка россии",
+    re.IGNORECASE,
+)
+# a country tag stays only if the text names the country (the tagger matches substrings and old bodies)
+_COUNTRY_ALIASES: dict[str, str] = {
+    "США": r"\bсша\b|америк|соединенн\w* штат|соединённ\w* штат|вашингтон|\busa?\b|u\.s\.|america|united states",
+    "ОАЭ": r"\bоаэ\b|эмират|дубай|\buae\b",
+    "ВЕЛИКОБРИТАНИЯ": r"британ|англи[ияюей]|лондон|\buk\b",
+    "БЕЛАРУСЬ": r"белорус|беларус|минск",
+    "КОРЕЯ, РЕСПУБЛИКА": r"южн\w* коре|республик\w* коре|\bкоре[яию]",
+    "ГОНКОНГ": r"гонконг|hong kong",
+    "КИТАЙ": r"кита[йяюе]|\bкнр\b|пекин|china|chinese",
+}
+
+
+def _country_named(country: str, text: str) -> bool:
+    alias = _COUNTRY_ALIASES.get(country.upper())
+    if alias:
+        return bool(re.search(alias, text, re.IGNORECASE))
+    name = country.lower().split(",")[0].strip()
+    stem = name[: max(4, len(name) - 2)] if len(name) > 4 else name
+    return stem in text.lower()
+
+
 def _event_text(event: dict[str, Any]) -> str:
     parts = [str(event.get("title") or ""), str(event.get("summary") or "")]
     for n in (event.get("news") or [])[:2]:
@@ -222,8 +253,10 @@ def screen_event(event: dict[str, Any]) -> dict[str, Any]:
     """Cheap deterministic screening of an event: is it business news, about Russia, about the key rate, trade."""
     text = _event_text(event)
     head = str(event.get("title") or "")
+    off_topic = bool(_OFFTOPIC.search(head)) and not _ECON.search(head)
     return {
-        "business": bool(_ECON.search(text)),
+        "business": bool(_ECON.search(text)) and not off_topic,
+        "off_topic": off_topic,
         "russia": bool(_RUSSIA.search(text)),
         "cyrillic": bool(_CYRILLIC.search(head)),
         "ru_rate": bool(_RU_RATE.search(text))
@@ -253,6 +286,15 @@ def normalize_event(event: dict[str, Any]) -> dict[str, Any]:
         if tag in vals and not cue.search(text):
             tags[kind] = [v for v in vals if v != tag]
             dropped.append(f"{kind}:{tag}")
+    countries = [str(c) for c in tags.get("countries") or []]
+    kept = [c for c in countries if _country_named(c, text)]
+    if len(kept) != len(countries):
+        tags["countries"] = kept
+        dropped += [f"countries:{c}" for c in countries if c not in kept]
+    if ev.get("event_type") == "sanctions" and not re.search(
+        r"санкц|sanction|ограничительн\w* мер", text, re.I
+    ):
+        ev["event_type"] = "other"  # the tagger's "sanctions" without the word: a trade or energy story
     head = str(ev.get("title") or "")
     if ev.get("event_type") in {"other", "macro_stat", "commodities"} and (
         _RUB_STRONGER.search(head) or _RUB_WEAKER.search(head)

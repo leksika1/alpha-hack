@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
+from alfa_ml.agent import market
 from alfa_ml.agent.draft import Action, BankPosition, Claim, Consequence, Draft, Fact, Quant, Reason, Scenario
 from alfa_ml.agent.evidence import Evidence, is_demo_material
 from alfa_ml.agent.textutil import (
@@ -327,7 +328,20 @@ def _company_reasons(w: _Writer, news_refs: list[str]) -> None:
     if g and g.get("size", 0) > 1 and ev.role in {"owner", "ceo"}:
         tags = set(ev_tags.get("industry_tags") or []) - GENERIC_TAGS
         members = [m for m in g.get("members") or [] if m.get("company_id") != ev.company_id]
-        if tags and members:
+        raw_ind = g.get("industries")
+        industries: dict[str, Any] = raw_ind if isinstance(raw_ind, dict) else {}
+        own_section = str(fv(ev.features, "okved.section", "") or "")
+        same_industry = (
+            int(industries.get(own_section, 0) or 0) >= 2
+            or int(industries.get(str(fv(ev.features, "okved.code", ""))[:2], 0) or 0) >= 2
+        )
+        # only when the event hits the group itself or an industry several group members share
+        # (otherwise "the company is in a group" was boilerplate on every card)
+        if (
+            tags
+            and members
+            and ("group" in ev.exposure.items or ("industry" in ev.exposure.items and same_industry))
+        ):
             cid = w.claim(
                 f"Компания входит в группу из {g.get('size')} юрлиц (сегмент {g.get('segment')}); эффект события стоит оценивать на уровне группы.",
                 "fact",
@@ -402,6 +416,11 @@ def _consequences(w: _Writer, news_refs: list[str]) -> str:
     )
     basis = [*news_refs[:1], "sc"]
     analytics_ref = [a.sid for a in ev.analytics[:1] if not is_demo_material(a.hit)]
+    fx_link = ev.exposure.items.get("fx_country")
+    strongest = ev.exposure.strongest
+    if t == "sanctions" and (fx_link is None or (strongest is not None and strongest.name != "fx_country")):
+        # the story reaches the company through fuel, its industry or counterparties, not through its payments
+        t = "other"
 
     if t == "monetary_policy":
         debt_label = (
@@ -1114,6 +1133,29 @@ def _title_summary(w: _Writer, polarity: str) -> tuple[str, str]:
     return title, summary
 
 
+def _official_figures(w: _Writer, news_refs: list[str], facts: list[Fact]) -> None:
+    """Bank of Russia figures (source sm) and an explicit note when the news quotes a different figure."""
+    ev = w.ev
+    if not ev.market:
+        return
+    for off in ev.market:
+        text = f"По данным Банка России: {off.phrase()}."
+        w.claim(text, "fact", 0.99, ["sm"])
+        if len(facts) < 4:
+            facts.append(Fact(text=text, sources=["sm"]))
+    for c in ev.market_checks:
+        if c.get("mismatch") and news_refs:
+            vals = ", ".join(f"{v:g}".replace(".", ",") for v in c["mismatched_values"])
+            official = f"{c['official']:g}".replace(".", ",")
+            w.claim(
+                f"В новости приведено значение {vals}, официальное значение Банка России на "
+                f"{market.ru_date(c['official_date'])} — {official}: в расчётах опирайтесь на официальные данные.",
+                "fact",
+                0.95,
+                [news_refs[0], "sm"],
+            )
+
+
 def rule_draft(ev: Evidence, prefix: str = "c") -> Draft:
     w = _Writer(ev, prefix=prefix)
     news_refs = [n.sid for n in ev.news[:3]]
@@ -1128,6 +1170,7 @@ def rule_draft(ev: Evidence, prefix: str = "c") -> Draft:
         w.claim(key_fact, "fact", 0.95, news_refs)
         if len(ev.news) > 1:
             w.claim(f"О событии сообщили {len(ev.news)} источника(ов).", "fact", 0.95, news_refs)
+    _official_figures(w, news_refs, facts)
     _company_reasons(w, news_refs)
     polarity = _consequences(w, news_refs)
     _bank_view(w)

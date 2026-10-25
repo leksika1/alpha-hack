@@ -71,6 +71,10 @@ class Evidence:
     products: list[dict[str, Any]] = field(default_factory=list)
     queries_done: set[str] = field(default_factory=set)
     learned: dict[str, Any] | None = None  # ml-ranker@2 verdict (score, threshold, top features), ADR-ML-011
+    market: list[Any] = field(
+        default_factory=list
+    )  # agent.market.Official: Bank of Russia figures (source sm)
+    market_checks: list[dict[str, Any]] = field(default_factory=list)  # news figures vs the official ones
 
     @property
     def features(self) -> dict[str, Any]:
@@ -146,6 +150,18 @@ class Evidence:
                 "published_at": f"{h['doc_date']}T00:00:00Z" if h.get("doc_date") else None,
                 "page": h.get("page"),
             }
+        if self.market:
+            latest = max(o.day for o in self.market)
+            out["sm"] = {
+                "id": "sm",
+                "type": "external_stat",
+                "ref_id": ",".join(o.code for o in self.market),
+                "url": self.market[0].url,
+                "title": "Банк России: " + "; ".join(o.title for o in self.market),
+                "publisher": "Банк России",
+                "published_at": f"{latest[:10]}T00:00:00Z",
+                "page": None,
+            }
         out["sc"] = {
             "id": "sc",
             "type": "company_data",
@@ -219,6 +235,18 @@ class Evidence:
                 f"{demo}\n{clip(str(h.get('text', '')), max_chars)}"
             )
         return "\n\n".join(parts)
+
+    def render_market(self) -> str:
+        if not self.market:
+            return "(не требуются для этого события)"
+        lines = [f"- {o.phrase()}" for o in self.market]
+        for c in self.market_checks:
+            if c.get("mismatch"):
+                lines.append(
+                    f"- ВНИМАНИЕ: в новости {c['indicator']} = {c['mismatched_values']}, официальное значение "
+                    f"на {c['official_date']} — {c['official']}. Приводи официальное значение и отметь расхождение."
+                )
+        return "\n".join(lines)
 
     def render_counterparties(self, limit: int = 8) -> str:
         if not self.counterparties or not self.counterparties.get("items"):

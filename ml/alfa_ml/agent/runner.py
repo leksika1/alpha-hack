@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from alfa_ml import prompts, ranker2, semantic
+from alfa_ml.agent import market
 from alfa_ml.agent.assemble import assemble, strip_private
 from alfa_ml.agent.checks import CheckResult, check_insight
 from alfa_ml.agent.draft import Draft, parse_llm_draft
@@ -60,7 +61,11 @@ class Agent:
         self.llm: LLMClient | None = None
         if self.s.ml_llm_enabled and options.get("allow_llm", True) and llm_url:
             self.llm = LLMClient(
-                llm_url, req["tools"]["token"], req["tools"]["run_id"], self.s.ml_llm_timeout_s
+                llm_url,
+                req["tools"]["token"],
+                req["tools"]["run_id"],
+                self.s.ml_llm_timeout_s,
+                no_think=self.s.ml_llm_no_think,
             )
         self.trace: list[dict[str, Any]] = []
         self.models: dict[str, set[str]] = {}
@@ -112,6 +117,7 @@ class Agent:
             tokens_in=meta.get("tokens_in"),
             tokens_out=meta.get("tokens_out"),
             latency_ms=meta.get("latency_ms"),
+            data={k: meta.get(k) for k in ("reasoning_tokens", "finish_reason", "max_tokens")},
             input_preview=f"prompt {prompts.version(prompt)}; {len(user)} chars",
             output_preview=json.dumps(answer, ensure_ascii=False)[:1500],
         )
@@ -169,6 +175,44 @@ class Agent:
             res = await self.tools.safe("get_bank_products", {"company_id": cid}, {"products": []})
             ev.products = list(res.get("products", []))
 
+    async def market_data(self, ev: Evidence) -> None:
+        """Official Bank of Russia figures for rate/FX events and a check of the news figures against them."""
+        if not self.tools.can("get_market_data"):
+            return
+        text = " ".join([str(ev.event.get("title") or ""), *(f"{n.title}. {n.text}" for n in ev.news[:3])])
+        codes = market.wanted(ev.event, set(ev.exposure.items), ev.features, text)
+        published = ev.news[0].published_at if ev.news else ev.event.get("first_seen_at")
+        date_from, date_to = market.date_window(published)
+        for code in codes:
+            series = await self.tools.safe(
+                "get_market_data",
+                {"indicator": code, "date_from": date_from, "date_to": date_to},
+                None,
+                "retrieval",
+            )
+            off = market.official(series, published) if isinstance(series, dict) else None
+            if off is None:
+                continue
+            ev.market.append(off)
+            verdict = market.check(text, off)
+            if verdict is not None:
+                ev.market_checks.append(verdict)
+        if ev.market_checks:
+            bad = [c for c in ev.market_checks if c["mismatch"]]
+            await self.step(
+                "self_check",
+                "market_check",
+                "error" if bad else "ok",
+                output_preview=(
+                    "; ".join(
+                        f"{c['indicator']}: в новости {c['mismatched_values']}, официально {c['official']} на {c['official_date']}"
+                        for c in bad
+                    )
+                    or "цифры новости совпадают с официальными данными Банка России"
+                ),
+                data={"checks": ev.market_checks},
+            )
+
     def merge_with_rules(self, llm: Draft, rules: Draft) -> Draft:
         """LLM text, deterministic safety net: borrow what the LLM omitted or got unverifiable."""
         borrowed: set[str] = set()
@@ -189,6 +233,10 @@ class Agent:
         if not llm.actions:
             llm.actions = rules.actions
         llm.quantitative = rules.quantitative  # numbers come only from deterministic calculation
+        if not any("sm" in c.sources for c in llm.claims):
+            borrowed.update(
+                c.id for c in rules.claims if "sm" in c.sources
+            )  # official Bank of Russia figures
         llm.claims += [c for c in rules.claims if c.id in borrowed]
         if not llm.title or len(llm.title) < 5:
             llm.title = rules.title
@@ -312,7 +360,12 @@ class Agent:
                 self.llm = None
             if self.s.ml_llm_planner and self.llm_ok(30):
                 answer = await self.ask(
-                    "planning", "planner", self.s.ml_model_planner, planner_message(ev, plan), 350, "llm_plan"
+                    "planning",
+                    "planner",
+                    self.s.ml_model_planner,
+                    planner_message(ev, plan),
+                    1000,
+                    "llm_plan",
                 )
                 if answer:
                     plan = merge_llm_plan(plan, answer)
@@ -323,6 +376,7 @@ class Agent:
                         data={"plan": plan.as_dict()},
                     )
             await self.gather(ev, plan)
+            await self.market_data(ev)
             if not ev.analytics:
                 # self-correction: broader query before concluding that the bank has no view on the topic
                 q = str(event.get("title") or "")[:200]
@@ -338,7 +392,7 @@ class Agent:
             if self.llm_ok(20):
                 base_msg = analyst_message(ev, plan, rules_quants)
                 answer = await self.ask(
-                    "generation", "analyst", self.s.ml_model_analyst, base_msg, 2200, "llm_draft"
+                    "generation", "analyst", self.s.ml_model_analyst, base_msg, 4000, "llm_draft"
                 )
                 if answer is not None:
                     llm_draft = parse_llm_draft(
@@ -368,7 +422,7 @@ class Agent:
                         "critic",
                         self.s.ml_model_critic,
                         critic_message(ev, insight),
-                        700,
+                        1500,
                         "llm_critic",
                     )
                     if verdict is None or verdict.get("verdict") != "revise":
@@ -397,7 +451,7 @@ class Agent:
                     "analyst",
                     self.s.ml_model_analyst,
                     revision_message(analyst_message(ev, plan, rules_quants), draft, issues),
-                    2200,
+                    4000,
                     f"llm_revise_{iteration}",
                 )
                 if answer is None:

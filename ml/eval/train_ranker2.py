@@ -37,8 +37,8 @@ from alfa_ml.ranker import score_exposure
 from eval.datasets import SETS, load_pairs
 
 HERE = Path(__file__).resolve().parent
-TRAIN_SETS = ["demo", "heldout1", "live", "set2", "set3", "set4"]
-BLIND_SETS = ["set5"]  # labelled and committed before this model version; scored once, never used for choices
+TRAIN_SETS = ["demo", "heldout1", "live", "set2", "set3", "set4", "set5"]
+BLIND_SETS = ["set6"]  # the next blind set; labelled and committed before a model version, scored once
 RULE_THRESHOLD = 0.35
 MIN_RECALL_IMPORTANT = 0.95
 # Chosen on the leave-one-set-out mean only (never on a blind set): five aggregate embedding features, the kNN label
@@ -109,7 +109,7 @@ class Model:
     def fit(self, rows: list[dict[str, Any]]) -> Model:
         x, y, w = matrix(rows, self.names), np.array([r["gold"] >= 1 for r in rows]), weights(rows)
         self.mu, self.sd = x.mean(0), x.std(0) + 1e-6
-        z = (x - self.mu) / self.sd
+        z = np.clip((x - self.mu) / self.sd, -ranker2.Z_CLIP, ranker2.Z_CLIP)
         if self.kind == "lr":
             self.m: Any = LogisticRegression(C=LR_C, class_weight="balanced", max_iter=2000).fit(
                 z, y, sample_weight=w
@@ -120,7 +120,8 @@ class Model:
         return self
 
     def proba(self, rows: list[dict[str, Any]]) -> np.ndarray:
-        return self.m.predict_proba((matrix(rows, self.names) - self.mu) / self.sd)[:, 1]
+        z = np.clip((matrix(rows, self.names) - self.mu) / self.sd, -ranker2.Z_CLIP, ranker2.Z_CLIP)
+        return self.m.predict_proba(z)[:, 1]
 
 
 def choose_threshold(rows: list[dict[str, Any]], p: np.ndarray) -> float:

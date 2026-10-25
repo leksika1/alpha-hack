@@ -25,7 +25,7 @@ def parse_sse(text: str) -> list[tuple[str, dict]]:
 async def test_health_and_info(client) -> None:  # type: ignore[no-untyped-def]
     assert (await client.get("/health")).json()["status"] == "ok"
     info = (await client.get("/v1/info")).json()
-    assert info["prompts"]["analyst"] == "analyst@2"
+    assert info["prompts"]["analyst"] == "analyst@3"
 
 
 async def test_generate_endpoint_and_idempotency(backend, client) -> None:  # type: ignore[no-untyped-def]

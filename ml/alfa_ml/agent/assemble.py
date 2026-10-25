@@ -114,7 +114,7 @@ def assemble(
     e = ev.event
     key_facts = []
     for f in draft.key_facts:
-        refs = [s for s in srcs(f.sources) if s in set(news_sids) | {"sc"}]
+        refs = [s for s in srcs(f.sources) if s in set(news_sids) | {"sc", "sm"}]
         if refs and len(f.text.strip()) >= 3:
             key_facts.append({"text": clip(f.text, 500), "source_refs": refs})
     if not key_facts and news_sids:
