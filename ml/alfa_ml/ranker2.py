@@ -121,6 +121,28 @@ def knn_features(
     }
 
 
+KNOWN_COMPANY = 0.995  # the same company profile
+
+
+def known_label(features: dict[str, Any], event: dict[str, Any]) -> int | None:
+    """A human label of this very news for this very company, if the memory has it (it then wins over the model)."""
+    mem = load_memory()
+    if mem is None or semantic.backend() is None:
+        return None
+    import numpy as np
+
+    ev, co = pair_vectors(features, event)
+    dim = int(mem.events.shape[1])
+    if len(ev) != dim or len(co) != dim:
+        return None
+    se = mem.events @ np.asarray(ev, dtype=np.float32)
+    sc = mem.companies @ np.asarray(co, dtype=np.float32)
+    hit = (se[mem.ev_idx] >= KNN_SAME_EVENT) & (sc[mem.co_idx] >= KNOWN_COMPANY)
+    if not hit.any():
+        return None
+    return int(mem.gold[hit].max())
+
+
 def pair_vectors(features: dict[str, Any], event: dict[str, Any]) -> tuple[list[float], list[float]]:
     ev, co = semantic.embed([semantic.event_text(event), semantic.profile_text(features)])
     return ev, co

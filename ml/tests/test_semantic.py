@@ -103,3 +103,13 @@ def test_shipped_memory_matches_the_model() -> None:
     assert mem is not None and model is not None
     assert {"knn_rel", "knn_imp", "knn_mass"} <= set(model["features"])
     assert mem.events.shape[1] == 384 and len(mem.gold) == model["pairs"]
+
+
+def test_a_hand_label_of_the_same_pair_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    from alfa_ml.agent import runner
+
+    monkeypatch.setattr(ranker2, "threshold", lambda: 0.75)
+    assert runner._known_score(0, 0.999) == 0.0
+    assert runner._known_score(1, 0.2) == 0.75
+    assert runner._known_score(2, 0.5) == 0.95
+    assert runner._known_score(2, 0.99) == 0.99
