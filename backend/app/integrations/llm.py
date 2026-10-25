@@ -95,6 +95,31 @@ def _completion_body(response: httpx.Response) -> dict[str, Any]:
     return data
 
 
+def _unsupported_optional_field(response: httpx.Response, payload: dict[str, Any]) -> str | None:
+    """A provider may reject optional OpenAI extensions before attempting a completion."""
+    if response.status_code != 400:
+        return None
+    detail = response.text.lower()
+    if not any(
+        hint in detail
+        for hint in (
+            "unsupported",
+            "not supported",
+            "unknown",
+            "unrecognized",
+            "unexpected",
+            "not allowed",
+            "extra_forbidden",
+            "extra inputs are not permitted",
+        )
+    ):
+        return None
+    return next(
+        (name for name in ("chat_template_kwargs", "response_format") if name in payload and name in detail),
+        None,
+    )
+
+
 class OpenAICompatibleProvider:
     name = "openai"
 
@@ -152,23 +177,33 @@ class OpenAICompatibleProvider:
         return data
 
     async def complete(self, payload: dict[str, Any]) -> dict[str, Any]:
+        # Only top-level optional fields are removed; preserve the caller's request and budget/cache key.
+        body = dict(payload)
+        attempt = 0
         async with self._client() as client:
-            for attempt in range(self.max_retries + 1):
+            while True:
                 try:
-                    resp = await client.post("/chat/completions", json=payload)
+                    resp = await client.post("/chat/completions", json=body)
                 except httpx.TimeoutException as exc:
                     if attempt < self.max_retries:
+                        attempt += 1
                         continue
                     raise LlmProviderError(504, "llm-timeout", f"LLM provider timeout: {exc}") from exc
                 except httpx.HTTPError as exc:
                     if attempt < self.max_retries:
-                        await asyncio.sleep(0.5 * (attempt + 1))
+                        attempt += 1
+                        await asyncio.sleep(0.5 * attempt)
                         continue
                     raise LlmProviderError(
                         502, "llm-unavailable", f"LLM provider unreachable: {exc}"
                     ) from exc
+                if optional := _unsupported_optional_field(resp, body):
+                    # At most two drops, independent of transient retries; rejected requests did not generate.
+                    body.pop(optional)
+                    continue
                 if resp.status_code in RETRY_STATUSES and attempt < self.max_retries:
-                    await asyncio.sleep(0.5 * (attempt + 1))
+                    attempt += 1
+                    await asyncio.sleep(0.5 * attempt)
                     continue
                 if resp.status_code >= 400:
                     raise LlmProviderError(
@@ -177,7 +212,6 @@ class OpenAICompatibleProvider:
                         f"LLM provider returned {resp.status_code}: {resp.text[:300]}",
                     )
                 return _completion_body(resp)
-        raise LlmProviderError(502, "llm-unavailable", "LLM provider failed")  # pragma: no cover
 
     async def stream(self, payload: dict[str, Any]) -> AsyncIterator[bytes]:
         body = {**payload, "stream": True, "stream_options": {"include_usage": True}}

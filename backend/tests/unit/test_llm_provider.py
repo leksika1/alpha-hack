@@ -1,6 +1,8 @@
-"""Malformed HTTP 200 provider responses must release gateway reservations as upstream failures."""
+"""Validate upstream responses and optional-field compatibility behind the gateway."""
 
+import json
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -142,3 +144,66 @@ async def test_provider_stream_is_still_relayed() -> None:
     )
     chunks = [chunk async for chunk in provider(response).stream({"messages": []})]
     assert b"".join(chunks) == response.content
+
+
+@pytest.mark.parametrize("field", ["chat_template_kwargs", "response_format"])
+async def test_unsupported_optional_field_is_dropped_without_mutating_the_request(field: str) -> None:
+    payload = {
+        "messages": [{"role": "user", "content": "question"}],
+        "chat_template_kwargs": {"enable_thinking": False},
+        "response_format": {"type": "json_object"},
+    }
+    original = json.loads(json.dumps(payload))
+    seen: list[dict[str, Any]] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body)
+        if field in body:
+            return httpx.Response(400, json={"error": {"message": f"Unsupported parameter: {field}"}})
+        return httpx.Response(200, json=completion({"content": "{}"}))
+
+    client = OpenAICompatibleProvider("https://provider.test/v1", "k", 1, 0, httpx.MockTransport(handle))
+    assert (await client.complete(payload))["choices"][0]["message"]["content"] == "{}"
+    assert len(seen) == 2 and seen[1] == {key: value for key, value in payload.items() if key != field}
+    assert payload == original
+
+
+async def test_optional_field_drops_do_not_consume_transient_retry_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[dict[str, Any]] = []
+    monkeypatch.setattr("app.integrations.llm.asyncio.sleep", AsyncMock())
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body)
+        if len(seen) == 1:
+            return httpx.Response(503)
+        for field in ("chat_template_kwargs", "response_format"):
+            if field in body:
+                return httpx.Response(400, json={"detail": f"Unknown field: {field}"})
+        return httpx.Response(200, json=completion({"content": "answer"}))
+
+    client = OpenAICompatibleProvider("https://provider.test/v1", "k", 1, 1, httpx.MockTransport(handle))
+    body = {"messages": [], "chat_template_kwargs": {"enable_thinking": False}, "response_format": {}}
+    assert (await client.complete(body))["choices"][0]["message"]["content"] == "answer"
+    assert len(seen) == 4 and seen[0] == seen[1]
+    assert set(seen[2]) == {"messages", "response_format"} and seen[3] == {"messages": []}
+
+
+@pytest.mark.parametrize(
+    "detail", ["invalid messages", "response_format has invalid schema", "unsupported model"]
+)
+async def test_unrelated_bad_request_is_not_retried_by_dropping_fields(detail: str) -> None:
+    calls = 0
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(400, json={"detail": detail})
+
+    client = OpenAICompatibleProvider("https://provider.test/v1", "k", 1, 2, httpx.MockTransport(handle))
+    with pytest.raises(LlmProviderError) as error:
+        await client.complete({"messages": [], "response_format": {}, "chat_template_kwargs": {}})
+    assert error.value.status == 502 and error.value.code == "llm-upstream-error" and calls == 1

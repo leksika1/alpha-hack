@@ -27,7 +27,7 @@
 | Проверка | Результат |
 |---|---|
 | Lint, типы (ruff, mypy strict для domain и services) | зелёные |
-| Unit | 478 (проверка 26.10, `docs/VERIFICATION.md`) |
+| Unit | 484 (проверка 26.10, `docs/VERIFICATION.md`) |
 | Integration (Postgres + pgvector, Redis, MinIO) | 84 + отдельно OCR с настоящим Tesseract в Docker |
 | E2E | 23 с заглушкой + 3 с настоящим ML в режиме правил |
 | CI GitHub Actions | lint, типы, unit, integration, e2e, тесты ML, сборка фронтенда; деплой только после зелёных |
