@@ -54,7 +54,11 @@ async def chat_stream(req: dict[str, Any], settings: Settings | None = None) -> 
         and (req.get("options") or {}).get("allow_llm", True)
     ):
         llm = LLMClient(
-            req["tools"]["llm_base_url"], req["tools"]["token"], req["tools"]["run_id"], s.ml_llm_timeout_s
+            req["tools"]["llm_base_url"],
+            req["tools"]["token"],
+            req["tools"]["run_id"],
+            s.ml_llm_timeout_s,
+            no_think=s.ml_llm_no_think,
         )
     question = clip(str(req["messages"][-1].get("content", "")), 1000)
     history = [m for m in req["messages"][:-1] if m.get("role") in {"user", "assistant"}][-6:]
@@ -185,8 +189,8 @@ async def chat_stream(req: dict[str, Any], settings: Settings | None = None) -> 
                     purpose="chat",
                     system=prompts.system("chat", req.get("role")),
                     user=user,
-                    max_tokens=900,
-                    timeout_s=min(s.ml_llm_timeout_s, 40),
+                    max_tokens=2500,  # reasoning models spend ~300 tokens before the answer (organisers' advice)
+                    timeout_s=min(s.ml_llm_timeout_s, 50),
                 )
                 model_name = llm.last.get("model")
                 await tools.step(

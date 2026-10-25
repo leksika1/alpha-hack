@@ -27,7 +27,8 @@ class Settings(BaseModel):
     ml_llm_enabled: bool = True
     ml_llm_planner: bool = True  # LLM planner on top of the rule plan (cheap model, small answer)
     ml_llm_critic: bool = True  # LLM critic after deterministic checks
-    ml_llm_timeout_s: float = 25.0
+    ml_llm_timeout_s: float = 45.0  # one call; the run deadline (backend: 60 s) caps it further
+    ml_llm_no_think: bool = True  # switch the reasoning of Qwen/GLM off where the provider supports it
     # Aliases from GET /internal/llm/models; unknown aliases are resolved by model family (see llm.py).
     ml_model_planner: str = "gemma-4-26b-a4b"
     ml_model_analyst: str = "qwen3.6-35b-a3b"
@@ -54,7 +55,8 @@ def get_settings() -> Settings:
         ml_llm_enabled=_flag("ML_LLM_ENABLED", True),
         ml_llm_planner=_flag("ML_LLM_PLANNER", True),
         ml_llm_critic=_flag("ML_LLM_CRITIC", True),
-        ml_llm_timeout_s=float(_env("ML_LLM_TIMEOUT_S", "25")),
+        ml_llm_timeout_s=float(_env("ML_LLM_TIMEOUT_S", "45")),
+        ml_llm_no_think=_flag("ML_LLM_NO_THINK", True),
         ml_model_planner=_env("ML_MODEL_PLANNER", "gemma-4-26b-a4b"),
         ml_model_analyst=_env("ML_MODEL_ANALYST", "qwen3.6-35b-a3b"),
         ml_model_critic=_env("ML_MODEL_CRITIC", "glm-5.3-flash"),
