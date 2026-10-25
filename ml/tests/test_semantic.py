@@ -19,9 +19,9 @@ class HashBackend(semantic.Backend):
     def embed(self, texts: list[str]) -> list[list[float]]:
         out = []
         for t in texts:
-            v = [0.0] * 64
+            v = [0.0] * 384  # the dimension of the shipped label memory
             for w in t.lower().split():
-                v[int(hashlib.md5(w[:5].encode()).hexdigest(), 16) % 64] += 1.0
+                v[int(hashlib.md5(w[:5].encode()).hexdigest(), 16) % 384] += 1.0
             out.append(v)
         return out
 
@@ -79,3 +79,24 @@ def test_store_backend_reports_misses(tmp_path: Any) -> None:
     p.write_text('{"vectors": {}, "rerank": {}}')
     b = semantic.StoreBackend(p)
     assert b.embed(["x"]) == [[]] and b.rerank("q", ["d"]) == [0.0] and len(b.missing) == 2
+
+
+def test_knn_memory_carries_labels_of_similar_pairs() -> None:
+    import numpy as np
+
+    e = np.eye(4, dtype=np.float32)
+    mem = ranker2.Memory(
+        events=e, companies=e[:2], ev_idx=np.array([0, 1, 2]), co_idx=np.array([0, 0, 1]),
+        gold=np.array([2, 0, 1], dtype=np.int8), sets=np.array(["a", "a", "b"]),
+    )  # fmt: skip
+    near = ranker2.knn_features([1.0, 0, 0, 0], [1.0, 0, 0, 0], mem)
+    assert near["knn_rel"] > 0.99 and near["knn_imp"] > 0.99
+    assert ranker2.knn_features([1.0, 0, 0, 0], [1.0, 0, 0, 0], mem, exclude_set="a")["knn_mass"] < 1e-6
+    assert ranker2.knn_features([1.0, 0], [1.0, 0], mem)["knn_mass"] == 0.0  # other embedding dimension
+
+
+def test_shipped_memory_matches_the_model() -> None:
+    mem, model = ranker2.load_memory(), ranker2.load_model()
+    assert mem is not None and model is not None
+    assert {"knn_rel", "knn_imp", "knn_mass"} <= set(model["features"])
+    assert mem.events.shape[1] == 384 and len(mem.gold) == model["pairs"]
