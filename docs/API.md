@@ -34,7 +34,7 @@ Swagger `http://localhost:8000/docs`. Внутренние API для ML опи�
 | GET | `/companies/{id}/graph` | Группа, контрагенты, связи; гипотезы помечены и снабжены уверенностью |
 | **Лента** | | |
 | GET | `/feed/summary` | Виджет на главной: непрочитанные, срочные, главный инсайт по каждой компании |
-| GET | `/feed` | Лента компании: `role`, `filter` (all, urgent, risks, opportunities, saved, hidden), `period`, `limit`, `cursor` |
+| GET | `/feed` | Лента компании: `role`, `filter` (all, urgent, risks, opportunities, saved, hidden), `period`, `limit`, `cursor`; в `all` — не больше `FEED_TOPIC_CAP` карточек одной макротемы, скрытые — в `more_in_topic` (ADR-042) |
 | GET | `/digest` | Дайджест за день или неделю |
 | **Инсайт** | | |
 | GET | `/insights/{id}` | Полный инсайт (`contracts/insight.schema.json`); `via`, `position` — для метрик |
@@ -77,7 +77,7 @@ Swagger `http://localhost:8000/docs`. Внутренние API для ML опи�
 | GET | `/admin/analytics` | Все материалы аналитики со статусом обработки (`processing`, `ready`, `failed`) и ошибкой |
 | POST | `/admin/insights/regenerate` | Перегенерировать инсайты компаний |
 | GET | `/admin/generation` | Монитор генерации: очередь, кандидаты по статусам, запуски агента за сутки (p50/p95), зависшие запуски, последние ошибки, доступность ML |
-| GET | `/admin/alerts` | Активные проблемы: источники, бюджет LLM, отклонения, зависшие запуски, ML (ADR-034) |
+| GET | `/admin/alerts` | Активные проблемы: источники, бюджет LLM, ошибки LLM, отклонения, зависшие запуски, ML (ADR-034, ADR-042) |
 | POST | `/admin/generation/retry` | Закрыть зависшие запуски, вернуть упавших (и по желанию отклонённых) кандидатов в очередь |
 | PATCH | `/admin/crm-requests/{id}` | Сменить статус заявки мок-CRM (пользователь получит уведомление) |
 

@@ -2,7 +2,7 @@
 
 Feature paths are the vocabulary of ``feature_refs`` in the insight contract and of the
 Tools API ``get_company_context`` (contracts/tools-api.openapi.yaml). Unknown data stays
-``None`` and is reported in ``completeness`` — nothing is invented (CLAUDE.md §7).
+``None`` and is reported in ``completeness`` — nothing is invented.
 """
 
 from dataclasses import dataclass, field

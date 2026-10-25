@@ -139,10 +139,12 @@ ML_SERVICE_TOKEN=<как у Backend>
 | Лента пуста сразу после старта | Генерация ещё идёт: `GET /api/v1/admin/generation` (очередь, кандидаты `pending`, доступность ML) или `docker compose logs worker`. `ml_service: unavailable` — проверить сервис `ml` |
 | В `/admin/generation` есть `stuck_runs` или растёт `candidates.failed` | Воркер упал посреди генерации или ML не отвечал: `POST /api/v1/admin/generation/retry` закроет зависшие запуски и вернёт упавших кандидатов в очередь (`include_rejected` — и отклонённых) |
 | Инсайты не появляются, в `/admin/metrics` растёт `generation.rejected` | Агент возвращает невалидные инсайты: причины — в `generation.reject_reasons` и `core.insights_rejected`; передать ML-команде |
-| Вопросы отвечают `error: ml-unavailable` | ML-сервис недоступен: проверить `ML_SERVICE_URL`, `docker compose logs ml-stub` |
+| Вопросы отвечают `error: ml-unavailable` | ML-сервис недоступен: проверить `ML_SERVICE_URL`, `docker compose logs ml` |
 | В трассе инсайтов нет шагов `llm_call`, в `/admin/llm-usage` строки `status=error` | Причина — поле `error`: `llm-not-configured` — в Environment бэкенда нет `LLM_API_KEY`; `llm-upstream-error` / `llm-unavailable` / `llm-timeout` — провайдер отвечает ошибкой, висит или недоступен из сети сервера (проверить с сервера: `POST /api/v1/admin/sources/check {"url": "<LLM_BASE_URL>/models"}` — 15 с без ответа значит нет соединения; тогда `LLM_PROXY_URL`, ADR-041); `cancelled` — агент не дождался ответа (таймаут ML 25 с); `abandoned` — резерв без результата, закрыт автоматически. Пока LLM недоступен, агент пишет инсайты по правилам |
 | `429 budget-exhausted` в логах агента | Дневной бюджет LLM исчерпан (`/admin/llm-usage`); у вопросов к аналитике своя доля — `LLM_CHAT_BUDGET_SHARE`, 30 % дня (`chat_spent_rub` / `chat_limit_rub`, ADR-035). Сервис работает без LLM (`allow_llm=false`); бюджет обновится в 00:00 МСК. Поднимать `LLM_DAILY_BUDGET_RUB` — только в пределах лимита организаторов |
-| В ленте дубли про одно решение ЦБ или карточки онлайн-трансляций (данные до ADR-040) | `POST /api/v1/admin/news/cleanup?days=14` — перетегирует, склеит, снимет, перегенерирует; повторный запуск безопасен |
+| Алерт `llm-errors` | Больше половины вызовов LLM за час с ошибкой — причины в `/admin/llm-usage` (поле `error`), действия — строкой выше |
+| В ленте дубли про одно решение ЦБ, карточки онлайн-трансляций или демо-новость смешана с реальной | `POST /api/v1/admin/news/cleanup?days=14` — перетегирует, склеит, снимет, разделит, перегенерирует; повторный запуск безопасен |
+| В ленте мало карточек о ставке и курсе | Так задумано: в «Все» — не больше `FEED_TOPIC_CAP` (2) карточек одной макротемы (ADR-042); `0` — без ограничения |
 | Один источник `down` (часто зарубежный) | Нормально: источник пропускается, алерта нет (ADR-039). Если недоступна половина и больше — алерт `sources-down`: проверить сеть и DNS сервера |
 | Источник `down` в `/admin/sources/health` | После 3 неудачных опросов опрашивается резервный (`fallback_for`). Причина — в `last_error`; `robots_disallowed` не повторяется до правки каталога |
 | PDF аналитики `failed` | Причина — в `GET /api/v1/admin/analytics` (поле `error`). Загрузить файл заново — `POST /api/v1/admin/analytics?file_name=…` (тело — PDF). Лимиты: `ANALYTICS_MAX_BYTES`, `ANALYTICS_MAX_PAGES`. Пустой результат OCR не публикуется |
@@ -156,4 +158,4 @@ ML_SERVICE_TOKEN=<как у Backend>
 - **Миграция 0006** добавляет `scoring_features` и `counterparty_tags_any`. На существующей базе пересоберите
   контекст (`make ingest-companies`), иначе для старых записей используются полные признаки.
 - **Синтетика** перегенерируется детерминированно: `make synthetic`.
-- **Бэкапы** (`pg_dump` и `mc mirror` по расписанию) — в `docs/BACKLOG.md`; для демо-стенда не настроены.
+- **Бэкапы** (`pg_dump` и `mc mirror` по расписанию) — `docs/ROADMAP.md`; на стенде не настроены.
