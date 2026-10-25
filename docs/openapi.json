@@ -4921,6 +4921,18 @@
             "type": "string",
             "title": "Status"
           },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Код ошибки вызова: llm-not-configured (нет LLM_API_KEY), llm-upstream-error, llm-timeout, llm-unavailable, cancelled (агент не дождался), abandoned (резерв без результата) …"
+          },
           "calls": {
             "type": "integer",
             "title": "Calls"
@@ -4956,6 +4968,7 @@
           "model",
           "purpose",
           "status",
+          "error",
           "calls",
           "tokens_in",
           "tokens_out",

@@ -27,6 +27,10 @@ class LlmUsageRow(BaseModel):
     model: str
     purpose: str
     status: str
+    error: str | None = Field(
+        description="Код ошибки вызова: llm-not-configured (нет LLM_API_KEY), llm-upstream-error, "
+        "llm-timeout, llm-unavailable, cancelled (агент не дождался), abandoned (резерв без результата) …"
+    )
     calls: int
     tokens_in: int
     tokens_out: int

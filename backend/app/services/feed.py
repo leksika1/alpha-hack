@@ -267,7 +267,7 @@ async def trace(conn: Any, row: Any) -> dict[str, Any]:
         run_id,
     )
     llm_calls = await conn.fetch(
-        """SELECT model, purpose, status, cache_hit, tokens_in, tokens_out, cost_rub, latency_ms,
+        """SELECT model, purpose, status, error, cache_hit, tokens_in, tokens_out, cost_rub, latency_ms,
                   prompt_preview, created_at
            FROM core.llm_usage WHERE run_id = $1 ORDER BY id""",
         run_id,
@@ -325,6 +325,7 @@ async def trace(conn: Any, row: Any) -> dict[str, Any]:
                 "model": c["model"],
                 "purpose": c["purpose"],
                 "status": c["status"],
+                "error": c["error"],
                 "cache_hit": c["cache_hit"],
                 "tokens_in": c["tokens_in"],
                 "tokens_out": c["tokens_out"],
