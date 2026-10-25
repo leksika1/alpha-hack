@@ -503,3 +503,36 @@ async def alerts(admin: Admin, conn: Conn, settings: SettingsDep) -> list[AlertO
         AlertOut(key=a.key, severity=a.severity, title=a.title, detail=a.detail)
         for a in await evaluate(conn, settings)
     ]
+
+
+class FeedCleanupOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    news_retagged: int
+    events_checked: int
+    liveblog_events_retired: int = Field(description="События из онлайн-трансляций сняты с ленты")
+    cbr_events_merged: int = Field(description="Дубли событий о ключевой ставке ЦБ, склеенные в одно")
+    cbr_events_kept: int
+    events_repaired: int
+    companies_to_regenerate: list[str]
+
+
+@router.post(
+    "/news/cleanup",
+    response_model=FeedCleanupOut,
+    responses=ADMIN_ERRS,
+    summary="Привести накопленные новости и события к текущим правилам (ADR-040): перетегировать, снять "
+    "онлайн-трансляции, склеить события об одном решении ЦБ, перегенерировать их инсайты",
+)
+async def news_cleanup(
+    request: Request,
+    admin: Admin,
+    conn: Conn,
+    days: Annotated[int, Query(ge=1, le=60, description="За сколько последних дней")] = 14,
+) -> FeedCleanupOut:
+    from app.services.feed_cleanup import cleanup
+
+    stats = await cleanup(conn, days)
+    if stats["companies_to_regenerate"]:
+        await request.app.state.enqueue(stats["companies_to_regenerate"])
+    return FeedCleanupOut(**stats)

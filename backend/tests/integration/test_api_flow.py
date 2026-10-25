@@ -991,6 +991,118 @@ async def test_admin_finds_feeds_by_name_or_site(
     ).status_code == 204
 
 
+async def _old_rules_event(conn: Any, title: str, body: str, tags: dict[str, Any], flags: list[str]) -> str:
+    """A news item and its own event as the previous rules stored them."""
+    news_id = await conn.fetchval(
+        """INSERT INTO core.news_items
+               (source_id, url, canonical_url, title, body, published_at, text_hash, tags, flags, event_type)
+           VALUES ('manual', $1, $1, $2, $3, now() - interval '1 hour', md5($1), $4::jsonb, $5,
+                   'monetary_policy')
+           RETURNING id""",
+        f"https://old.example.com/{uuid.uuid4().hex}",
+        title,
+        body,
+        json.dumps(tags, ensure_ascii=False),
+        flags,
+    )
+    event_id = await conn.fetchval(
+        """INSERT INTO core.events
+               (title, event_type, tags, first_seen_at, last_seen_at, urgent, urgency_reasons)
+           VALUES ($1, 'monetary_policy', $2::jsonb, now() - interval '1 hour', now() - interval '1 hour',
+                   true, '{cbr_key_rate_decision}')
+           RETURNING id""",
+        title,
+        json.dumps({"currencies": [], "numbers": tags["numbers"]}),
+    )
+    await conn.execute("INSERT INTO core.event_news (event_id, news_id) VALUES ($1, $2)", event_id, news_id)
+    return str(event_id)
+
+
+async def test_feed_quality_rules_and_cleanup_of_stored_news(env: dict[str, Any]) -> None:
+    c = env["client"]
+    ah = await admin_headers(c)
+    live = {"title": "Военная операция на Украине. Онлайн", "body": "Хроника событий дня, обновляется."}
+    sent = (await c.post("/api/v1/admin/news", headers=ah, json={"items": [live]})).json()
+    assert sent["new"] == 0 and not sent["events"]  # live blogs are not news of one fact
+
+    story = [
+        {
+            "title": "Банк России сохранил ключевую ставку на уровне 15% годовых",
+            "body": "Решение совета директоров.",
+        },
+        {
+            "title": "Шохин: бизнес не ожидает снижения ключевой ставки ЦБ",
+            "body": "Глава РСПП прокомментировал.",
+        },
+    ]
+    one = (await c.post("/api/v1/admin/news", headers=ah, json={"items": story})).json()
+    assert one["new"] == 2 and len(one["events"]) == 1  # the decision and the comment: one event
+
+    old_tags = {"numbers": [{"kind": "key_rate", "value": 13.5, "unit": "%"}], "urgency_reasons": []}
+    async with pg_connection(env["url"]) as conn:
+        forecast = await _old_rules_event(
+            conn,
+            "ЦБ придется дольше сохранять умеренно жесткую денежно-кредитную политику",
+            "Прогноз средней ключевой ставки на 2027 год повышен до 12,5-13,5%.",
+            old_tags,
+            [],
+        )
+        comment = await _old_rules_event(
+            conn,
+            "Минфин связал повышенную ключевую ставку с политикой ЦБ по инфляции",
+            "Ведомство прокомментировало решение Банка России сохранить ставку 15%.",
+            {"numbers": [], "urgency_reasons": []},
+            [],
+        )
+        blog = await _old_rules_event(
+            conn, live["title"], live["body"], {"numbers": [], "urgency_reasons": []}, []
+        )
+        await conn.execute(
+            """INSERT INTO core.candidate_matches (company_id, event_id, role, score, score_breakdown)
+               VALUES ($1, $2::uuid, 'cfo', 0.9, '{}'::jsonb)""",
+            METALS,
+            blog,
+        )
+
+    stats = (await c.post("/api/v1/admin/news/cleanup", headers=ah, params={"days": 2})).json()
+    assert (
+        stats["liveblog_events_retired"] >= 1
+        and stats["cbr_events_merged"] >= 2
+        and stats["news_retagged"] >= 1
+    )
+    async with pg_connection(env["url"]) as conn:
+        kept = uuid.UUID(one["events"][0])
+        row = await conn.fetchrow(
+            "SELECT tags, n_news, private_company_ids FROM core.events WHERE id = $1", kept
+        )
+        # the decision's rate (this one or the demo feed's decision it joined), never the 13.5% forecast
+        rates = [n["value"] for n in json.loads(row["tags"])["numbers"] if n["kind"] == "key_rate"]
+        assert rates and rates[0] in {14.0, 15.0}
+        assert row["n_news"] >= 4 and row["private_company_ids"] is None  # the old events' news moved in
+        for retired in (forecast, comment, blog):
+            hidden = await conn.fetchval(
+                "SELECT private_company_ids FROM core.events WHERE id = $1::uuid", retired
+            )
+            assert hidden == []
+        blog_candidate = await conn.fetchval(
+            "SELECT status_reason FROM core.candidate_matches WHERE event_id = $1::uuid", blog
+        )
+        assert blog_candidate == "liveblog"
+        forecast_news = await conn.fetchval(
+            """SELECT n.tags FROM core.news_items n JOIN core.event_news en ON en.news_id = n.id
+               WHERE n.title LIKE 'ЦБ придется%' AND en.event_id = $1""",
+            kept,
+        )
+        assert [n for n in json.loads(forecast_news)["numbers"] if n["kind"] == "key_rate"] == []
+
+    again = (await c.post("/api/v1/admin/news/cleanup", headers=ah, params={"days": 2})).json()
+    assert (
+        again["cbr_events_merged"] == 0
+        and again["liveblog_events_retired"] == 0
+        and again["news_retagged"] == 0
+    )
+
+
 async def test_admin_manual_news_goes_through_the_pipeline(env: dict[str, Any]) -> None:
     c = env["client"]
     ah = await admin_headers(c)
@@ -1000,6 +1112,8 @@ async def test_admin_manual_news_goes_through_the_pipeline(env: dict[str, Any]) 
         "металлурги ждут сокращения экспорта.",
     }
     before = len(env["stats"])
+    async with pg_connection(env["url"]) as conn:  # other tests send manual news too
+        raw_before = await conn.fetchval("SELECT count(*) FROM core.news_raw WHERE source_id = 'manual'")
     first = (await c.post("/api/v1/admin/news", headers=ah, json={"items": [news]})).json()
     assert first["outcome"] == "ok" and first["new"] == 1 and first["urgent_events"], first
     assert METALS in first["companies_queued"] and len(env["stats"]) == before + 1
@@ -1009,7 +1123,7 @@ async def test_admin_manual_news_goes_through_the_pipeline(env: dict[str, Any]) 
         src = await conn.fetchrow("SELECT enabled, kind, health_status FROM core.sources WHERE id = 'manual'")
         raw = await conn.fetchval("SELECT count(*) FROM core.news_raw WHERE source_id = 'manual'")
     state = (src["enabled"], src["kind"], src["health_status"])
-    assert state == (False, "manual", "healthy") and raw == 2
+    assert state == (False, "manual", "healthy") and raw == raw_before + 2  # both submissions kept
     h = await login(c)
     assert (await c.post("/api/v1/admin/news", headers=h, json={"items": [news]})).status_code == 403
 
