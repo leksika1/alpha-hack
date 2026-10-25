@@ -7,9 +7,13 @@
   chat cannot eat the budget of the feed's pre-generation (ADR-035);
 * masking of PII before anything leaves the gateway; only a masked preview is stored;
 * cache of deterministic requests (temperature=0), cost 0 on a hit;
-* every call (ok, cached, refused, error) is a row of core.llm_usage, linked to the agent run.
+* every call (ok, cached, refused, error) is a row of core.llm_usage, linked to the agent run, with the
+  error code of a failed call (shown in /admin/llm-usage and the trace);
+* a reservation whose call was abandoned (the agent stopped waiting and the request was cancelled, or the
+  process died) is closed as `abandoned` and no longer holds the budget.
 """
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncIterator
@@ -255,6 +259,25 @@ async def _is_chat(conn: Any, caller: Caller) -> bool:
     return bool(kind == CHAT_RUN_KIND)
 
 
+def abandoned_after(settings: Settings) -> timedelta:
+    """No call can still be running after all its attempts timed out (plus a margin)."""
+    return timedelta(seconds=settings.llm_request_timeout_s * (settings.llm_max_retries + 1) + 60)
+
+
+async def close_abandoned(conn: Any, settings: Settings) -> int:
+    """Pending reservations older than any call can last: their request was dropped without a result."""
+    result = await conn.execute(
+        """UPDATE core.llm_usage SET status = 'error', error = 'abandoned', tokens_in = 0, tokens_out = 0,
+               cost_rub = 0, finished_at = now()
+           WHERE status = 'pending' AND created_at < now() - $1::interval""",
+        abandoned_after(settings),
+    )
+    closed = int(str(result).split()[-1])
+    if closed:
+        log.warning("llm_reservations_abandoned", closed=closed)
+    return closed
+
+
 async def _reserve(
     conn: Any, settings: Settings, caller: Caller, purpose: str, prep: _Prepared, stream: bool
 ) -> int:
@@ -262,6 +285,7 @@ async def _reserve(
     chat_limit: float | None = None
     async with conn.transaction():
         await conn.execute("SELECT pg_advisory_xact_lock($1)", BUDGET_LOCK_KEY)
+        await close_abandoned(conn, settings)
         b = await budget(conn, settings)
         tokens_after = b.tokens_in + b.tokens_out + prep.tokens_in_est + prep.tokens_out_est
         fits = b.spent_rub + estimate <= b.limit_rub and tokens_after <= b.token_limit
@@ -372,6 +396,12 @@ async def chat(
         LLM_REQUESTS.labels(model=alias, status="error").inc()
         log.warning("llm_provider_error", model=alias, code=exc.code, detail=exc.detail[:300])
         raise ProblemError(exc.status, exc.code, "LLM provider error", exc.detail) from exc
+    except asyncio.CancelledError:  # the agent stopped waiting: release the reservation right away
+        await _finalize(
+            conn, usage_id, "error", 0, 0, 0.0, int((time.perf_counter() - started) * 1000), "cancelled"
+        )
+        LLM_REQUESTS.labels(model=alias, status="error").inc()
+        raise
     tin, tout = _usage_of(body, prep)
     cost = cost_rub(tin, tout, prep.model.price)
     await _finalize(conn, usage_id, "ok", tin, tout, cost, int((time.perf_counter() - started) * 1000))
@@ -447,14 +477,15 @@ async def stream_chat(
 
 
 async def usage_summary(conn: Any, settings: Settings, days: int = 7) -> dict[str, Any]:
-    """Admin view: spend per day/model/purpose and refusals (GET /admin/llm-usage)."""
+    """Admin view: spend per day/model/purpose, refusals and errors by code (GET /admin/llm-usage)."""
     since = _today(settings) - timedelta(days=days - 1)
+    await close_abandoned(conn, settings)
     rows = await conn.fetch(
-        """SELECT day, model, purpose, status, count(*) AS calls, sum(tokens_in) AS tokens_in,
+        """SELECT day, model, purpose, status, error, count(*) AS calls, sum(tokens_in) AS tokens_in,
                   sum(tokens_out) AS tokens_out, sum(cost_rub) AS cost_rub,
                   avg(latency_ms) FILTER (WHERE status = 'ok') AS avg_latency_ms
            FROM core.llm_usage WHERE day >= $1
-           GROUP BY day, model, purpose, status ORDER BY day DESC, cost_rub DESC""",
+           GROUP BY day, model, purpose, status, error ORDER BY day DESC, cost_rub DESC, calls DESC""",
         since,
     )
     b = await budget(conn, settings)
@@ -470,6 +501,7 @@ async def usage_summary(conn: Any, settings: Settings, days: int = 7) -> dict[st
                 "model": r["model"],
                 "purpose": r["purpose"],
                 "status": r["status"],
+                "error": r["error"],
                 "calls": r["calls"],
                 "tokens_in": int(r["tokens_in"] or 0),
                 "tokens_out": int(r["tokens_out"] or 0),

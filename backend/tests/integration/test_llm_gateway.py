@@ -260,7 +260,60 @@ async def test_admin_llm_usage(env: dict[str, Any]) -> None:
     data = (await c.get("/api/v1/admin/llm-usage", headers=await auth("llm_admin"))).json()
     statuses = {r["status"] for r in data["rows"]}
     assert {"ok", "cached", "refused", "error"} <= statuses and data["budget"]["limit_rub"] > 0
+    errors = {r["error"] for r in data["rows"] if r["status"] == "error"}
+    assert "llm-timeout" in errors  # the reason of a failed call is visible to the admin
     assert (await c.get("/api/v1/admin/llm-usage", headers=await auth("llm_user"))).status_code == 403
+
+
+async def test_abandoned_reservation_stops_holding_the_budget(env: dict[str, Any]) -> None:
+    from app.services import llm_gateway
+
+    conn, settings = env["conn"], env["holder"]["settings"]
+    usage_id = await conn.fetchval(
+        """INSERT INTO core.llm_usage (day, caller, purpose, model, status, tokens_in, tokens_out,
+               estimated_cost_rub, created_at)
+           VALUES ($1, 'run', 'planning', $2, 'pending', 5000, 1000, 1.5, now() - interval '1 hour')
+           RETURNING id""",
+        llm_gateway._today(settings),
+        MODEL,
+    )
+    before = await llm_gateway.budget(conn, settings)
+    assert await llm_gateway.close_abandoned(conn, settings) >= 1
+    after = await llm_gateway.budget(conn, settings)
+    row = await conn.fetchrow(
+        "SELECT status, error, estimated_cost_rub FROM core.llm_usage WHERE id = $1", usage_id
+    )
+    assert row["status"] == "error" and row["error"] == "abandoned"
+    assert (
+        after.spent_rub == pytest.approx(before.spent_rub - 1.5)
+        and after.tokens_in == before.tokens_in - 5000
+    )
+
+
+async def test_cancelled_call_releases_its_reservation(env: dict[str, Any]) -> None:
+    from app.services import llm_gateway
+
+    conn, settings, provider = env["conn"], env["holder"]["settings"], env["provider"]
+    provider.delay = 5.0
+    try:
+        task = asyncio.create_task(
+            llm_gateway.chat(
+                conn,
+                settings,
+                provider,
+                llm_gateway.Caller("service"),
+                body("отмена", temperature=0.7),
+                "other",
+            )
+        )
+        await asyncio.sleep(0.5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    finally:
+        provider.delay = 0.0
+    row = await conn.fetchrow("SELECT status, error FROM core.llm_usage ORDER BY id DESC LIMIT 1")
+    assert (row["status"], row["error"]) == ("error", "cancelled")
 
 
 async def test_rate_limit_token_bucket(env: dict[str, Any]) -> None:
