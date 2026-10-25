@@ -12,25 +12,37 @@ from typing import Any
 
 PERIODS = {"day": timedelta(days=1), "week": timedelta(days=7), "month": timedelta(days=30)}
 
+# Macro themes that flood a feed with near-identical cards (the rate, the rouble): in the "all" view at most
+# $9 cards per theme, the most relevant ones; each shown card says how many more there are (ADR-042).
+# $9 = 0 — no cap (summary, digest, other filters show everything).
 _FEED_SQL = """
 WITH variants AS (
-    SELECT DISTINCT ON (i.event_id) i.*, e.event_type, e.first_seen_at, (i.role_variant = $3) AS role_match
+    SELECT DISTINCT ON (i.event_id) i.*, e.event_type, e.first_seen_at, (i.role_variant = $3) AS role_match,
+           CASE WHEN e.event_type IN ('monetary_policy', 'fx') THEN e.event_type ELSE e.id::text END AS topic
     FROM core.insights i JOIN core.events e ON e.id = i.event_id
     WHERE i.company_id = $2 AND (i.expires_at IS NULL OR i.expires_at > now())
       AND ($4::timestamptz IS NULL OR e.first_seen_at >= $4)
     ORDER BY i.event_id, (i.role_variant = $3) DESC, i.created_at DESC
+), visible AS (
+    SELECT v.*, s.seen_at, s.opened_at, s.saved_at, s.hidden_at, s.last_insight_id
+    FROM variants v
+    LEFT JOIN core.user_insight_state s ON s.user_id = $1 AND s.company_id = v.company_id AND
+        s.event_id = v.event_id
+    WHERE ($5 = 'hidden') = (s.hidden_at IS NOT NULL)
+      AND ($5 <> 'urgent' OR v.urgent)
+      AND ($5 <> 'risks' OR v.polarity IN ('risk', 'mixed'))
+      AND ($5 <> 'opportunities' OR v.polarity IN ('opportunity', 'mixed'))
+      AND ($5 <> 'saved' OR s.saved_at IS NOT NULL)
+), ranked AS (
+    SELECT *, row_number() OVER (PARTITION BY topic ORDER BY relevance_score DESC, id DESC) AS topic_rank,
+           count(*) OVER (PARTITION BY topic) AS topic_size
+    FROM visible
 )
-SELECT v.*, s.seen_at, s.opened_at, s.saved_at, s.hidden_at, s.last_insight_id
-FROM variants v
-LEFT JOIN core.user_insight_state s ON s.user_id = $1 AND s.company_id = v.company_id AND
-    s.event_id = v.event_id
-WHERE ($5 = 'hidden') = (s.hidden_at IS NOT NULL)
-  AND ($5 <> 'urgent' OR v.urgent)
-  AND ($5 <> 'risks' OR v.polarity IN ('risk', 'mixed'))
-  AND ($5 <> 'opportunities' OR v.polarity IN ('opportunity', 'mixed'))
-  AND ($5 <> 'saved' OR s.saved_at IS NOT NULL)
-  AND ($6::float8 IS NULL OR (v.relevance_score, v.id) < ($6, $7::uuid))
-ORDER BY v.relevance_score DESC, v.id DESC
+SELECT *, CASE WHEN $9 > 0 AND $5 = 'all' THEN greatest(topic_size - $9, 0) ELSE 0 END AS more_in_topic
+FROM ranked
+WHERE ($9 = 0 OR $5 <> 'all' OR topic_rank <= $9)
+  AND ($6::float8 IS NULL OR (relevance_score, id) < ($6, $7::uuid))
+ORDER BY relevance_score DESC, id DESC
 LIMIT $8
 """
 
@@ -97,6 +109,7 @@ def card(r: Any) -> dict[str, Any]:
         "sources_count": len(payload.get("sources", [])),
         "bank_view_coverage": payload.get("bank_view", {}).get("coverage", "none"),
         "why_for_you": reasons[0].get("text"),
+        "more_in_topic": int(r["more_in_topic"]),
         "priority_reasons": priority_reasons((payload.get("relevance") or {}).get("breakdown") or {}),
         "state": {
             "seen": r["seen_at"] is not None,
@@ -119,11 +132,12 @@ async def feed(
     limit: int,
     cursor: str | None,
     mark_seen: bool = True,
+    topic_cap: int = 0,
 ) -> tuple[list[dict[str, Any]], str | None]:
     since = datetime.now(UTC) - PERIODS[period] if period in PERIODS else None
     cur_score, cur_id = decode_cursor(cursor) if cursor else (None, None)
     rows = await conn.fetch(
-        _FEED_SQL, user_id, company_id, role, since, filter_, cur_score, cur_id, limit + 1
+        _FEED_SQL, user_id, company_id, role, since, filter_, cur_score, cur_id, limit + 1, topic_cap
     )
     items = [card(r) for r in rows[:limit]]
     next_cursor = (
@@ -148,7 +162,7 @@ async def feed(
 
 
 async def company_summary(conn: Any, user_id: uuid.UUID, company_id: str, role: str) -> dict[str, Any]:
-    rows = await conn.fetch(_FEED_SQL, user_id, company_id, role, None, "all", None, None, 500)
+    rows = await conn.fetch(_FEED_SQL, user_id, company_id, role, None, "all", None, None, 500, 0)
     cards = [card(r) for r in rows]
     unread = [c for c in cards if not c["state"]["opened"]]
     urgent = [c for c in unread if c["urgent"]]
@@ -165,7 +179,7 @@ async def digest(conn: Any, user_id: uuid.UUID, company_id: str, role: str, peri
     opportunities, and the next steps the insights themselves propose. No generated text."""
     now = datetime.now(UTC)
     since = now - PERIODS[period]
-    rows = await conn.fetch(_FEED_SQL, user_id, company_id, role, since, "all", None, None, 500)
+    rows = await conn.fetch(_FEED_SQL, user_id, company_id, role, since, "all", None, None, 500, 0)
     hidden = await conn.fetchval(
         """SELECT count(*) FROM core.user_insight_state s JOIN core.events e ON e.id = s.event_id
            WHERE s.user_id = $1 AND s.company_id = $2 AND s.hidden_at IS NOT NULL

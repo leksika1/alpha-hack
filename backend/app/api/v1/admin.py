@@ -508,6 +508,7 @@ async def alerts(admin: Admin, conn: Conn, settings: SettingsDep) -> list[AlertO
 class FeedCleanupOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    mixed_events_split: int = Field(description="События, где демо-лента смешалась с реальными новостями")
     news_retagged: int
     events_checked: int
     liveblog_events_retired: int = Field(description="События из онлайн-трансляций сняты с ленты")
@@ -528,11 +529,12 @@ async def news_cleanup(
     request: Request,
     admin: Admin,
     conn: Conn,
+    settings: SettingsDep,
     days: Annotated[int, Query(ge=1, le=60, description="За сколько последних дней")] = 14,
 ) -> FeedCleanupOut:
     from app.services.feed_cleanup import cleanup
 
-    stats = await cleanup(conn, days)
+    stats = await cleanup(conn, settings, days)
     if stats["companies_to_regenerate"]:
         await request.app.state.enqueue(stats["companies_to_regenerate"])
     return FeedCleanupOut(**stats)

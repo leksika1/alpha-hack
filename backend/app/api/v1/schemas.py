@@ -193,6 +193,11 @@ class InsightCard(_Model):
     priority_reasons: list[str] = Field(
         default_factory=list, description="Почему выше в ленте: главные компоненты релевантности, по-русски"
     )
+    more_in_topic: int = Field(
+        default=0,
+        description="Ещё столько карточек на эту макротему (ставка, курс) свёрнуто в виде «Все»; "
+        "в фильтрах «Срочные», «Риски», «Возможности», «Отслеживаемые» видны все (ADR-042)",
+    )
     state: InsightState
 
 

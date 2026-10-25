@@ -130,6 +130,7 @@ class Settings(BaseSettings):
     metrics_daily_cron: str = "30 0 * * *"
     qa_history_messages: int = 6  # previous messages of the thread passed to the agent
     qa_timeout_s: float = 90.0
+    feed_topic_cap: int = 2  # cards per macro theme in the 'all' view; 0 — no cap (ADR-042)
 
     # Operational alerts (ADR-034): log, or a Telegram chat through a bot
     alerts_provider: Literal["log", "telegram"] = "log"

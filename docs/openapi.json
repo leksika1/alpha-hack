@@ -4062,6 +4062,11 @@
       },
       "FeedCleanupOut": {
         "properties": {
+          "mixed_events_split": {
+            "type": "integer",
+            "title": "Mixed Events Split",
+            "description": "События, где демо-лента смешалась с реальными новостями"
+          },
           "news_retagged": {
             "type": "integer",
             "title": "News Retagged"
@@ -4099,6 +4104,7 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "mixed_events_split",
           "news_retagged",
           "events_checked",
           "liveblog_events_retired",
@@ -4801,6 +4807,12 @@
             "type": "array",
             "title": "Priority Reasons",
             "description": "Почему выше в ленте: главные компоненты релевантности, по-русски"
+          },
+          "more_in_topic": {
+            "type": "integer",
+            "title": "More In Topic",
+            "description": "Ещё столько карточек на эту макротему (ставка, курс) свёрнуто в виде «Все»; в фильтрах «Срочные», «Риски», «Возможности», «Отслеживаемые» видны все (ADR-042)",
+            "default": 0
           },
           "state": {
             "$ref": "#/components/schemas/InsightState"

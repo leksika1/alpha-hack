@@ -36,7 +36,15 @@ async def get_feed(
     effective_role = role.value if role else access.role
     try:
         items, next_cursor = await svc.feed(
-            conn, user.id, company_id, effective_role, filter, period, limit, cursor
+            conn,
+            user.id,
+            company_id,
+            effective_role,
+            filter,
+            period,
+            limit,
+            cursor,
+            topic_cap=settings.feed_topic_cap,
         )
     except (ValueError, KeyError) as exc:
         raise ProblemError(422, "validation", "Invalid cursor") from exc
