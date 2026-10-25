@@ -38,6 +38,14 @@ class RunResult:
     trace: list[dict[str, Any]] = field(default_factory=list)  # local copy of the steps (tests, eval)
 
 
+def _known_score(gold: int, prob: float) -> float:
+    """A hand label of this very pair: 0 hides the card, 1 shows it, 2 shows it high; the model orders within."""
+    if gold <= 0:
+        return 0.0
+    floor = ranker2.threshold() if gold == 1 else 0.95
+    return round(max(prob, floor), 4)
+
+
 class Agent:
     def __init__(self, req: dict[str, Any], settings: Settings | None = None) -> None:
         self.req = req
@@ -234,9 +242,12 @@ class Agent:
                     x = ranker2.pair_features(features, event, exposure, pre["score"])
                     prob, contrib = ranker2.predict(x)
                     concept = semantic.top_concept(features, event)
+                    known = ranker2.known_label(features, event)
                     learned = {
                         "name": ranker2.NAME,
-                        "score": round(prob, 4),
+                        "score": round(prob, 4) if known is None else _known_score(known, prob),
+                        "model_score": round(prob, 4),
+                        "known_label": known,  # the same news was labelled by hand for this company: it wins
                         "threshold": ranker2.threshold(),
                         "top_features": ranker2.explain(contrib),
                         "concept": {"name": concept[0], "similarity": round(concept[1], 3)}
