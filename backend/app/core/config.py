@@ -81,6 +81,8 @@ class Settings(BaseSettings):
     llm_provider: Literal["openai", "fake"] = "openai"  # fake: deterministic answers, tests/e2e only
     llm_base_url: str | None = DEFAULT_LLM_BASE_URL
     llm_api_key: SecretStr | None = None  # without it the gateway answers llm-not-configured
+    # http(s)://[user:pass@]host:port — when the provider is unreachable from the server's network (ADR-041)
+    llm_proxy_url: SecretStr | None = None
     # alias -> provider model id; entries from the environment override the defaults one by one
     llm_model_map: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_LLM_MODEL_MAP))
     # alias -> [RUB per 1M input tokens, RUB per 1M output tokens]; models without a price use the default

@@ -148,3 +148,16 @@ def test_prod_refuses_development_secrets() -> None:
     assert set(insecure_defaults(Settings())) == {"jwt_secret", "service_token", "ml_service_token"}
     strong = Settings(jwt_secret="x" * 40, service_token="s" * 40, ml_service_token="m" * 40)
     assert insecure_defaults(strong) == []
+
+
+def test_provider_calls_go_through_the_proxy_when_set() -> None:
+    from app.integrations.llm import get_llm_provider
+
+    provider = get_llm_provider(
+        Settings(llm_api_key="k", llm_proxy_url="http://user:pass@proxy.example.com:3128")
+    )
+    client = provider._client()  # type: ignore[union-attr]
+    proxied = [m for m in client._mounts.values() if m is not None]
+    assert proxied and all(t._pool._proxy_url.host == b"proxy.example.com" for t in proxied)  # type: ignore[attr-defined]
+    direct = get_llm_provider(Settings(llm_api_key="k"))._client()  # type: ignore[union-attr]
+    assert not [m for m in direct._mounts.values() if m is not None]
