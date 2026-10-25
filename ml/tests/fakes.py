@@ -88,6 +88,21 @@ SPORT_EVENT = {
         }
     ],
 }
+# Bank of Russia series in the shape of the Tools API (get_market_data)
+MARKET: dict[str, dict[str, Any]] = {
+    "key_rate": {
+        "indicator": "key_rate", "title": "Ключевая ставка Банка России", "unit": "%",
+        "points": [{"date": "2026-09-01", "value": 14.5}, {"date": "2026-09-12", "value": 14.0},
+                   {"date": "2026-10-20", "value": 14.0}],
+        "source": {"title": "Банк России", "url": "https://cbr.ru/hd_base/KeyRate/"},
+    },
+    "usd_rub": {
+        "indicator": "usd_rub", "title": "Официальный курс доллара США", "unit": "₽",
+        "points": [{"date": "2026-10-20", "value": 81.2}],
+        "source": {"title": "Банк России", "url": "https://cbr.ru/currency_base/dynamics/"},
+    },
+}  # fmt: skip
+
 RATE_EVENT = {
     **RATE_EVENT,
     "direction": "hold",
@@ -284,6 +299,8 @@ def make_backend(
             return JSONResponse(GROUP)
         if tool == "get_bank_products":
             return JSONResponse(PRODUCTS)
+        if tool == "get_market_data" and body.get("indicator") in MARKET:
+            return JSONResponse(MARKET[body["indicator"]])
         return JSONResponse({"type": "x", "title": "unknown tool", "status": 404}, status_code=404)
 
     @app.get("/internal/llm/models")

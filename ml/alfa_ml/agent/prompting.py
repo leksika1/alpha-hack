@@ -62,6 +62,7 @@ def analyst_message(ev: Evidence, plan: Plan, quants: list[dict[str, Any]]) -> s
         f"## Подверженность компании событию (рассчитано по данным)\n{ev.render_exposure()}\n\n"
         f"## Контрагенты (sk)\n{ev.render_counterparties()}\n\n## Группа (sg)\n{ev.render_group()}\n\n"
         f"## Аналитика Альфа-Банка (sa…)\n{ev.render_analytics()}\n\n"
+        f"## Официальные данные Банка России (sm)\n{ev.render_market()}\n\n"
         f"## Рассчитанные показатели\n{quant_txt}\n\n## Каталог продуктов банка\n{ev.render_products()}\n\n"
         f"## Допустимые источники\n{sources_index(ev)}"
     )

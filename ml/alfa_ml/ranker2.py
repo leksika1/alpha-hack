@@ -35,6 +35,9 @@ NAME = "ml-ranker@2"
 MODEL_PATH = Path(__file__).resolve().parent / "models" / "ranker2.json"
 MEMORY_PATH = MODEL_PATH.with_name("ranker2_memory.npz")
 KNN_K, KNN_EVENT_POW, KNN_COMPANY_POW = 15, 4, 2
+# standardised features are clipped: a value far outside the training range (a tagger change on the stand once
+# gave a channel weight ten deviations above the training mean) must not dominate the logit
+Z_CLIP = 6.0
 # The same news (or its verbatim copy) is never its own neighbour: in training a row never sees its own set, so on
 # the stand, where live events are in the memory, an exact match would inflate knn_mass (seen on 25.10: a coin
 # release scored 0.999). Neighbours with cos(event) >= KNN_SAME_EVENT are skipped everywhere.
@@ -185,7 +188,8 @@ def predict(x: dict[str, float]) -> tuple[float, dict[str, float]]:
     z = float(m["intercept"])
     contrib: dict[str, float] = {}
     for name, w, mu, sd in zip(m["features"], m["coef"], m["mean"], m["scale"], strict=True):
-        c = float(w) * ((float(x.get(name, 0.0)) - float(mu)) / (float(sd) or 1.0))
+        z = (float(x.get(name, 0.0)) - float(mu)) / (float(sd) or 1.0)
+        c = float(w) * max(-Z_CLIP, min(Z_CLIP, z))
         contrib[name] = c
         z += c
     return 1.0 / (1.0 + math.exp(-z)), contrib

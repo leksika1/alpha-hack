@@ -60,6 +60,23 @@ class LLMError(RuntimeError):
     pass
 
 
+# Reasoning models (Qwen3.6 and others) spend ~300 tokens "thinking" before the answer; with a small max_tokens the
+# visible answer comes back empty and the agent fell back to rules@1. The gateway forwards extra fields to an
+# OpenAI-compatible provider: `chat_template_kwargs.enable_thinking=false` switches the thinking off where the
+# server supports it (vLLM/SGLang chat templates of Qwen3); a provider that rejects the field gets the request
+# again without it. An empty answer cut by the length limit is retried once with a larger limit.
+NO_THINK_FAMILIES = ("qwen", "glm", "deepseek", "kimi")
+MAX_TOKENS_CAP = 6000
+_THINK_BLOCK = re.compile(r"<think>.*?</think>", re.S | re.I)
+
+
+def strip_reasoning(text: str) -> str:
+    text = _THINK_BLOCK.sub("", text or "")
+    if "</think>" in text:  # an opening tag swallowed by the server's template
+        text = text.split("</think>", 1)[1]
+    return text.strip()
+
+
 class BudgetExhausted(LLMError):
     pass
 
@@ -116,8 +133,11 @@ def extract_json(text: str) -> dict[str, Any]:
 
 
 class LLMClient:
-    def __init__(self, base_url: str, token: str, run_id: str, timeout_s: float = 25.0) -> None:
+    def __init__(
+        self, base_url: str, token: str, run_id: str, timeout_s: float = 25.0, no_think: bool = True
+    ) -> None:
         self.base_url = base_url.rstrip("/")
+        self.no_think = no_think
         self.run_id = run_id
         self.timeout_s = timeout_s
         self.usage = Usage()
@@ -185,13 +205,16 @@ class LLMClient:
             "response_format": {"type": "json_object"},
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         }
+        if self.no_think and any(f in model.lower() for f in NO_THINK_FAMILIES):
+            body["chat_template_kwargs"] = {"enable_thinking": False}
         headers = {
             "X-Purpose": purpose if purpose in {"planning", "generation", "self_check", "chat"} else "other"
         }
         last: Exception | None = None
         transport_failed = False
         started = time.perf_counter()
-        for attempt in range(3):
+        grown = False
+        for attempt in range(4):
             try:
                 resp = await self.client.post(
                     "/chat/completions", json=body, headers=headers, timeout=timeout_s or self.timeout_s
@@ -207,12 +230,14 @@ class LLMClient:
             if resp.status_code == 429 and "budget" in resp.text:
                 self.exhausted = True
                 raise BudgetExhausted(resp.text[:200])
-            if resp.status_code == 400 and "response_format" in body and attempt == 0:
-                body.pop(
-                    "response_format"
-                )  # some providers do not support JSON mode; the prompt asks for JSON
-                last = LLMUnavailable("HTTP 400 with response_format")
-                continue
+            if resp.status_code == 400 and attempt < 2:
+                # a provider without JSON mode or without the thinking switch: drop the optional field, retry
+                optional = next((k for k in ("chat_template_kwargs", "response_format") if k in body), None)
+                if optional is not None:
+                    body.pop(optional)
+                    last = LLMUnavailable(f"HTTP 400 with {optional}")
+                    log.info("llm_optional_field_dropped", field=optional, detail=resp.text[:200])
+                    continue
             if resp.status_code in {429, 502, 503, 504} and attempt == 0:
                 last = LLMUnavailable(f"HTTP {resp.status_code}")
                 continue
@@ -223,17 +248,35 @@ class LLMClient:
                 raise LLMUnavailable(f"HTTP {resp.status_code}: {resp.text[:200]}")
             _BREAKER["fails"] = 0.0  # the provider answered
             data = resp.json()
-            content = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+            choice = (data.get("choices") or [{}])[0]
+            message = choice.get("message") or {}
+            content = strip_reasoning(str(message.get("content") or ""))
             usage = data.get("usage") or {}
             t_in, t_out = int(usage.get("prompt_tokens", 0)), int(usage.get("completion_tokens", 0))
+            reasoning = int((usage.get("completion_tokens_details") or {}).get("reasoning_tokens") or 0)
             self.usage.add(display, purpose, t_in, t_out)
             self.last = {
                 "model": display,
                 "tokens_in": t_in,
                 "tokens_out": t_out,
+                "reasoning_tokens": reasoning,
+                "finish_reason": choice.get("finish_reason"),
+                "max_tokens": body["max_tokens"],
                 "latency_ms": int((time.perf_counter() - started) * 1000),
                 "cache": resp.headers.get("X-Cache"),
             }
+            if not content and choice.get("finish_reason") == "length" and not grown:
+                # the whole budget went into reasoning: one more try with room for the answer
+                grown = True
+                body["max_tokens"] = min(MAX_TOKENS_CAP, max(2 * int(body["max_tokens"]), 2500))
+                last = LLMError("empty answer: the token limit was spent on reasoning")
+                log.warning(
+                    "llm_empty_after_reasoning",
+                    model=display,
+                    tokens_out=t_out,
+                    retry_with=body["max_tokens"],
+                )
+                continue
             try:
                 value = extract_json(content)
                 self.failures = 0
