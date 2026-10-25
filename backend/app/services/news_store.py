@@ -110,21 +110,34 @@ async def ensure_source(
     )
 
 
+# An event of real news vs one of the synthetic demo feed: never mixed, so a made-up figure never stands next
+# to a real source (ADR-040)
+EVENT_IS_FIXTURE_SQL = """EXISTS (SELECT 1 FROM core.event_news en
+                           JOIN core.news_items n ON n.id = en.news_id
+                           JOIN core.sources s ON s.id = n.source_id
+                           WHERE en.event_id = e.id AND s.is_fixture)"""
+
+
 class _Window:
     """Recent news and events kept in memory for one batch (dedup and clustering candidates).
-    Comparisons are limited to +-CLUSTER_WINDOW around each item's own publication time."""
+    Comparisons are limited to +-CLUSTER_WINDOW around each item's own publication time, to news of the same
+    kind (synthetic demo feed vs real sources) and to events still shown (not retired, ADR-040)."""
 
-    def __init__(self) -> None:
+    def __init__(self, fixture: bool = False) -> None:
+        self.fixture = fixture
         self.news: list[tuple[datetime, NewsSignature]] = []
         self.events: dict[str, tuple[datetime, datetime, NewsSignature]] = {}
 
     async def load(self, conn: Any, since: datetime, until: datetime) -> None:
         news = await conn.fetch(
-            """SELECT title, summary, event_type, tags, published_at FROM core.news_items
-               WHERE published_at BETWEEN $1 AND $2 ORDER BY published_at DESC LIMIT $3""",
+            """SELECT n.title, n.summary, n.event_type, n.tags, n.published_at FROM core.news_items n
+               JOIN core.sources s ON s.id = n.source_id
+               WHERE n.published_at BETWEEN $1 AND $2 AND s.is_fixture = $4
+               ORDER BY n.published_at DESC LIMIT $3""",
             since,
             until,
             RECENT_LIMIT,
+            self.fixture,
         )
         for n in news:
             t = json.loads(n["tags"])
@@ -134,11 +147,14 @@ class _Window:
             )  # fmt: skip
             self.news.append((n["published_at"], sig))
         events = await conn.fetch(
-            """SELECT * FROM core.events WHERE last_seen_at >= $1 AND first_seen_at <= $2
-               ORDER BY last_seen_at DESC LIMIT $3""",
+            f"""SELECT * FROM core.events e WHERE last_seen_at >= $1 AND first_seen_at <= $2
+                  AND (private_company_ids IS NULL OR cardinality(private_company_ids) > 0)
+                  AND {EVENT_IS_FIXTURE_SQL} = $4
+                ORDER BY last_seen_at DESC LIMIT $3""",  # noqa: S608 - a constant fragment
             since,
             until,
             RECENT_LIMIT,
+            self.fixture,
         )
         for e in events:
             sig = signature(
@@ -239,7 +255,9 @@ async def store_news(
     result = StoreResult()
     if not drafts:
         return result
-    window = _Window()
+    window = _Window(
+        bool(await conn.fetchval("SELECT is_fixture FROM core.sources WHERE id = $1", source_id))
+    )
     async with conn.transaction():
         published = [d.published_at for d in drafts]
         await window.load(conn, min(published) - CLUSTER_WINDOW, max(published) + CLUSTER_WINDOW)

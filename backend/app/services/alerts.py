@@ -1,9 +1,9 @@
 """Operational alerts (ADR-034): one periodic check of the system state instead of hooks in every pipeline.
 
-Conditions: most news sources down (a single one is skipped quietly), LLM budget nearly or fully spent, a
-high share of insights rejected by the validator in the last hour, stuck agent runs, the ML service
-unreachable. The scheduler task sends each active condition once per cooldown (a Redis key per condition);
-`GET /admin/alerts` shows them live.
+Conditions: most news sources down (a single one is skipped quietly), LLM calls failing, LLM budget nearly
+or fully spent, a high share of insights rejected by the validator in the last hour, stuck agent runs, the ML
+service unreachable. The scheduler task sends each active condition once per cooldown (a Redis key per
+condition); `GET /admin/alerts` shows them live.
 """
 
 from typing import Any
@@ -17,6 +17,8 @@ log = get_logger(__name__)
 
 BUDGET_WARNING_SHARE = 0.8
 SOURCES_DOWN_SHARE = 0.5
+LLM_MIN_FAILED = 5  # calls with an error in the last hour
+LLM_FAILED_SHARE = 0.5
 REJECT_MIN_RUNS = 5
 
 
@@ -58,6 +60,25 @@ async def evaluate(conn: Any, settings: Settings) -> list[Alert]:
                 "Бюджет LLM почти израсходован",
                 f"Потрачено {budget.spent_rub:.2f} из {budget.limit_rub:.0f} ₽ "
                 f"({budget.spent_rub / budget.limit_rub:.0%}).",
+            )
+        )
+
+    llm = await conn.fetchrow(
+        """SELECT count(*) FILTER (WHERE status = 'error'
+                                    AND coalesce(error, '') NOT IN ('cancelled', 'abandoned')) AS failed,
+                  count(*) FILTER (WHERE status IN ('ok', 'error')) AS total,
+                  mode() WITHIN GROUP (ORDER BY error) FILTER (WHERE status = 'error') AS top_error
+           FROM core.llm_usage WHERE created_at > now() - interval '1 hour'"""
+    )
+    if llm["failed"] >= LLM_MIN_FAILED and llm["failed"] >= LLM_FAILED_SHARE * llm["total"]:
+        alerts.append(
+            Alert(
+                "llm-errors",
+                "critical",
+                "LLM-провайдер не отвечает",
+                f"За час {llm['failed']} из {llm['total']} вызовов с ошибкой ({llm['top_error']}). "
+                "Агент пишет инсайты по правилам. Причина — /admin/llm-usage; доступность LLM_BASE_URL "
+                "с сервера.",
             )
         )
 

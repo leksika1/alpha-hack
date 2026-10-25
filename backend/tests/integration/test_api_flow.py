@@ -751,7 +751,14 @@ async def test_admin_alerts_reflect_system_state(env: dict[str, Any]) -> None:
                 "alert_reject_ratio": 0.001,  # the module generated many runs already
             }
         )
+        await conn.executemany(  # the provider unreachable from the server: every call times out
+            """INSERT INTO core.llm_usage (day, caller, purpose, model, status, error)
+               VALUES (current_date, 'run', 'planning', 'gemma-4-26b-a4b', 'error', $1)""",
+            [("llm-timeout",)] * 6,
+        )
         keys = {a.key: a for a in await evaluate(conn, unreachable_ml)}
+        assert keys["llm-errors"].severity == "critical" and "llm-timeout" in keys["llm-errors"].detail
+        await conn.execute("DELETE FROM core.llm_usage WHERE purpose = 'planning' AND error = 'llm-timeout'")
         assert {"insights-rejected", "ml-unavailable", "llm-budget-exhausted"} <= set(keys)
         assert keys["ml-unavailable"].severity == "critical" and "sources-down" not in keys
         # most sources down: a network problem of the server
@@ -1101,6 +1108,66 @@ async def test_feed_quality_rules_and_cleanup_of_stored_news(env: dict[str, Any]
         and again["liveblog_events_retired"] == 0
         and again["news_retagged"] == 0
     )
+
+
+async def test_demo_feed_and_real_news_are_never_one_event(env: dict[str, Any]) -> None:
+    from app.services.feed_cleanup import cleanup
+    from app.services.news_store import NewsDraft, store_news
+
+    tag = uuid.uuid4().hex[:8]  # unique wording: not a near-duplicate of the module's demo feed
+    title = f"Банк России объявил паузу по ключевой ставке, серия {tag}"
+    now = datetime.now(UTC)
+    async with pg_connection(env["url"]) as conn:
+        demo = await store_news(
+            conn, "fixture", [NewsDraft("https://fixture.local/cbr-x", title, "Демо.", now)]
+        )
+        real = await store_news(
+            conn,
+            "manual",
+            [NewsDraft("https://www.cbr.ru/press/x", title + " (пресс-релиз)", "Решение.", now)],
+        )
+        assert demo.event_ids and real.event_ids and demo.event_ids != real.event_ids
+        # an event mixed by the previous rules: the real news sits in the demo event
+        await conn.execute(
+            "UPDATE core.event_news SET event_id = $1::uuid WHERE event_id = $2::uuid",
+            demo.event_ids[0],
+            real.event_ids[0],
+        )
+        stats = await cleanup(conn, env["settings"], days=1)
+        assert stats["mixed_events_split"] >= 1
+        sources = await conn.fetch(
+            """SELECT en.event_id, bool_and(s.is_fixture) AS all_demo, bool_or(s.is_fixture) AS any_demo
+               FROM core.event_news en JOIN core.news_items n ON n.id = en.news_id
+               JOIN core.sources s ON s.id = n.source_id GROUP BY en.event_id"""
+        )
+    assert all(r["all_demo"] == r["any_demo"] for r in sources)  # no event mixes demo and real news
+
+
+async def test_feed_shows_at_most_two_cards_per_macro_theme(env: dict[str, Any]) -> None:
+    from app.services.feed import feed
+
+    async with pg_connection(env["url"]) as conn:
+        user_id = await conn.fetchval("SELECT id FROM core.users WHERE login = 'demo'")
+        full, _ = await feed(conn, user_id, METALS, "ceo", "all", None, 50, None, mark_seen=False)
+        capped, _ = await feed(
+            conn, user_id, METALS, "ceo", "all", None, 50, None, mark_seen=False, topic_cap=1
+        )
+        urgent, _ = await feed(
+            conn, user_id, METALS, "ceo", "urgent", None, 50, None, mark_seen=False, topic_cap=1
+        )
+    themes = {"monetary_policy", "fx"}
+    for theme in themes:
+        total = [c for c in full if c["event_type"] == theme]
+        shown = [c for c in capped if c["event_type"] == theme]
+        assert len(shown) == min(1, len(total))  # the most relevant card of the theme stays
+        if shown:
+            assert (
+                shown[0]["insight_id"] == total[0]["insight_id"]
+                and shown[0]["more_in_topic"] == len(total) - 1
+            )
+    other = [c["insight_id"] for c in full if c["event_type"] not in themes]
+    assert other == [c["insight_id"] for c in capped if c["event_type"] not in themes]  # nothing else hidden
+    assert all(c["more_in_topic"] == 0 for c in urgent)  # other filters show everything
 
 
 async def test_admin_manual_news_goes_through_the_pipeline(env: dict[str, Any]) -> None:
