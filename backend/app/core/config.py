@@ -16,7 +16,8 @@ ALLOWED_LLM_MODELS: dict[str, str] = {
     "kimi-k2.6": "Kimi-K2.6",
 }
 # The organisers' provider (not secrets; the key is LLM_API_KEY): alias -> provider model id
-DEFAULT_LLM_BASE_URL = "https://changellenge.up.railway.app/v1"
+# The organisers' gateway reachable from Russian hosting (their Railway host is not, ADR-041)
+DEFAULT_LLM_BASE_URL = "https://api.alfahack-gateway26.ru/v1"
 DEFAULT_LLM_MODEL_MAP: dict[str, str] = {
     "gemma-4-26b-a4b": "google/gemma-4-26b-a4b-it",
     "glm-5.3-flash": "z-ai/glm-5.3-flash",
