@@ -20,12 +20,13 @@ from app.domain.ports import GenerationOutcome
 from app.domain.scoring import profile_from_context, score_candidate
 from app.integrations.generators import get_generator
 from app.integrations.llm import FakeLlmProvider
+from app.integrations.scorers import get_scorer
 from app.main import create_app
 from app.services.analytics_run import run_analytics_ingest
 from app.services.analytics_upload import process_upload
 from app.services.generation import GenerationStats, generate_one, generate_pending
 from app.services.ingest_companies import ingest_companies
-from app.services.matching import affected_companies, event_profile, load_profiles, match_events
+from app.services.matching import affected_companies, event_profile, load_profiles, match, match_events
 from app.services.metrics import snapshot_day
 from app.services.notifications import create_digests, notify_insight
 from app.services.seed import ADMIN_PASSWORD, DEMO_PASSWORD, seed_demo
@@ -1296,3 +1297,76 @@ async def test_prometheus_shows_the_pipeline_state_of_the_worker(env: dict[str, 
     assert f'generation_candidates{{status="generated"}} {float(generated)}' in text
     assert f"news_items_last_24h {float(news)}" in text
     assert 'news_sources{status="down"}' in text and "news_fetches_last_hour" in text
+
+
+async def test_remote_scoring_withdraws_old_card_and_can_restore_candidate(env: dict[str, Any]) -> None:
+    settings = env["settings"].model_copy(update={"scorer_provider": "remote", "ml_max_retries": 0})
+    score_by_role = {"ceo": 0.199, "cfo": 0.8}
+    scorer_name = "ml-ranker@1:recalibrated-baseline"
+
+    def handle(req: httpx.Request) -> httpx.Response:
+        body = json.loads(req.content)
+        return httpx.Response(
+            200,
+            json={
+                "request_id": body["request_id"],
+                "scorer": scorer_name,
+                "scores": [
+                    {
+                        "company_id": it["company_id"],
+                        "event_id": it["event_id"],
+                        "score": score_by_role[it["role"]],
+                        "breakdown": {"rate": score_by_role[it["role"]]},
+                    }
+                    for it in body["items"]
+                ],
+            },
+        )
+
+    scorer = get_scorer(settings, transport=httpx.MockTransport(handle))
+    async with pg_connection(env["url"]) as conn:
+        transaction = conn.transaction()
+        await transaction.start()
+        try:
+            card = await conn.fetchrow(
+                """SELECT i.id, i.event_id FROM core.insights i
+                   JOIN core.candidate_matches m ON m.company_id = i.company_id AND m.event_id = i.event_id
+                                                AND m.role = i.role_variant
+                   WHERE i.company_id = $1 AND i.role_variant = 'ceo'
+                     AND (i.expires_at IS NULL OR i.expires_at > now())
+                   ORDER BY m.score DESC LIMIT 1""",
+                METALS,
+            )
+            assert card is not None
+            event_ids = [str(card["event_id"])]
+            roles = {METALS: {"ceo", "cfo"}}
+            baseline = await match(conn, [METALS], roles, event_ids)
+            assert baseline.candidates == 2
+            stats = await match(conn, [METALS], roles, event_ids, scorer=scorer)
+            assert stats.candidates == 1
+            rows = await conn.fetch(
+                "SELECT * FROM core.candidate_matches WHERE company_id = $1 AND event_id = $2",
+                METALS,
+                card["event_id"],
+            )
+            by_role = {row["role"]: row for row in rows}
+            assert by_role["ceo"]["status"] == "skipped"
+            assert by_role["ceo"]["status_reason"] == "remote-not-relevant"
+            assert by_role["ceo"]["score"] == 0.199
+            assert by_role["cfo"]["status"] == "pending" and by_role["cfo"]["score"] == 0.8
+            assert all(row["scorer"] == scorer_name and row["matched_features"] for row in rows)
+            assert await conn.fetchval(
+                "SELECT expires_at <= now() FROM core.insights WHERE id = $1", card["id"]
+            )
+            # A threshold crossing smaller than the usual 0.05 score-change trigger still requeues the pair.
+            score_by_role["ceo"] = 0.201
+            restored = await match(conn, [METALS], roles, event_ids, scorer=scorer)
+            assert restored.candidates == 2 and restored.pending >= 1
+            assert await conn.fetchval(
+                """SELECT status = 'pending' FROM core.candidate_matches
+                   WHERE company_id = $1 AND event_id = $2 AND role = 'ceo'""",
+                METALS,
+                card["event_id"],
+            )
+        finally:
+            await transaction.rollback()

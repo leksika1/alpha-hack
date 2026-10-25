@@ -543,7 +543,7 @@ class CandidateMatch(Base):
     context_version: Mapped[int] = mapped_column(Integer, server_default="1")
     status: Mapped[str] = mapped_column(String(16), server_default="pending", index=True)
     status_reason: Mapped[str | None] = mapped_column(Text)
-    scorer: Mapped[str] = mapped_column(String(32), server_default="baseline@1")
+    scorer: Mapped[str] = mapped_column(String(255), server_default="baseline@1")
     updated_at: Mapped[datetime] = _now()
 
 

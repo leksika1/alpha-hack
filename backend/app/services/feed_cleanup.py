@@ -20,6 +20,7 @@ from typing import Any
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.domain.tagging import tag_news
+from app.integrations.scorers import get_scorer
 from app.services.matching import match_events
 from app.services.news_store import CLUSTER_WINDOW, EVENT_IS_FIXTURE_SQL, merge_numbers
 
@@ -233,6 +234,7 @@ async def cleanup(
             settings.eligible_client_types,
             min_score=settings.match_min_score,
             max_per_company=settings.match_max_per_company,
+            scorer=get_scorer(settings),
         )
         pending = await conn.fetch(
             "SELECT DISTINCT company_id FROM core.candidate_matches WHERE event_id = ANY($1::uuid[]) "

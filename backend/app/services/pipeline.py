@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.core.config import Settings
+from app.integrations.scorers import get_scorer
 from app.services.company_context import rebuild_contexts
 from app.services.matching import match, match_events
 
@@ -17,7 +18,11 @@ async def rematch_company(
     if rebuild_context:
         await rebuild_contexts(conn, [company_id])
     await match(
-        conn, [company_id], min_score=settings.match_min_score, max_per_company=settings.match_max_per_company
+        conn,
+        [company_id],
+        min_score=settings.match_min_score,
+        max_per_company=settings.match_max_per_company,
+        scorer=get_scorer(settings),
     )
     pending: int = await conn.fetchval(
         "SELECT count(*) FROM core.candidate_matches WHERE company_id = $1 AND status = 'pending'", company_id
@@ -37,6 +42,7 @@ async def match_new_events(conn: Any, settings: Settings, event_ids: list[str]) 
         settings.eligible_client_types,
         min_score=settings.match_min_score,
         max_per_company=settings.match_max_per_company,
+        scorer=get_scorer(settings),
     )
     rows = await conn.fetch(
         """SELECT DISTINCT m.company_id FROM core.candidate_matches m

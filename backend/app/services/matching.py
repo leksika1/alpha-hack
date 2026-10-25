@@ -9,10 +9,12 @@ already generated candidates with the same inputs are left alone (idempotent).
 """
 
 import json
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from app.domain.ports import ScoreResult
 from app.domain.scoring import (
     CONSUMER_TAGS,
     MAX_WEIGHT,
@@ -22,6 +24,7 @@ from app.domain.scoring import (
     score_candidate,
 )
 from app.domain.tagging import GENERIC_TAGS
+from app.integrations.scorers import HttpRelevanceScorer, ScoringItem
 
 EVENT_WINDOW_DAYS = 30
 
@@ -87,6 +90,8 @@ async def match(
     min_score: float = 0.2,
     max_per_company: int = 50,
     now: datetime | None = None,
+    *,
+    scorer: HttpRelevanceScorer | None = None,
 ) -> MatchStats:
     now = now or datetime.now(UTC)
     roles = roles if roles is not None else await roles_by_company(conn, company_ids)
@@ -127,6 +132,35 @@ async def match(
                         res.scorer,
                     )
                 )
+    if scorer is not None and records:
+        remote_results = await scorer.score_batch(
+            [
+                ScoringItem(
+                    company_id=r[0],
+                    event_id=r[1],
+                    role=r[2],
+                    baseline=ScoreResult(r[3], json.loads(r[4]), r[5], r[8]),
+                    urgent=r[6],
+                )
+                for r in records
+            ]
+        )
+        kept: list[tuple[Any, ...]] = []
+        withdrawn: list[tuple[Any, ...]] = []
+        for row, result in zip(records, remote_results, strict=True):
+            updated = (
+                *row[:3],
+                result.score,
+                json.dumps(result.breakdown),
+                row[5],
+                row[6],
+                row[7],
+                result.scorer,
+            )
+            (kept if result.score >= min_score else withdrawn).append(updated)
+        if withdrawn:
+            await _withdraw_remote_matches(conn, withdrawn)
+        records = kept
     if not records:
         return MatchStats(scored=scored, candidates=0, pending=0)
     result = await conn.fetch(
@@ -147,7 +181,10 @@ async def match(
                status = CASE
                    WHEN core.candidate_matches.context_version <> EXCLUDED.context_version
                         OR abs(core.candidate_matches.score - EXCLUDED.score) > 0.05
+                        OR core.candidate_matches.scorer <> EXCLUDED.scorer
                         OR core.candidate_matches.status = 'failed'
+                        OR (core.candidate_matches.status = 'skipped'
+                            AND core.candidate_matches.status_reason = 'remote-not-relevant')
                    THEN 'pending' ELSE core.candidate_matches.status END
            RETURNING status""",
         [r[0] for r in records],
@@ -162,6 +199,42 @@ async def match(
     )
     pending = sum(1 for r in result if r["status"] == "pending")
     return MatchStats(scored=scored, candidates=len(records), pending=pending)
+
+
+async def _withdraw_remote_matches(conn: Any, records: list[tuple[Any, ...]]) -> None:
+    """A newly irrelevant pair must not leave a previously generated card visible."""
+    companies, events, roles = [r[0] for r in records], [r[1] for r in records], [r[2] for r in records]
+    async with conn.transaction():
+        await conn.execute(
+            """UPDATE core.candidate_matches AS m SET status = 'skipped',
+                   status_reason = 'remote-not-relevant', score = r.score,
+                   score_breakdown = r.breakdown::jsonb,
+                   matched_features = f.features, context_version = r.context_version, scorer = r.scorer,
+                   updated_at = now()
+               FROM unnest($1::text[], $2::uuid[], $3::text[], $4::float8[], $5::text[], $6::text[],
+                           $7::int[], $8::text[])
+                    AS r(company_id, event_id, role, score, breakdown, features_json, context_version, scorer)
+               CROSS JOIN LATERAL (SELECT ARRAY(SELECT jsonb_array_elements_text(r.features_json::jsonb))
+                                         AS features) f
+               WHERE m.company_id = r.company_id AND m.event_id = r.event_id AND m.role = r.role""",
+            companies,
+            [uuid.UUID(e) for e in events],
+            roles,
+            [r[3] for r in records],
+            [r[4] for r in records],
+            [json.dumps(r[5]) for r in records],
+            [r[7] for r in records],
+            [r[8] for r in records],
+        )
+        await conn.execute(
+            """UPDATE core.insights AS i SET expires_at = now()
+               FROM unnest($1::text[], $2::uuid[], $3::text[]) AS r(company_id, event_id, role)
+               WHERE i.company_id = r.company_id AND i.event_id = r.event_id AND i.role_variant = r.role
+                 AND (i.expires_at IS NULL OR i.expires_at > now())""",
+            companies,
+            [uuid.UUID(e) for e in events],
+            roles,
+        )
 
 
 # The only components that do not need a matching feature are the 0.2 rate fallback for monetary policy and
@@ -220,6 +293,8 @@ async def match_events(
     client_types: list[str],
     min_score: float = 0.2,
     max_per_company: int = 50,
+    *,
+    scorer: HttpRelevanceScorer | None = None,
 ) -> MatchStats:
     """New/updated events -> pre-filter -> scorer -> candidates. scope: users | all (ADR-029)."""
     if min_score < WEAK_ONLY_MAX_SCORE:  # the pre-filter would not be a superset of the candidates
@@ -241,7 +316,13 @@ async def match_events(
             batch = ids[i : i + PREFILTER_BATCH]
             roles = {c: with_users.get(c, {DEFAULT_ROLE}) for c in batch}
             st = await match(
-                conn, batch, roles, [str(event["id"])], min_score=min_score, max_per_company=max_per_company
+                conn,
+                batch,
+                roles,
+                [str(event["id"])],
+                min_score=min_score,
+                max_per_company=max_per_company,
+                scorer=scorer,
             )
             total = MatchStats(
                 total.scored + st.scored, total.candidates + st.candidates, total.pending + st.pending
