@@ -98,9 +98,10 @@ async def test_fake_provider_is_openai_shaped() -> None:
 @respx.mock
 async def test_openai_provider_retries_then_maps_errors() -> None:
     route = respx.post("https://llm.test/v1/chat/completions")
-    route.side_effect = [httpx.Response(503), httpx.Response(200, json={"choices": [], "usage": {}})]
+    completed = {"choices": [{"message": {"role": "assistant", "content": "answer"}}], "usage": {}}
+    route.side_effect = [httpx.Response(503), httpx.Response(200, json=completed)]
     provider = OpenAICompatibleProvider("https://llm.test/v1", "k", timeout_s=5, max_retries=1)
-    assert await provider.complete({"model": "m", "messages": []}) == {"choices": [], "usage": {}}
+    assert await provider.complete({"model": "m", "messages": []}) == completed
     assert route.calls[0].request.headers["authorization"] == "Bearer k"
 
     route.side_effect = [httpx.Response(400, text="bad request")]
