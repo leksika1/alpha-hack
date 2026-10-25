@@ -103,4 +103,4 @@ def get_ocr(provider: str) -> TesseractOcr | FakeOcr:
         return FakeOcr()
     if provider == "tesseract":
         return TesseractOcr()
-    raise ValueError(f"OCR provider {provider!r} is not available (vlm: see docs/BACKLOG.md)")
+    raise ValueError(f"OCR provider {provider!r} is not available (vlm: see docs/ROADMAP.md)")

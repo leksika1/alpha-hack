@@ -59,7 +59,7 @@ Business, Global Times, OilPrice.com, World Grain, FreightWaves, Hellenic Shippi
 | Logirus | `logirus.ru/rss/news/` | 404 | нет RSS |
 
 Отраслевые металлургия, логистика и нефтегаз покрываются общими деловыми лентами (тегер распознаёт отрасли
-по словарям). Публичные RSS отраслевых изданий — в `docs/BACKLOG.md`.
+по словарям). Публичные RSS отраслевых изданий — `docs/ROADMAP.md`.
 
 ## Правила сбора
 
