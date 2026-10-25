@@ -43,19 +43,26 @@ class OpenAICompatibleProvider:
         timeout_s: float,
         max_retries: int,
         transport: httpx.AsyncBaseTransport | None = None,
+        proxy: str | None = None,
     ) -> None:
         self.base_url = (base_url or "").rstrip("/")
         self.api_key = api_key
         self.timeout_s = timeout_s
         self.max_retries = max_retries
         self.transport = transport
+        # The provider may be unreachable from the server's network (ADR-041): only its calls use the proxy
+        self.proxy = proxy
 
     def _client(self) -> httpx.AsyncClient:
         if not self.base_url or not self.api_key:
             raise LlmProviderError(502, "llm-not-configured", "LLM_BASE_URL and LLM_API_KEY are required")
         headers = {"Authorization": f"Bearer {self.api_key}"}
         return httpx.AsyncClient(
-            base_url=self.base_url, headers=headers, timeout=self.timeout_s, transport=self.transport
+            base_url=self.base_url,
+            headers=headers,
+            timeout=self.timeout_s,
+            transport=self.transport,
+            proxy=None if self.transport else self.proxy,
         )
 
     async def complete(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -156,6 +163,7 @@ def get_llm_provider(settings: Settings, transport: httpx.AsyncBaseTransport | N
     if settings.llm_provider == "fake":
         return FakeLlmProvider()
     key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else None
+    proxy = settings.llm_proxy_url.get_secret_value() if settings.llm_proxy_url else None
     return OpenAICompatibleProvider(
-        settings.llm_base_url, key, settings.llm_request_timeout_s, settings.llm_max_retries, transport
+        settings.llm_base_url, key, settings.llm_request_timeout_s, settings.llm_max_retries, transport, proxy
     )
