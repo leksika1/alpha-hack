@@ -107,7 +107,7 @@ ML_SERVICE_TOKEN=<как у Backend>
 | Что | Настройка | После изменения |
 |---|---|---|
 | ML-сервис команды ML | `INSIGHT_GENERATOR=remote`, `ML_SERVICE_URL`, `ML_SERVICE_TOKEN` | `POST /api/v1/admin/insights/regenerate` для нужных компаний |
-| LLM организаторов | `LLM_API_KEY` (ключ команды). Адрес `https://changellenge.up.railway.app/v1` и ID моделей (`google/gemma-4-26b-a4b-it`, `z-ai/glm-5.3-flash`, `qwen/qwen3.6-35b-a3b`, `deepseek/deepseek-v4.1-flash`, `qwen/qwen3-vl-30b-a3b-instruct`, `moonshotai/kimi-k2.6`) заданы по умолчанию; `LLM_BASE_URL`, `LLM_MODEL_MAP` — только для замены; `LLM_PRICES` (₽ за 1M токенов) — когда будут тарифы | проверка: `make smoke-live` |
+| LLM организаторов | `LLM_API_KEY` (ключ команды). Адрес `https://api.alfahack-gateway26.ru/v1` (доступен с российского хостинга) и ID моделей (`google/gemma-4-26b-a4b-it`, `z-ai/glm-5.3-flash`, `qwen/qwen3.6-35b-a3b`, `deepseek/deepseek-v4.1-flash`, `qwen/qwen3-vl-30b-a3b-instruct`, `moonshotai/kimi-k2.6`) заданы по умолчанию; `LLM_BASE_URL`, `LLM_MODEL_MAP` — только для замены; `LLM_PRICES` (₽ за 1M токенов) — когда будут тарифы | проверка: `make smoke-live` |
 | Модель эмбеддингов (выбирает ML) | `EMBEDDING_PROVIDER=local` + `EMBEDDING_MODEL`, или `remote` + `EMBEDDING_REMOTE_URL`; размерность 384 | `docker compose exec api python scripts/ingest.py analytics --reembed` |
 | Фронтенд | `CORS_ORIGINS` | — |
 
