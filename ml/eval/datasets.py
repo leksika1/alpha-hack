@@ -45,6 +45,10 @@ SETS: dict[str, EvalSet] = {
         "set3", HERE / "heldout" / "news_set3.json", HERE / "heldout" / "labels_set3.json", RAW,
         "слепой набор №3 (финальная проверка ml-ranker@2)",
     ),
+    "set4": EvalSet(
+        "set4", HERE / "heldout" / "news_set4.json", HERE / "heldout" / "labels_set4.json", RAW,
+        "слепой набор №4: «Коммерсантъ» (новый источник), 10 новых реальных клиентов × 40 событий",
+    ),
 }  # fmt: skip
 
 _CC: dict[Path, CsvCompanies] = {}
