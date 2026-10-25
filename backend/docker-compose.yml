@@ -27,6 +27,9 @@ x-app-env: &app-env
   # because `api` exists in dokploy-network once per environment
   INTERNAL_API_URL: ${INTERNAL_API_URL:-http://${BACKEND_ALIAS:?Задайте BACKEND_ALIAS (alfa-backend-prod / alfa-backend-dev)}:8000}
   ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN:-dev-only-ml-token}
+  ML_REQUEST_TIMEOUT_S: ${ML_REQUEST_TIMEOUT_S:-60}
+  ML_MAX_RETRIES: ${ML_MAX_RETRIES:-2}
+  CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000","http://localhost:5173"]}
   INSIGHT_GENERATOR: ${INSIGHT_GENERATOR:-remote}
   EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local}     # ADR-ML-006; offline/e2e: fake
   FASTEMBED_CACHE_PATH: /home/appuser/.cache/fastembed
@@ -46,10 +49,19 @@ x-app-env: &app-env
   LLM_PROVIDER: ${LLM_PROVIDER:-openai}
   LLM_MODEL_MAP: ${LLM_MODEL_MAP:-}
   LLM_PRICES: ${LLM_PRICES:-}
+  LLM_DEFAULT_PRICE_RUB_PER_1M: ${LLM_DEFAULT_PRICE_RUB_PER_1M:-[100,300]}
+  LLM_CACHE_TTL_H: ${LLM_CACHE_TTL_H:-168}
   LLM_DAILY_TOKEN_LIMIT: ${LLM_DAILY_TOKEN_LIMIT:-3000000}
   LLM_CHAT_BUDGET_SHARE: ${LLM_CHAT_BUDGET_SHARE:-0.3}
   MATCH_SCOPE: ${MATCH_SCOPE:-users}
   RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+  RATE_LIMIT_PUBLIC_PER_MIN: ${RATE_LIMIT_PUBLIC_PER_MIN:-120}
+  RATE_LIMIT_INTERNAL_PER_MIN: ${RATE_LIMIT_INTERNAL_PER_MIN:-1200}
+  QA_TIMEOUT_S: ${QA_TIMEOUT_S:-90}
+  NOTIFICATIONS_POLL_S: ${NOTIFICATIONS_POLL_S:-2}
+  NOTIFICATIONS_STREAM_MAX_S: ${NOTIFICATIONS_STREAM_MAX_S:-300}
+  DIGEST_DAILY_CRON: ${DIGEST_DAILY_CRON:-0 6 * * *}
+  DIGEST_WEEKLY_CRON: ${DIGEST_WEEKLY_CRON:-0 6 * * 1}
   ALERTS_PROVIDER: ${ALERTS_PROVIDER:-log}
   ALERTS_LABEL: ${ALERTS_LABEL:-}
   ALERT_COOLDOWN_MIN: ${ALERT_COOLDOWN_MIN:-60}
@@ -191,6 +203,7 @@ services:
   seed:
     <<: *app
     command: ["python", "scripts/seed.py"]
+    networks: [default, shared]  # optional remote scoring reaches ML in its separate deployment
     depends_on:
       migrate: { condition: service_completed_successfully }
       minio-init: { condition: service_completed_successfully }
