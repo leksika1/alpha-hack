@@ -107,12 +107,18 @@ ML_SERVICE_TOKEN=<как у Backend>
 | Что | Настройка | После изменения |
 |---|---|---|
 | ML-сервис команды ML | `INSIGHT_GENERATOR=remote`, `ML_SERVICE_URL`, `ML_SERVICE_TOKEN` | `POST /api/v1/admin/insights/regenerate` для нужных компаний |
-| LLM организаторов | `LLM_API_KEY` (ключ команды). Адрес `https://api.alfahack-gateway26.ru/v1` (доступен с российского хостинга) и ID моделей (`google/gemma-4-26b-a4b-it`, `z-ai/glm-5.3-flash`, `qwen/qwen3.6-35b-a3b`, `deepseek/deepseek-v4.1-flash`, `qwen/qwen3-vl-30b-a3b-instruct`, `moonshotai/kimi-k2.6`) заданы по умолчанию; `LLM_BASE_URL`, `LLM_MODEL_MAP` — только для замены; `LLM_PRICES` (₽ за 1M токенов) — когда будут тарифы | проверка: `make smoke-live` |
+| LLM организаторов | `LLM_API_KEY` (ключ команды). Адрес `https://api.alfahack-gateway26.ru/v1` и ID моделей заданы по умолчанию; `LLM_BASE_URL`, `LLM_MODEL_MAP` — для замены. `LLM_PRICES` (₽ за 1M токенов) переопределяет ориентировочные тарифы организаторов из `backend/app/core/config.py`; `{}` сохраняет их | проверка: `make smoke-live` |
 | Модель эмбеддингов (выбирает ML) | `EMBEDDING_PROVIDER=local` + `EMBEDDING_MODEL`, или `remote` + `EMBEDDING_REMOTE_URL`; размерность 384 | `docker compose exec api python scripts/ingest.py analytics --reembed` |
 | Фронтенд | `CORS_ORIGINS` | — |
 
 Секреты (`JWT_SECRET`, `SERVICE_TOKEN`, `ML_SERVICE_TOKEN`, `LLM_API_KEY`) — только в `.env` или в окружении.
 С `APP_ENV=prod` и dev-значениями сервис не стартует.
+
+Настройки из `.env` подставляются Compose при создании контейнеров. После изменения значений выполните
+`docker compose up -d` (в Dokploy — Redeploy), чтобы применить их; простой `restart` окружение не перечитывает.
+В частности, бэкенд получает `QA_TIMEOUT_S`, `ML_REQUEST_TIMEOUT_S`, `ML_MAX_RETRIES`, `CORS_ORIGINS`,
+`RATE_LIMIT_*_PER_MIN`, `NOTIFICATIONS_*`, `DIGEST_*_CRON`, `LLM_CACHE_TTL_H` и
+`LLM_DEFAULT_PRICE_RUB_PER_1M` из compose. Проверить интеграцию без внешнего ключа — `make e2e-ml`.
 
 ## Мониторинг
 
@@ -159,6 +165,8 @@ ML_SERVICE_TOKEN=<как у Backend>
 ## Изменения схемы и данных
 
 - **Миграции.** `make migrate` (Alembic). Integration-тест проверяет, что модели и схема не расходятся.
+- **Миграция 0011** расширяет имя скорера кандидатов до 255 символов. Она нужна для полного имени
+  `ml-ranker@1:recalibrated-baseline` от `/v1/score`; выполните перед включением `SCORER_PROVIDER=remote`.
 - **Миграция 0006** добавляет `scoring_features` и `counterparty_tags_any`. На существующей базе пересоберите
   контекст (`make ingest-companies`), иначе для старых записей используются полные признаки.
 - **Синтетика** перегенерируется детерминированно: `make synthetic`.
