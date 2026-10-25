@@ -2684,6 +2684,38 @@
         ]
       }
     },
+    "/api/v1/admin/llm-provider": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Остаток лимита ключа команды у провайдера LLM (его /key/info); ключ в ответ не попадает",
+        "operationId": "llm_provider_key_api_v1_admin_llm_provider_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProviderKeyOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/sources": {
       "get": {
         "tags": [
@@ -5061,6 +5093,94 @@
           "chat_spent_rub"
         ],
         "title": "LlmBudgetOut"
+      },
+      "LlmProviderKeyOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "error",
+              "not-supported"
+            ],
+            "title": "Status"
+          },
+          "spend": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spend",
+            "description": "Потрачено по ключу команды за текущий период провайдера"
+          },
+          "max_budget": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Budget",
+            "description": "Лимит ключа у провайдера"
+          },
+          "remaining": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining"
+          },
+          "budget_duration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Duration"
+          },
+          "budget_reset_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Reset At",
+            "description": "Когда провайдер обнулит расход (03:00 МСК)"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "LlmProviderKeyOut"
       },
       "LlmUsageOut": {
         "properties": {

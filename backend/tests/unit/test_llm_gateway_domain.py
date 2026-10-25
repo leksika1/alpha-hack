@@ -161,3 +161,39 @@ def test_provider_calls_go_through_the_proxy_when_set() -> None:
     assert proxied and all(t._pool._proxy_url.host == b"proxy.example.com" for t in proxied)  # type: ignore[attr-defined]
     direct = get_llm_provider(Settings(llm_api_key="k"))._client()  # type: ignore[union-attr]
     assert not [m for m in direct._mounts.values() if m is not None]
+
+
+async def test_key_info_is_read_next_to_v1_with_the_team_key() -> None:
+    import httpx
+
+    from app.integrations.llm import LlmProviderError, OpenAICompatibleProvider
+
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"info": {"spend": 12.5, "max_budget": 500.0}})
+
+    provider = OpenAICompatibleProvider(
+        "https://gw.test/v1", "sk-team", 5, 0, transport=httpx.MockTransport(handler)
+    )
+    assert (await provider.key_info())["info"]["spend"] == 12.5
+    assert str(seen[0].url) == "https://gw.test/key/info"
+    assert seen[0].headers["Authorization"] == "Bearer sk-team"
+    failing = OpenAICompatibleProvider(
+        "https://gw.test/v1", "sk-team", 5, 0, transport=httpx.MockTransport(lambda r: httpx.Response(401))
+    )
+    try:
+        await failing.key_info()
+        raise AssertionError("expected an error")
+    except LlmProviderError as exc:
+        assert exc.code == "llm-upstream-error"
+
+
+def test_organisers_tariffs_are_the_default_prices() -> None:
+    from app.core.config import Settings
+
+    settings = Settings(llm_prices={"kimi-k2.6": (1.0, 2.0)})
+    assert settings.llm_prices["kimi-k2.6"] == (1.0, 2.0)
+    assert settings.llm_prices["qwen3.6-35b-a3b"] == (5.33, 74.0)
+    assert settings.llm_budget_utc_offset_h == 0  # the provider resets the budget at 03:00 Moscow time

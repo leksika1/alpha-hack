@@ -27,6 +27,17 @@ DEFAULT_LLM_MODEL_MAP: dict[str, str] = {
     "kimi-k2.6": "moonshotai/kimi-k2.6",
 }
 
+# The organisers' approximate tariffs, RUB per 1M input / output tokens (reasoning tokens are output); they
+# may change, so the daily limit keeps a margin (LLM_DAILY_BUDGET_RUB)
+DEFAULT_LLM_PRICES: dict[str, tuple[float, float]] = {
+    "gemma-4-26b-a4b": (4.48, 23.0),
+    "glm-5.3-flash": (5.10, 17.0),
+    "qwen3.6-35b-a3b": (5.33, 74.0),
+    "deepseek-v4.1-flash": (10.0, 21.0),
+    "qwen3-vl-30b-a3b-instruct": (14.30, 57.10),
+    "kimi-k2.6": (51.0, 270.0),
+}
+
 
 class Settings(BaseSettings):
     # empty variables (compose `${VAR:-}`) mean "use the default"
@@ -87,14 +98,15 @@ class Settings(BaseSettings):
     # alias -> provider model id; entries from the environment override the defaults one by one
     llm_model_map: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_LLM_MODEL_MAP))
     # alias -> [RUB per 1M input tokens, RUB per 1M output tokens]; models without a price use the default
-    llm_prices: dict[str, tuple[float, float]] = Field(default_factory=dict)
-    llm_default_price_rub_per_1m: tuple[float, float] = (100.0, 300.0)  # conservative until tariffs are known
+    llm_prices: dict[str, tuple[float, float]] = Field(default_factory=lambda: dict(DEFAULT_LLM_PRICES))
+    llm_default_price_rub_per_1m: tuple[float, float] = (100.0, 300.0)  # conservative, for unknown tariffs
     llm_daily_budget_rub: float = 450.0
     llm_daily_token_limit: int = 3_000_000
     # Questions (runs of kind qa) may spend at most this share of the daily budget: the rest stays for the
     # pre-generation of the feed (ADR-035)
     llm_chat_budget_share: float = Field(default=0.3, ge=0.0, le=1.0)
-    llm_budget_utc_offset_h: int = 3  # the "day" of the daily budget: Moscow time (UTC+3, no DST)
+    # the "day" of the daily budget: the provider resets it at 03:00 Moscow time = 00:00 UTC
+    llm_budget_utc_offset_h: int = 0
     llm_request_timeout_s: float = 60.0
     llm_max_retries: int = 1
     llm_default_max_tokens: int = 1024  # used for the budget reservation when max_tokens is not given
@@ -156,6 +168,12 @@ class Settings(BaseSettings):
     def _model_map_over_defaults(cls, value: dict[str, str]) -> dict[str, str]:
         """An old `.env` with LLM_MODEL_MAP={} must not drop the provider ids."""
         return {**DEFAULT_LLM_MODEL_MAP, **value}
+
+    @field_validator("llm_prices")
+    @classmethod
+    def _prices_over_defaults(cls, value: dict[str, tuple[float, float]]) -> dict[str, tuple[float, float]]:
+        """LLM_PRICES only overrides the organisers' tariffs (LLM_PRICES={} keeps them)."""
+        return {**DEFAULT_LLM_PRICES, **value}
 
 
 # Development defaults of secrets (code and docker-compose/.env.example); refused in APP_ENV=prod.

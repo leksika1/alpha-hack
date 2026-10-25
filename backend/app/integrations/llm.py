@@ -65,6 +65,21 @@ class OpenAICompatibleProvider:
             proxy=None if self.transport else self.proxy,
         )
 
+    async def key_info(self) -> dict[str, Any]:
+        """The key's budget at the provider (`/key/info` next to `/v1`): spend, limit, reset time."""
+        root = self.base_url.removesuffix("/v1")
+        async with self._client() as client:
+            try:
+                response = await client.get(f"{root}/key/info")
+            except httpx.TimeoutException as exc:
+                raise LlmProviderError(504, "llm-timeout", f"LLM provider timeout: {exc}") from exc
+            except httpx.HTTPError as exc:
+                raise LlmProviderError(502, "llm-unavailable", f"LLM provider unreachable: {exc}") from exc
+        if response.status_code != 200:
+            raise LlmProviderError(502, "llm-upstream-error", f"key/info: HTTP {response.status_code}")
+        data: dict[str, Any] = response.json()
+        return data
+
     async def complete(self, payload: dict[str, Any]) -> dict[str, Any]:
         async with self._client() as client:
             for attempt in range(self.max_retries + 1):
