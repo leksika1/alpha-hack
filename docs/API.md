@@ -72,6 +72,7 @@ Swagger `http://localhost:8000/docs`. Внутренние API для ML опи�
 | DELETE | `/admin/sources/{id}` | Удалить добавленный админом источник, пока по нему нет новостей |
 | POST | `/admin/ingest/{kind}` | Поставить в очередь `news` или `analytics` |
 | POST | `/admin/news` | Ручная новость через общий конвейер |
+| POST | `/admin/news/cleanup?days=14` | Привести накопленные новости к текущим правилам: перетегировать, снять онлайн-трансляции, склеить события одного решения ЦБ, перегенерировать их инсайты (ADR-040) |
 | POST | `/admin/analytics?file_name=` | Загрузить PDF аналитики (тело — файл, `application/pdf`); обработка в очереди |
 | GET | `/admin/analytics` | Все материалы аналитики со статусом обработки (`processing`, `ready`, `failed`) и ошибкой |
 | POST | `/admin/insights/regenerate` | Перегенерировать инсайты компаний |

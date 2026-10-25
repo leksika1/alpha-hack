@@ -2565,6 +2565,64 @@
         ]
       }
     },
+    "/api/v1/admin/news/cleanup": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Привести накопленные новости и события к текущим правилам (ADR-040): перетегировать, снять онлайн-трансляции, склеить события об одном решении ЦБ, перегенерировать их инсайты",
+        "operationId": "news_cleanup_api_v1_admin_news_cleanup_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 60,
+              "minimum": 1,
+              "description": "За сколько последних дней",
+              "default": 14,
+              "title": "Days"
+            },
+            "description": "За сколько последних дней"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedCleanupOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Нужна роль admin"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/sources": {
       "get": {
         "tags": [
@@ -4001,6 +4059,55 @@
           "error"
         ],
         "title": "FeedCheckOut"
+      },
+      "FeedCleanupOut": {
+        "properties": {
+          "news_retagged": {
+            "type": "integer",
+            "title": "News Retagged"
+          },
+          "events_checked": {
+            "type": "integer",
+            "title": "Events Checked"
+          },
+          "liveblog_events_retired": {
+            "type": "integer",
+            "title": "Liveblog Events Retired",
+            "description": "События из онлайн-трансляций сняты с ленты"
+          },
+          "cbr_events_merged": {
+            "type": "integer",
+            "title": "Cbr Events Merged",
+            "description": "Дубли событий о ключевой ставке ЦБ, склеенные в одно"
+          },
+          "cbr_events_kept": {
+            "type": "integer",
+            "title": "Cbr Events Kept"
+          },
+          "events_repaired": {
+            "type": "integer",
+            "title": "Events Repaired"
+          },
+          "companies_to_regenerate": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Companies To Regenerate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "news_retagged",
+          "events_checked",
+          "liveblog_events_retired",
+          "cbr_events_merged",
+          "cbr_events_kept",
+          "events_repaired",
+          "companies_to_regenerate"
+        ],
+        "title": "FeedCleanupOut"
       },
       "FeedOut": {
         "properties": {

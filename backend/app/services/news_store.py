@@ -47,6 +47,7 @@ class StoreResult:
     duplicates: int = 0
     near_duplicates: int = 0
     blocked: int = 0  # violate Russian law or come from a registry site (ADR-037): not stored
+    filtered: int = 0  # live blogs: not news of one fact (ADR-040), not stored
     event_ids: list[str] = field(default_factory=list)
     new_event_ids: list[str] = field(default_factory=list)
     urgent_event_ids: list[str] = field(default_factory=list)
@@ -90,6 +91,7 @@ def _event_tags(row: Any) -> dict[str, object]:
         "regions": list(row["regions"]),
         "currencies": extra.get("currencies", []),
         "numbers": extra.get("numbers", []),
+        "subjects": extra.get("subjects", []),
     }
 
 
@@ -176,7 +178,10 @@ async def _create_event(conn: Any, draft: NewsDraft, tags: NewsTags) -> str:
         tags.direction,
         tags.urgent,
         tags.urgency_reasons,
-        json.dumps({"currencies": tags.currencies, "numbers": tags.numbers}, ensure_ascii=False),
+        json.dumps(
+            {"currencies": tags.currencies, "numbers": tags.numbers, "subjects": tags.subjects},
+            ensure_ascii=False,
+        ),
         tags.industry_tags,
         tags.countries,
         tags.commodities,
@@ -186,12 +191,23 @@ async def _create_event(conn: Any, draft: NewsDraft, tags: NewsTags) -> str:
     return str(event_id)
 
 
+def merge_numbers(old: list[dict[str, Any]], new: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """An event keeps its first figures, except that the decision's key rate wins over a generic percent:
+    comments often come before the report with the decision itself (ADR-040)."""
+    if any(n.get("kind") == "key_rate" for n in old):
+        return old
+    if any(n.get("kind") == "key_rate" for n in new):
+        return new
+    return old or new
+
+
 async def _join_event(conn: Any, event_id: str, draft: NewsDraft, tags: NewsTags) -> None:
     existing = await conn.fetchrow("SELECT tags FROM core.events WHERE id = $1::uuid", event_id)
     old_tags = json.loads(existing["tags"]) if existing else {}
     merged = {
         "currencies": sorted(set(old_tags.get("currencies", [])) | set(tags.currencies)),
-        "numbers": old_tags.get("numbers") or tags.numbers,
+        "numbers": merge_numbers(old_tags.get("numbers") or [], tags.numbers),
+        "subjects": sorted(set(old_tags.get("subjects", [])) | set(tags.subjects)),
     }
     await conn.execute(
         """UPDATE core.events SET
@@ -244,6 +260,9 @@ async def store_news(
                 log.warning("news_blocked_compliance", source_id=source_id, url=d.url, reason=blocked)
                 continue
             tags = tag_news(d.title, d.body)
+            if "liveblog" in tags.flags:
+                result.filtered += 1
+                continue
             summary = _summary(d)
             sig = signature(d.title, summary, tags.event_type, tags.direction, tag_values(tags.as_dict()))
             if any(is_near_duplicate(sig, other) for other in window.news_near(d.published_at)):

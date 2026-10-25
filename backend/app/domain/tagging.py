@@ -375,6 +375,7 @@ class NewsTags:
     urgency_reasons: list[str] = field(default_factory=list)
     flags: list[str] = field(default_factory=list)
     language: str = "ru"
+    subjects: list[str] = field(default_factory=list)  # one ongoing story, e.g. cbr_key_rate (ADR-040)
 
     @property
     def urgent(self) -> bool:
@@ -392,6 +393,7 @@ class NewsTags:
             "numbers": self.numbers,
             "urgency_reasons": self.urgency_reasons,
             "language": self.language,
+            "subjects": self.subjects,
         }
 
 
@@ -431,9 +433,44 @@ _UP = tuple(_stem_regex(s) for s in UP_STEMS + UP_STEMS_EN)
 _DOWN = tuple(_stem_regex(s) for s in DOWN_STEMS + DOWN_STEMS_EN)
 _HOLD = tuple(_stem_regex(s) for s in HOLD_STEMS + HOLD_STEMS_EN)
 _CBR = tuple(
-    _stem_regex(s)
-    for s in ("банк росси", "цб", "центробанк", "регулятор", "bank of russia", "russian central bank")
+    _stem_regex(s) for s in ("банк росси", "цб", "центробанк", "bank of russia", "russian central bank")
 )
+# Other central banks: their decisions are not the Bank of Russia's, even if the text says "регулятор"
+_FOREIGN_CB = tuple(
+    _stem_regex(s)
+    for s in (
+        "фрс", "федеральн резерв", "ецб", "европейск центробанк", "банк англи", "банк япони", "народн банк",
+        "federal reserve", "the fed", "ecb", "european central bank", "bank of england", "bank of japan",
+    )
+)  # fmt: skip
+# A rate figure is the decision only when it is not a forecast, an average, a year or a range
+_NOT_DECISION = re.compile(r"прогноз|средн|ожидан|консенсус|forecast|average|expect")
+_YEAR = re.compile(r"(?<!\d)20\d\d(?!\d)")
+_RANGE = re.compile(r"\d\s*[-–—]\s*\d")
+# Live blogs ("Военная операция на Украине. Онлайн", "Курс рубля: онлайн-трансляция") are not news of one
+# fact: they are skipped at ingestion (ADR-040). "онлайн-ритейл", "продажи онлайн" are not live blogs.
+_LIVEBLOG = re.compile(
+    r"(?:^|[.:—–|]\s*)онлайн\.?\s*$|онлайн[- ]трансляц|в режиме онлайн|хроника событий"
+    r"|главное за (?:день|сутки)|главное к этому часу|\blive updates?\b|\blive:|\bas it happened\b"
+    r"|\blive blog\b"
+)
+
+
+def key_rate_decision(text: str) -> float | None:
+    """The key rate figure of a decision (normalized text), skipping forecasts, averages, years and ranges."""
+    for m in KEY_RATE_RE.finditer(text):
+        before = text[max(0, m.start() - 30) : m.start()]
+        span = m.group(0)
+        if _NOT_DECISION.search(before + span) or _YEAR.search(span) or _RANGE.search(span):
+            continue
+        return float(m.group(1).replace(",", "."))
+    return None
+
+
+def is_liveblog(title: str) -> bool:
+    return bool(_LIVEBLOG.search(normalize_text(title).strip()))
+
+
 _CYRILLIC = re.compile(r"[а-я]")
 _LATIN = re.compile(r"[a-z]")
 
@@ -484,12 +521,15 @@ def tag_news(title: str, body: str) -> NewsTags:
     direction = _direction(text)
     numbers: list[dict[str, object]] = []
     reasons: list[str] = []
+    subjects: list[str] = []
     if event_type == "monetary_policy":
-        m = KEY_RATE_RE.search(text)
-        if m:
-            numbers.append({"kind": "key_rate", "value": float(m.group(1).replace(",", ".")), "unit": "%"})
-        if _any(text, _CBR):
+        rate = key_rate_decision(text)
+        if rate is not None:
+            numbers.append({"kind": "key_rate", "value": rate, "unit": "%"})
+        if _any(text, _CBR) and not _any(text, _FOREIGN_CB):
             reasons.append("cbr_key_rate_decision")
+            # every report on the Bank of Russia's rate within the clustering window is one event (ADR-040)
+            subjects.append("cbr_key_rate")
     elif event_type == "sanctions":
         reasons.append("sanctions")
     for reason, patterns in _URGENT:
@@ -509,6 +549,8 @@ def tag_news(title: str, body: str) -> NewsTags:
         currencies=_match(text, _CURRENCY),
         numbers=numbers,
         urgency_reasons=sorted(set(reasons)),
-        flags=["suspected_prompt_injection"] if detect_injection(raw) else [],
+        flags=(["suspected_prompt_injection"] if detect_injection(raw) else [])
+        + (["liveblog"] if is_liveblog(title) else []),
         language=detect_language(text),
+        subjects=subjects,
     )

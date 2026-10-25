@@ -188,6 +188,9 @@ def tag_values(tags: dict[str, object]) -> list[str]:
     numbers = tags.get("numbers") or []
     if isinstance(numbers, list):
         out.extend(f"number:{n.get('kind')}={n.get('value')}" for n in numbers if isinstance(n, dict))
+    subjects = tags.get("subjects") or []
+    if isinstance(subjects, list):
+        out.extend(f"subject:{s}" for s in subjects)
     return out
 
 
@@ -205,6 +208,10 @@ def event_similarity(a: NewsSignature, b: NewsSignature) -> float:
     """0..1; reports with opposite directions (up vs down) are never the same event."""
     if a.direction in {"up", "down"} and b.direction in {"up", "down"} and a.direction != b.direction:
         return 0.0
+    if {t for t in a.tags & b.tags if t.startswith("subject:")}:
+        # One ongoing story (the Bank of Russia's rate): the decision and the comments on it within the window
+        # are one event, however differently they are worded (ADR-040)
+        return 1.0
     for facet in CONFLICT_FACETS:  # steel vs copper, yuan vs dollar: different subjects
         fa = {t for t in a.tags if t.startswith(facet)}
         fb = {t for t in b.tags if t.startswith(facet)}
