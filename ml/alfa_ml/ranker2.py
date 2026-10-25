@@ -5,7 +5,10 @@ Inputs per (company, event) pair:
   and the ml-ranker@1 score — interpretable, but tied to the backend's keyword tags;
 * event screening flags (`profile.screen_event`) and the event type;
 * semantic features (`semantic.semantic_features`): similarity of the event to "what moves a business"
-  concepts, gated by what concerns this company; similarity to the company profile; cross-encoder score.
+  concepts, gated by what concerns this company; similarity to the company profile;
+* label memory (kNN): how the labelled pairs most similar to this one were labelled — similarity of the events
+  (embeddings) × similarity of the companies (profile embeddings). This is what carries the human labels to new
+  wording and new companies; the memory is `models/ranker2_memory.npz` (vectors + gold labels, no texts).
 
 Model: standardised logistic regression trained on the labelled sets (eval/train_ranker2.py) with
 leave-one-set-out validation; the weights, scaler and threshold live in `models/ranker2.json`. Logistic
@@ -18,6 +21,8 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Sequence
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -28,6 +33,8 @@ from alfa_ml.profile import PROXIMITY, ExposureResult
 
 NAME = "ml-ranker@2"
 MODEL_PATH = Path(__file__).resolve().parent / "models" / "ranker2.json"
+MEMORY_PATH = MODEL_PATH.with_name("ranker2_memory.npz")
+KNN_K, KNN_EVENT_POW, KNN_COMPANY_POW = 15, 4, 2
 EVENT_TYPES = (
     "monetary_policy", "fx", "sanctions", "regulation_tax", "trade_logistics", "commodities", "industry",
     "macro_stat", "labor", "company", "other",
@@ -51,11 +58,80 @@ def rule_features(exposure: ExposureResult, event: dict[str, Any], rule_score: f
     return out
 
 
+@dataclass(frozen=True)
+class Memory:
+    """Labelled pairs as vectors: events E[i], companies C[j]; pair k = (ev_idx[k], co_idx[k], gold[k], sets[k])."""
+
+    events: Any
+    companies: Any
+    ev_idx: Any
+    co_idx: Any
+    gold: Any
+    sets: Any
+
+    def save(self, path: Path) -> None:
+        import numpy as np
+
+        np.savez_compressed(
+            path, events=self.events.astype(np.float16), companies=self.companies.astype(np.float16),
+            ev_idx=self.ev_idx, co_idx=self.co_idx, gold=self.gold, sets=self.sets,
+        )  # fmt: skip
+
+
+@lru_cache(maxsize=1)
+def load_memory() -> Memory | None:
+    try:
+        import numpy as np
+
+        d = np.load(MEMORY_PATH, allow_pickle=False)
+        return Memory(
+            d["events"].astype(np.float32), d["companies"].astype(np.float32), d["ev_idx"], d["co_idx"], d["gold"],
+            d["sets"],
+        )  # fmt: skip
+    except Exception:  # no numpy / no file: the model then runs without the kNN features
+        return None
+
+
+def knn_features(
+    ev_vec: Sequence[float], co_vec: Sequence[float], mem: Memory | None, exclude_set: str | None = None
+) -> dict[str, float]:
+    """Similarity-weighted labels of the nearest labelled pairs (weights: cos(event)^4 · cos(company)^2)."""
+    dim = int(mem.events.shape[1]) if mem is not None else 0
+    if mem is None or len(ev_vec) != dim or len(co_vec) != dim:  # no memory or another embedding model
+        return {"knn_rel": 0.0, "knn_imp": 0.0, "knn_mass": 0.0}
+    import numpy as np
+
+    se = np.clip(mem.events @ np.asarray(ev_vec, dtype=np.float32), 0.0, None)
+    sc = np.clip(mem.companies @ np.asarray(co_vec, dtype=np.float32), 0.0, None)
+    w = se[mem.ev_idx] ** KNN_EVENT_POW * sc[mem.co_idx] ** KNN_COMPANY_POW
+    if exclude_set is not None:
+        w = np.where(mem.sets == exclude_set, 0.0, w)
+    idx = np.argsort(-w)[:KNN_K]
+    ws = float(w[idx].sum()) + 1e-9
+    g = mem.gold[idx]
+    return {
+        "knn_rel": float((w[idx] * (g >= 1)).sum() / ws),
+        "knn_imp": float((w[idx] * (g == 2)).sum() / ws),
+        "knn_mass": ws,
+    }
+
+
+def pair_vectors(features: dict[str, Any], event: dict[str, Any]) -> tuple[list[float], list[float]]:
+    ev, co = semantic.embed([semantic.event_text(event), semantic.profile_text(features)])
+    return ev, co
+
+
 def pair_features(
-    features: dict[str, Any], event: dict[str, Any], exposure: ExposureResult, rule_score: float
+    features: dict[str, Any],
+    event: dict[str, Any],
+    exposure: ExposureResult,
+    rule_score: float,
+    knn: bool = True,
 ) -> dict[str, float]:
     out = rule_features(exposure, event, rule_score)
     out.update(semantic.semantic_features(features, event))
+    if knn and semantic.backend() is not None:
+        out.update(knn_features(*pair_vectors(features, event), load_memory()))
     return out
 
 
@@ -70,7 +146,9 @@ def load_model() -> dict[str, Any] | None:
 
 def available() -> bool:
     m = load_model()
-    return m is not None and (not m.get("requires_semantic", True) or semantic.available())
+    if m is None or (m.get("requires_semantic", True) and not semantic.available()):
+        return False
+    return not m.get("requires_memory", False) or load_memory() is not None
 
 
 def predict(x: dict[str, float]) -> tuple[float, dict[str, float]]:

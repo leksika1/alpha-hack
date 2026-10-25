@@ -9,8 +9,9 @@ Protocol (no peeking):
   only, report on the held-out set; models compared on the same folds: ml-ranker@1 (rules), LR on rule
   features, LR on rules + embeddings (the chosen ml-ranker@2), + reranker, + per-concept features, boosted
   trees; the feature set and C were chosen on the leave-one-set-out mean only;
-* the final model is trained on all four sets; set3 (labels committed before this script existed) is scored
-  once at the end and reported as the blind result.
+* the final model is trained on all training sets; BLIND_SETS (labels committed before the model version) are
+  scored once at the end and reported as the blind result. A blind set that was looked at becomes a training set
+  of the next version (set3, set4 were blind for the 24.10 version).
 Writes alfa_ml/models/ranker2.json and reports/ranker2.md.
 """
 
@@ -36,12 +37,15 @@ from alfa_ml.ranker import score_exposure
 from eval.datasets import SETS, load_pairs
 
 HERE = Path(__file__).resolve().parent
-TRAIN_SETS = ["demo", "heldout1", "live", "set2"]
+TRAIN_SETS = ["demo", "heldout1", "live", "set2", "set3", "set4"]
+BLIND_SETS = ["set5"]  # labelled and committed before this model version; scored once, never used for choices
 RULE_THRESHOLD = 0.35
 MIN_RECALL_IMPORTANT = 0.95
-# Chosen on the leave-one-set-out mean only (never on set3): five aggregate embedding features, C = 0.1. The
-# per-concept features (c_*, cn_*) and the reranker made the model less stable across sets (see the report).
+# Chosen on the leave-one-set-out mean only (never on a blind set): five aggregate embedding features, the kNN label
+# memory, C = 0.1, threshold by F1 under recall(important) >= 0.95. The per-concept features (c_*, cn_*) and the
+# reranker made the model less stable across sets; the precision-only threshold lost important news on set4.
 SEM_AGG = ("sem_profile", "sem_best_pos", "sem_best_neg", "sem_margin", "sem_need_match")
+KNN = ("knn_rel", "knn_imp", "knn_mass")
 LR_C = 0.1
 
 
@@ -52,10 +56,38 @@ def featurize(name: str) -> list[dict[str, Any]]:
         ev = normalize_event(p["event"])
         exp = compute_exposure(p["features"], ev, p["company_id"])
         pre = score_exposure(exp, ev, "cfo", now=now)
-        x = ranker2.pair_features(p["features"], ev, exp, pre["score"])
-        rows.append({**{k: p[k] for k in ("set", "company_id", "event_key", "gold")}, "x": x,
+        x = ranker2.pair_features(p["features"], ev, exp, pre["score"], knn=False)
+        evv, cov = ranker2.pair_vectors(p["features"], ev)
+        rows.append({**{k: p[k] for k in ("set", "company_id", "event_key", "gold")}, "x": x, "ev": evv, "co": cov,
                      "has_exposure": bool(exp.items), "rule": pre["score"], "title": ev.get("title", "")})  # fmt: skip
     return rows
+
+
+def build_memory(rows: list[dict[str, Any]]) -> ranker2.Memory:
+    ev_key: dict[tuple[str, str], int] = {}
+    co_key: dict[tuple[str, str], int] = {}
+    evs, cos, ei, ci = [], [], [], []
+    for r in rows:
+        ke, kc = (r["set"], r["event_key"]), (r["set"], r["company_id"])
+        if ke not in ev_key:
+            ev_key[ke] = len(evs)
+            evs.append(r["ev"])
+        if kc not in co_key:
+            co_key[kc] = len(cos)
+            cos.append(r["co"])
+        ei.append(ev_key[ke])
+        ci.append(co_key[kc])
+    return ranker2.Memory(
+        np.array(evs, dtype=np.float32), np.array(cos, dtype=np.float32), np.array(ei, dtype=np.int32),
+        np.array(ci, dtype=np.int32), np.array([r["gold"] for r in rows], dtype=np.int8),
+        np.array([r["set"] for r in rows]),
+    )  # fmt: skip
+
+
+def add_knn(rows: list[dict[str, Any]], mem: ranker2.Memory, own_set_out: bool) -> None:
+    """kNN features; for training rows the row's own set is excluded (no label of the same feed leaks in)."""
+    for r in rows:
+        r["x"].update(ranker2.knn_features(r["ev"], r["co"], mem, r["set"] if own_set_out else None))
 
 
 def matrix(rows: list[dict[str, Any]], names: list[str]) -> np.ndarray:
@@ -92,17 +124,20 @@ class Model:
 
 
 def choose_threshold(rows: list[dict[str, Any]], p: np.ndarray) -> float:
-    """Highest threshold that keeps recall of important pairs >= MIN_RECALL_IMPORTANT; precision decides ties."""
+    """Threshold with the best F1 (relevant pairs) among those keeping recall(important) >= MIN_RECALL_IMPORTANT."""
     best, best_prec = 0.05, -1.0
+    n_rel = max(1, sum(1 for r in rows if r["gold"] >= 1))
     for thr in np.arange(0.05, 0.95, 0.01):
         shown = [(r, q) for r, q in zip(rows, p, strict=True) if r["has_exposure"] and q >= thr]
         imp = [r for r in rows if r["gold"] == 2]
         rec = sum(1 for r, _ in shown if r["gold"] == 2) / max(1, len(imp))
         if rec < MIN_RECALL_IMPORTANT:
             continue
-        prec = sum(1 for r, _ in shown if r["gold"] >= 1) / max(1, len(shown))
-        if prec >= best_prec:
-            best, best_prec = float(thr), prec
+        tp = sum(1 for r, _ in shown if r["gold"] >= 1)
+        prec, rec1 = tp / max(1, len(shown)), tp / n_rel
+        f1 = 2 * prec * rec1 / (prec + rec1 + 1e-9)
+        if f1 >= best_prec:
+            best, best_prec = float(thr), f1
     return best
 
 
@@ -166,39 +201,51 @@ def main() -> None:
     a = ap.parse_args()
     semantic.RERANK_MODEL = semantic.RERANK_MODEL or semantic.EVAL_RERANK_MODEL  # for the ablation row only
     semantic.set_backend(semantic.StoreBackend(Path(a.store)))
-    data = {n: featurize(n) for n in [*TRAIN_SETS, "set3"] if SETS[n].labels.exists()}
+    blind_sets = [n for n in BLIND_SETS if n in SETS and SETS[n].labels.exists()]
+    data = {n: featurize(n) for n in [*TRAIN_SETS, *blind_sets]}
     missing = getattr(semantic.backend(), "missing", [])
     print({n: len(v) for n, v in data.items()}, "store misses:", len(missing))
+    add_knn(
+        [r for rows in data.values() for r in rows], build_memory(data["demo"]), False
+    )  # registers the names
     all_names = sorted({k for rows in data.values() for r in rows for k in r["x"]})
-    rule_names = [n for n in all_names if not (n.startswith(("sem_", "c_", "cn_")))]
-    final_names = rule_names + list(SEM_AGG)
+    rule_names = [n for n in all_names if not (n.startswith(("sem_", "c_", "cn_", "knn_")))]
+    emb_names = rule_names + list(SEM_AGG)
+    final_names = emb_names + list(KNN)
     variants = {
         "ml-ranker@1 (правила, порог 0,35)": ("rules", []),
         "LR: признаки правил": ("lr", rule_names),
-        "LR: правила + эмбеддинги (ml-ranker@2)": ("lr", final_names),
+        "LR: правила + эмбеддинги (ml-ranker@2 от 24.10)": ("lr", emb_names),
+        "LR: правила + эмбеддинги + kNN-память разметки (ml-ranker@2)": ("lr", final_names),
         "LR: + реранкер": ("lr", [*final_names, "sem_rerank"]),
-        "LR: + все 28 концептов по отдельности": ("lr", all_names),
-        "Бустинг: правила + эмбеддинги": ("gb", final_names),
+        "Бустинг: правила + эмбеддинги + kNN": ("gb", final_names),
     }
     lodo: dict[str, dict[str, dict[str, float]]] = defaultdict(dict)
     for test_name in TRAIN_SETS:
         train = [r for n in TRAIN_SETS if n != test_name for r in data[n]]
+        mem = build_memory(train)
+        add_knn(train, mem, own_set_out=True)
+        add_knn(data[test_name], mem, own_set_out=False)
         for vname, (kind, names) in variants.items():
             lodo[vname][test_name] = evaluate(kind, names, train, data[test_name])
             print(test_name, vname, {k: round(v, 3) for k, v in lodo[vname][test_name].items()})
 
     full = [r for n in TRAIN_SETS for r in data[n]]
+    memory = build_memory(full)
+    add_knn(full, memory, own_set_out=True)
     thr = oof_threshold("lr", final_names, full)
     final = Model("lr", final_names).fit(full)
-    blind: dict[str, dict[str, float]] = {}
-    if "set3" in data:
-        for vname, (kind, names) in variants.items():
-            blind[vname] = evaluate(kind, names, full, data["set3"])
-        print("set3", {k: {m: round(v, 3) for m, v in d.items()} for k, d in blind.items()})
+    blind: dict[str, dict[str, dict[str, float]]] = {}
+    for bn in blind_sets:
+        add_knn(data[bn], memory, own_set_out=False)
+        blind[bn] = {
+            vname: evaluate(kind, names, full, data[bn]) for vname, (kind, names) in variants.items()
+        }
+        print(bn, {k: {m: round(v, 3) for m, v in d.items()} for k, d in blind[bn].items()})
 
     model = {
         "name": ranker2.NAME, "trained_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "embed_model": semantic.EMBED_MODEL, "requires_semantic": True, "C": LR_C,
+        "embed_model": semantic.EMBED_MODEL, "requires_semantic": True, "requires_memory": True, "C": LR_C,
         "train_sets": TRAIN_SETS, "pairs": len(full), "positives": int(sum(r["gold"] >= 1 for r in full)),
         "features": final_names, "coef": [round(float(c), 6) for c in final.m.coef_[0]],
         "intercept": round(float(final.m.intercept_[0]), 6), "mean": [round(float(v), 6) for v in final.mu],
@@ -207,16 +254,18 @@ def main() -> None:
     out = HERE.parent / "alfa_ml" / "models" / "ranker2.json"
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps(model, ensure_ascii=False, indent=1), encoding="utf-8")
+    memory.save(ranker2.MEMORY_PATH)
 
     top = sorted(zip(final_names, model["coef"], strict=True), key=lambda kv: -abs(kv[1]))[:15]
     lines = [
-        "# ml-ranker@2: эмбеддинги + реранкер + обученная модель (ADR-ML-011)", "",
+        "# ml-ranker@2: эмбеддинги + kNN-память разметки + обученная модель (ADR-ML-011)", "",
         f"Сгенерировано `ml/eval/train_ranker2.py` · {model['trained_at']} · эмбеддинги `{semantic.EMBED_MODEL}`, "
         f"реранкер (абляция) `{semantic.RERANK_MODEL}` · обучение: {', '.join(TRAIN_SETS)} ({len(full)} пар, "
-        f"{model['positives']} релевантных) · порог показа {model['threshold']} (out-of-fold, recall важных ≥ {MIN_RECALL_IMPORTANT}).", "",
-        "Протокол: состав признаков и регуляризация выбраны только по среднему перекрёстной проверки ниже; "
-        "слепой набор №3 размечен и закоммичен до обучения и не участвовал в выборе.", "",
-        "## Перекрёстная проверка «один набор — в тест» (обучение на трёх остальных)", "",
+        f"{model['positives']} релевантных) · порог показа {model['threshold']} (out-of-fold, лучший F1 при recall важных ≥ {MIN_RECALL_IMPORTANT}).", "",
+        "Протокол: состав признаков, регуляризация и правило порога выбраны только по среднему перекрёстной проверки ниже; "
+        "kNN-признаки обучающих строк считаются без их собственного набора; слепые наборы размечены и закоммичены "
+        "до обучения и в выборе не участвовали.", "",
+        f"## Перекрёстная проверка «один набор — в тест» (обучение на {len(TRAIN_SETS) - 1} остальных)", "",
         "| Модель | Тестовый набор | nDCG@5 | P@3 | Recall важных | Recall релевантных | Доля мусора | Показано |",
         "|---|---|---|---|---|---|---|---|",
     ]  # fmt: skip
@@ -227,7 +276,7 @@ def main() -> None:
             )
     lines += [
         "",
-        "Средние по четырём тестам:",
+        f"Средние по {len(TRAIN_SETS)} тестам:",
         "",
         "| Модель | nDCG@5 | P@3 | Recall важных | Recall релевантных | Доля мусора |",
         "|---|---|---|---|---|---|",
@@ -240,10 +289,10 @@ def main() -> None:
         lines.append(
             f"| {vname} | {avg['ndcg5']:.3f} | {avg['p3']:.3f} | {avg['recall_important']:.2f} | {avg['recall_relevant']:.2f} | {avg['noise'] * 100:.0f}% |"
         )
-    if blind:
-        lines += ["", "## Слепой набор №3 (новые новости РБК × 10 новых реальных клиентов, разметка до обучения)", "",
+    for bn, per_model in blind.items():
+        lines += ["", f"## Слепой набор: {SETS[bn].note} (разметка до обучения)", "",
                   "| Модель | nDCG@5 | P@3 | Recall важных | Recall релевантных | Доля мусора | Показано |", "|---|---|---|---|---|---|---|"]  # fmt: skip
-        for vname, m in blind.items():
+        for vname, m in per_model.items():
             lines.append(
                 f"| {vname} | {m['ndcg5']:.3f} | {m['p3']:.3f} | {m['recall_important']:.2f} | {m['recall_relevant']:.2f} | {m['noise'] * 100:.0f}% | {int(m['shown'])}/{int(m['pairs'])} |"
             )
