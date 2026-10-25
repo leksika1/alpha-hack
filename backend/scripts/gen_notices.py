@@ -15,8 +15,11 @@ REPO_ROOT = ROOT.parent
 
 # Packages whose metadata lacks a license field or that are not installable on the dev OS (checked by hand).
 LICENSE_OVERRIDES = {
+    "colorama": "BSD License",
+    "pywin32": "Python Software Foundation License",
     "taskiq-dependencies": "MIT",
     "uvloop": "MIT OR Apache-2.0",
+    "win32-setctime": "MIT License",
 }
 
 

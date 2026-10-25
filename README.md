@@ -25,6 +25,7 @@
 пользовательские сценарии, архитектура трёх частей, данные, API, ML, запуск, проверки и эксплуатация.
 Версия для передачи и чтения без репозитория: [PDF](docs/PROJECT_GUIDE.pdf).
 Результаты проверки связки бэкенда с ML: [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
+Комплект сдачи и фиксация версии для жюри: [`docs/SUBMISSION.md`](docs/SUBMISSION.md).
 
 Нужны Docker 24+ с Compose v2.24+, ≥ 4 ГБ памяти для Docker и ~5 ГБ диска.
 
@@ -110,7 +111,7 @@ docker compose exec api python scripts/demo_check.py
 Бэкенд: FastAPI (`api`), Taskiq (`worker`, `scheduler`), PostgreSQL 16 + pgvector, Redis, MinIO (S3), `ml-stub`.
 ML-сервис (`ml`) и фронтенд (nginx, `frontend`) — свои compose-файлы в своих папках, корневой `docker-compose.yml`
 подключает все три. Подробно — [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), решения —
-[`docs/DECISIONS.md`](docs/DECISIONS.md) (ADR-001…046).
+[`docs/DECISIONS.md`](docs/DECISIONS.md) (ADR-001…047).
 
 ```mermaid
 flowchart LR
@@ -157,8 +158,9 @@ flowchart LR
 
 | Команда | Что |
 |---|---|
-| `make check` | lint + типы + unit (396) + integration (84, testcontainers) |
+| `make check` | lint + типы + unit + integration (testcontainers); проверенный результат — `docs/VERIFICATION.md` |
 | `make e2e` | весь стек в профиле `test`, все 12 сценариев SPEC §11.2 (23 теста) — `docs/TESTING.md` |
+| `make e2e-ml` | настоящий ML по HTTP: скоринг, генерация, Tools API, валидатор, лента и чат; без платной LLM |
 | `make smoke-live` | один реальный RSS и один реальный вызов LLM через Gateway (нужны ключи; вне CI) |
 
 CI (GitHub Actions) на каждый push в `dev` и `main` запускает lint, типы, unit, integration и e2e бэкенда, тесты ML

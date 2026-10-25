@@ -130,6 +130,8 @@
 | Образ | Версия | Лицензия | Назначение |
 |---|---|---|---|
 | `python` (slim) | 3.12-slim-bookworm | PSF-2.0 | базовый образ приложения |
+| `node` (Alpine) | 22-alpine | Node.js: MIT и отдельные лицензии включённых компонентов, [LICENSE](https://github.com/nodejs/node/blob/v22.x/LICENSE) | сборка фронтенда |
+| `nginx` (Alpine) | 1.27-alpine | BSD-2-Clause, [LICENSE](https://nginx.org/LICENSE) | раздача фронтенда и прокси API/SSE |
 | `pgvector/pgvector` | 0.8.0-pg16 | PostgreSQL License | PostgreSQL 16 + pgvector |
 | `redis` | 7.4-alpine | RSALv2/SSPLv1 (Redis 7.4) | брокер очередей, pub/sub, кэш |
 | `pgsty/minio` (сборка MinIO от Pigsty, включает `mc`) | RELEASE.2026-08-04T00-00-00Z | AGPL-3.0 | S3-совместимое хранилище и создание бакетов (ADR-004) |
@@ -140,6 +142,7 @@
 | Шрифт | Лицензия | Назначение |
 |---|---|---|
 | Roboto Regular (`backend/data/reference/fonts/Roboto-Regular.ttf`, Google) | Apache-2.0 | генерация синтетических PDF-материалов (`make synthetic`) |
+| Alfa Interface Sans, regular/medium/bold | условия правообладателя; отдельная лицензия в проекте не указана | фронтенд загружает с CDN банка, адреса в `frontend/src/styles/index.css`; файлы шрифта в репозитории отсутствуют |
 
 ## Модели
 
@@ -154,7 +157,7 @@
 |---|---|---|
 | `df_Uid_data_hack.csv`, `df_Uid_payment_hack.csv`, `df_Fid_Uid_link_hack.csv` | организаторы хакатона (синтетические/обезличенные) | только для хакатона; не распространяются в репозитории |
 | Аналитика Альфа-Банка (9 PDF) | организаторы хакатона | только для хакатона; не распространяются в репозитории |
-| `data/synthetic/*` | сгенерировано `make synthetic` | часть репозитория, MIT |
+| `backend/data/synthetic/*` | сгенерировано `make synthetic` | создано командой и включено в репозиторий; отдельный LICENSE проекта не задан |
 | Справочник ОКВЭД2 (`data/reference/okved_classes.csv`) | ОК 029-2014 (КДЕС Ред. 2), Росстандарт — общедоступный классификатор | официальный документ, не объект авторского права (ст. 1259 ГК РФ) |
 
 ## Внешние сервисы и источники
@@ -173,10 +176,11 @@
 
 | Интеграция | Как замокана | Где |
 |---|---|---|
-| CRM банка (заявки, обратный звонок, связь с менеджером) | запись в таблицу `crm_requests` со статусами | `app/integrations/crm_mock.py` |
+| CRM банка (заявки, обратный звонок, связь с менеджером) | запись в таблицу `crm_requests` со статусами | `backend/app/services/interactions.py`, `create_crm_request` |
 | Интернет-банк «Альфа-Бизнес» (аутентификация физлица и доступ к компаниям) | демо-учётки + `user_company_access` | seed |
 | Каталог продуктов банка | `bank_products`, описания из публичных страниц alfabank.ru | seed |
 
 ## Другие части решения
 
-Зависимости ML-сервиса — [`ml/THIRD_PARTY_NOTICES.md`](ml/THIRD_PARTY_NOTICES.md); фронтенда — `frontend/package.json` и `frontend/package-lock.json`.
+Зависимости ML-сервиса — [`ml/THIRD_PARTY_NOTICES.md`](ml/THIRD_PARTY_NOTICES.md); фронтенда —
+[`frontend/THIRD_PARTY_NOTICES.md`](frontend/THIRD_PARTY_NOTICES.md) (перечень из `frontend/package-lock.json`).
