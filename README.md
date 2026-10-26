@@ -16,9 +16,16 @@
 без внешних ключей; с ключом — агент с планированием, инструментами и самопроверкой. `ml-stub` — детерминированная
 реализация того же контракта для e2e.
 
-**Стенд:** https://dev.alpha.leksika1.ru (демо-учётки — ниже).
+**Стенд:** https://dev.alpha.leksika1.ru (демо-учётки — ниже). Команда **AstraMax-CU**: стенд работает на ключе LLM
+команды — просим активировать его на время проверки. Для локального запуска эксперт указывает свой ключ в `LLM_API_KEY`.
 
 ## Быстрый старт
+
+Полное руководство по всему проекту: [`docs/PROJECT_GUIDE.md`](docs/PROJECT_GUIDE.md) — назначение,
+пользовательские сценарии, архитектура трёх частей, данные, API, ML, запуск, проверки и эксплуатация.
+Версия для передачи и чтения без репозитория: [PDF](docs/PROJECT_GUIDE.pdf).
+Результаты проверки связки бэкенда с ML: [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
+Комплект сдачи и фиксация версии для жюри: [`docs/SUBMISSION.md`](docs/SUBMISSION.md).
 
 Нужны Docker 24+ с Compose v2.24+, ≥ 4 ГБ памяти для Docker и ~5 ГБ диска.
 
@@ -29,11 +36,16 @@ docker compose up -d --build        # или: make up
 
 Первая сборка образов — 5–10 минут; при первом старте бэкенд скачивает модель эмбеддингов (~0,5 ГБ, кэшируется в
 томе). Дальше стенд поднимается примерно за минуту, первые инсайты появляются через 30–60 секунд после старта.
-На Windows, если `make` нет, команды из `Makefile` запускаются как есть.
+На Windows, если `make` нет, команды из `Makefile` запускаются как есть. Сразу после старта собираются реальные
+новости и данные ЦБ (1–2 минуты); до этого и без интернета лента — демо (синтетика, помечена).
+Postgres, Redis и MinIO слушают только `127.0.0.1` на портах 15432, 16379, 19000; если 3000 или 8000 заняты —
+`FRONTEND_PORT` / `API_PORT` в `.env`.
 
 **LLM.** В `.env` достаточно `LLM_API_KEY` (ключ команды): адрес шлюза организаторов
 `https://api.alfahack-gateway26.ru/v1` и ID всех 6 моделей заданы по умолчанию. Если провайдер недоступен из сети
-сервера — `LLM_PROXY_URL`. Расход и ошибки — `GET /api/v1/admin/llm-usage`.
+сервера — `LLM_PROXY_URL`. Расход и ошибки — `GET /api/v1/admin/llm-usage`, остаток лимита у провайдера —
+`GET /api/v1/admin/llm-provider`. Тарифы моделей — ориентировочные тарифы организаторов, день бюджета начинается
+в 03:00 МСК, как у провайдера.
 
 | Что | Где |
 |---|---|
@@ -41,7 +53,7 @@ docker compose up -d --build        # или: make up
 | Swagger | http://localhost:8000/docs |
 | ML-сервис (health) | http://localhost:8200/health |
 | Готовность | http://localhost:8000/ready |
-| Консоль MinIO | http://localhost:9001 (`minioadmin` / `minioadmin`) |
+| Консоль MinIO | http://localhost:19001 (`minioadmin` / `minioadmin`) |
 
 Порты меняются в `.env`: `API_PORT`, `FRONTEND_PORT`, `ML_PORT`, `POSTGRES_PORT` и т.д. Деплой на сервер (Dokploy:
 бэкенд, ML и фронтенд — отдельные сервисы, автодеплой из CI) — [`docs/RUNBOOK.md`](docs/RUNBOOK.md), «Деплой».
@@ -72,6 +84,10 @@ docker compose exec api python scripts/demo_check.py
 | — | Админ: источники | `POST /api/v1/admin/sources/discover` `{"query":"BBC"}`, `POST /api/v1/admin/sources` | Поиск издания по названию или ссылке, проверка ленты, добавление без деплоя |
 | — | Админ: эксплуатация | `GET /api/v1/admin/generation`, `GET /api/v1/admin/alerts`, `POST /api/v1/admin/analytics` | Монитор генерации, активные проблемы, загрузка PDF аналитики |
 
+**Любая компания выборки:** `GET /api/v1/companies/search?q=46.72` (ID, ОКВЭД или регион) и
+`POST /api/v1/me/companies` `{"company_id":"U_700019","role":"cfo"}` — компания появится в списке, карточки
+сгенерируются в течение минуты (ADR-048).
+
 Смена роли меняет вариант инсайта и порядок ленты: `PUT /api/v1/me/companies/U_700001/role` `{"role":"cfo"}`.
 Дополнение профиля (`PATCH /companies/{id}/profile`, например `{"currencies":["CNY"]}`) меняет релевантность.
 
@@ -89,9 +105,11 @@ docker compose exec api python scripts/demo_check.py
   связи, демо-лента новостей, демо-PDF аналитики. Все синтетические материалы помечены «ДЕМО (синтетика)».
 - **Данные организаторов** в репозиторий не входят. Положить в `data/raw/` и указать `DATA_DIR=data/raw` в `.env`
   (`docs/DATA.md`). Seed загрузит 85 тыс. компаний (~2 мин) и выберет демо-компании; PDF-сканы аналитики пройдут OCR.
-- **Новости**: 32 реальных RSS-источника — российские и зарубежные издания (`docs/SOURCES.md`), опрос каждые
-  15 минут; недоступный источник пропускается. Админ добавляет и отключает источники без деплоя. Для офлайн-демо
+- **Новости**: 41 реальный источник — RSS российских и зарубежных изданий, отраслевые рубрики и страницы новостей
+  министерств (`docs/SOURCES.md`), опрос каждые 15 минут; недоступный источник пропускается. Админ добавляет и отключает источники без деплоя. Для офлайн-демо
   есть синтетическая лента; с реальными новостями она не смешивается.
+- **Ставка и курсы ЦБ**: официальные данные Банка России раз в час — агенту (`get_market_data`) и виджету
+  (`GET /api/v1/market`).
 - **Аналитика банка**: на стенде — демо-PDF; PDF организаторов загружаются через `POST /api/v1/admin/analytics`
   или из `data/raw/analytics` (`make ingest-analytics`).
 
@@ -100,7 +118,7 @@ docker compose exec api python scripts/demo_check.py
 Бэкенд: FastAPI (`api`), Taskiq (`worker`, `scheduler`), PostgreSQL 16 + pgvector, Redis, MinIO (S3), `ml-stub`.
 ML-сервис (`ml`) и фронтенд (nginx, `frontend`) — свои compose-файлы в своих папках, корневой `docker-compose.yml`
 подключает все три. Подробно — [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), решения —
-[`docs/DECISIONS.md`](docs/DECISIONS.md) (ADR-001…042).
+[`docs/DECISIONS.md`](docs/DECISIONS.md) (ADR-001…049).
 
 ```mermaid
 flowchart LR
@@ -122,7 +140,8 @@ flowchart LR
 - **Генерация:** матчинг события с компаниями → агент ML-сервиса через Tools API и LLM Gateway →
   валидатор → инсайт.
 - **Доставка:** лента, виджет, уведомления (SSE), дайджест, вопросы (SSE), действия, метрики по CJM.
-- **Эксплуатация:** монитор генерации, алерты в Telegram, автодеплой из CI после зелёных тестов.
+- **Эксплуатация:** монитор генерации, алерты в Telegram, метрики Prometheus, резервные копии, автодеплой из CI
+  после зелёных тестов.
 
 ## Основные переменные окружения
 
@@ -138,14 +157,19 @@ flowchart LR
 | `NEWS_LIVE_SOURCES_ENABLED`, `NEWS_FIXTURES_ENABLED` | реальные RSS и синтетическая демо-лента |
 | `FEED_TOPIC_CAP` | сколько карточек одной макротемы (ставка, курс) показывать в ленте «Все» |
 | `ALERTS_PROVIDER`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | алерты в Telegram (по умолчанию — в лог) |
+| `MARKET_DATA_ENABLED` | ставка и курсы ЦБ раз в час (офлайн — `false`) |
+| `DEMO_COMPANY_PICKER` | открыть любую компанию базы по ID (по умолчанию да) |
+| `NEWS_FIXTURES_HIDE_AFTER_LIVE` | демо-лента уходит, когда реальные источники дали столько новостей за сутки (30) |
+| `BACKUP_INTERVAL_H`, `BACKUP_KEEP` | резервные копии Postgres и S3 в том `backups` (24 ч, 7 копий; `0` — выкл.) |
 | `JWT_SECRET`, `SERVICE_TOKEN`, `ML_SERVICE_TOKEN` | секреты; с `APP_ENV=prod` dev-значения запрещены |
 
 ## Тесты и проверки
 
 | Команда | Что |
 |---|---|
-| `make check` | lint + типы + unit (359) + integration (81, testcontainers) |
+| `make check` | lint + типы + unit + integration (testcontainers); проверенный результат — `docs/VERIFICATION.md` |
 | `make e2e` | весь стек в профиле `test`, все 12 сценариев SPEC §11.2 (23 теста) — `docs/TESTING.md` |
+| `make e2e-ml` | настоящий ML по HTTP: скоринг, генерация, Tools API, валидатор, лента и чат; без платной LLM |
 | `make smoke-live` | один реальный RSS и один реальный вызов LLM через Gateway (нужны ключи; вне CI) |
 
 CI (GitHub Actions) на каждый push в `dev` и `main` запускает lint, типы, unit, integration и e2e бэкенда, тесты ML

@@ -20,7 +20,7 @@ class NewsSubmitIn(BaseModel):
     company_id: str = Field(max_length=32)
     url: str | None = Field(default=None, max_length=1000, description="Ссылка на новость")
     title: str | None = Field(default=None, min_length=5, max_length=300, description="Или заголовок и текст")
-    text: str | None = Field(default=None, min_length=100, max_length=20_000)
+    text: str | None = Field(default=None, min_length=40, max_length=20_000)
 
     @model_validator(mode="after")
     def link_or_text(self) -> Self:

@@ -11,6 +11,7 @@ from typing import Any
 
 from app.core.config import Settings
 from app.integrations.news.http import PoliteFetcher
+from app.integrations.scorers import get_scorer
 from app.services.demo_selection import select_demo_companies
 from app.services.matching import MatchStats, match
 from app.services.news_ingest import poll, sync_sources
@@ -102,7 +103,11 @@ async def seed_demo(
         else:
             news = await load_fixture_news(conn, fixture)
     stats: MatchStats = await match(
-        conn, company_ids, min_score=settings.match_min_score, max_per_company=settings.match_max_per_company
+        conn,
+        company_ids,
+        min_score=settings.match_min_score,
+        max_per_company=settings.match_max_per_company,
+        scorer=get_scorer(settings),
     )
     return {
         "products": products,

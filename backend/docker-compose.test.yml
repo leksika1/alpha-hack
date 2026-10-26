@@ -6,6 +6,7 @@ x-test-env: &test-env
   APP_ENV: test
   DATA_DIR: data/synthetic
   NEWS_FIXTURES_ENABLED: "true"
+  NEWS_FIXTURES_HIDE_AFTER_LIVE: "0"   # the e2e scenarios are written against the demo feed
   NEWS_LIVE_SOURCES_ENABLED: "true"   # only the e2e catalog above: nothing leaves the stack
   INSIGHT_GENERATOR: stub
   ML_SERVICE_URL: http://ml-stub:8100  # e2e scenarios are written against the deterministic stub
@@ -16,6 +17,8 @@ x-test-env: &test-env
   LLM_API_KEY: ""
   LLM_PROVIDER: fake                 # deterministic answers through the real gateway path
   LLM_DAILY_BUDGET_RUB: "0.3"        # small: scenario 11 spends it and checks the degradation
+  LLM_PRICES: '{"glm-5.3-flash":[100,300]}'  # fixed test tariff: independent of changing provider defaults
+  MARKET_DATA_ENABLED: "false"       # nothing leaves the stack
   NEWS_SOURCES_PATH: data/synthetic/news/e2e_sources.json  # primary on .invalid + local reserve (scenario 11)
 
 services:

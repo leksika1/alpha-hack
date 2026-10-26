@@ -22,9 +22,9 @@ services:
       ML_LLM_PLANNER: ${ML_LLM_PLANNER:-true}
       ML_LLM_CRITIC: ${ML_LLM_CRITIC:-true}
       ML_MODEL_PLANNER: ${ML_MODEL_PLANNER:-gemma-4-26b-a4b}
-      ML_MODEL_ANALYST: ${ML_MODEL_ANALYST:-qwen3.6-35b-a3b}
+      ML_MODEL_ANALYST: ${ML_MODEL_ANALYST:-gemma-4-26b-a4b}
       ML_MODEL_CRITIC: ${ML_MODEL_CRITIC:-glm-5.3-flash}
-      ML_MODEL_CHAT: ${ML_MODEL_CHAT:-qwen3.6-35b-a3b}
+      ML_MODEL_CHAT: ${ML_MODEL_CHAT:-gemma-4-26b-a4b}
       ML_MAX_ITERATIONS: ${ML_MAX_ITERATIONS:-1}
       ML_LLM_MIN_SCORE: ${ML_LLM_MIN_SCORE:-0.5}
     expose: ["8200"]

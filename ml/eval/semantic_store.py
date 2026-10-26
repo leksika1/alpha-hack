@@ -80,7 +80,7 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
     d = sub.add_parser("dump")
     d.add_argument("--out", default="eval/out/semantic_texts.json")
-    d.add_argument("--sets", default="demo,heldout1,live,set2,set3")
+    d.add_argument("--sets", default="demo,heldout1,live,set2,set3,set4,set5")
     c = sub.add_parser("compute")
     c.add_argument("--texts", default="eval/out/semantic_texts.json")
     c.add_argument("--out", default="eval/out/semantic_store.json")

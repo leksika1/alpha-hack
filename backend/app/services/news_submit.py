@@ -22,6 +22,7 @@ from app.domain.compliance import LAW, NEWS_RULES, check_text
 from app.integrations.news.article import extract_article, looks_like_feed
 from app.integrations.news.http import FetchResult, PoliteFetcher
 from app.integrations.news.safety import check_url_shape
+from app.integrations.scorers import get_scorer
 from app.services.compliance import registry_entry
 from app.services.interactions import log_action
 from app.services.matching import match, roles_by_company
@@ -203,6 +204,7 @@ async def _submit(
         [str(event_id)],
         min_score=settings.match_min_score,
         max_per_company=settings.match_max_per_company,
+        scorer=get_scorer(settings),
     )
     candidate = await conn.fetchval(
         """SELECT string_agg(DISTINCT status, ',') FROM core.candidate_matches

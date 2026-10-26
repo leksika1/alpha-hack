@@ -6,6 +6,7 @@ assembler and the checks then guarantee the contract. `rule_draft` builds the sa
 that the service works without LLM (budget exhausted, provider down, allow_llm=false).
 """
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -220,8 +221,35 @@ def _items(raw: Any, model: type[BaseModel], limit: int) -> list[Any]:
     return out
 
 
+# the analyst sometimes quotes feature paths in the prose: "(sensitivities.consumer_demand_dependent)"
+_PATH_IN_TEXT = re.compile(
+    r"\s*\((?:[a-z_]+\.)+[a-z0-9_]+(?:,\s*(?:[a-z_]+\.)+[a-z0-9_]+)*\)|`(?:[a-z_]+\.)+[a-z0-9_]+`"
+)
+_PROSE_KEYS = {
+    "title",
+    "summary",
+    "text",
+    "logic",
+    "impact_rationale",
+    "event_summary",
+    "disagreement_note",
+    "name",
+}
+
+
+def _clean_prose(value: Any, key: str = "") -> Any:
+    if isinstance(value, dict):
+        return {k: _clean_prose(v, k) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_clean_prose(v, key) for v in value]
+    if isinstance(value, str) and key in _PROSE_KEYS:
+        return re.sub(r"\s{2,}", " ", _PATH_IN_TEXT.sub("", value)).strip()
+    return value
+
+
 def parse_llm_draft(raw: dict[str, Any], author: str) -> Draft:
     """Lenient parse of the analyst JSON; never raises on item-level problems."""
+    raw = _clean_prose(raw)
     claims = _items(raw.get("claims"), Claim, 16)
     for i, c in enumerate(claims, start=1):
         if not c.id or not c.id[0].isalpha():

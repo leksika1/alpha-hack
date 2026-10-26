@@ -191,7 +191,7 @@ async def test_llm_draft_is_sanitised(backend, backend_validator, llm_script: LL
     assert "nonexistent.path" not in all_features and "made.up.feature" not in all_features
     assert all(a["product_id"] in (None, "loan_refinancing") for a in ins["actions"])
     names = {(m["name"], m["purpose"]) for m in ins["models_used"]}
-    assert ("Qwen3.6 35B A3B", "generation") in names and ("Gemma 4 26B A4B", "planning") in names
+    assert ("Gemma 4 26B A4B", "generation") in names and ("Gemma 4 26B A4B", "planning") in names
     assert [c["purpose"] for c in llm_script.calls] == ["planning", "generation", "self_check"]
     assert ins["impact"]["quantitative"]  # numbers come from the deterministic calculation
 
@@ -486,3 +486,27 @@ async def test_failing_provider_opens_the_circuit_for_next_runs(backend, llm_scr
     llm_mod.breaker_reset()
     llm_script.status = 200
     assert not llm_mod.breaker_open()
+
+
+async def test_official_rate_is_cited_and_checked(backend, backend_validator) -> None:  # type: ignore[no-untyped-def]
+    res = await Agent(generate_request(RATE_EVENT["event_id"], allow_llm=False)).run()
+    ins = res.insight
+    assert ins is not None
+    sm = [s for s in ins["sources"] if s["id"] == "sm"]
+    assert sm and sm[0]["type"] == "external_stat" and sm[0]["publisher"] == "Банк России"
+    assert any("sm" in s["source_refs"] and "14%" in s["text"] for s in ins["statements"])
+    assert not any("официальное значение" in s["text"] for s in ins["statements"])  # 14% agrees
+    assert backend_validator(ins, context_for("U_110108")["features"], CHUNKS, PRODUCT_IDS) == []
+
+
+def test_news_figure_against_the_official_one() -> None:
+    from alfa_ml.agent import market
+    from tests.fakes import MARKET
+
+    off = market.official(MARKET["key_rate"], "2026-10-21T10:00:00+00:00")
+    assert off is not None and off.value == 14.0 and off.prev_value == 14.5 and off.since == "2026-09-12"
+    assert market.check("ЦБ сохранил ключевую ставку 14% годовых", off)["mismatch"] is False  # type: ignore[index]
+    assert market.check("Банк России повысил ключевую ставку до 16%", off)["mismatch"] is True  # type: ignore[index]
+    assert market.check("Выручка выросла на 16%", off) is None  # not a rate figure
+    usd = market.official(MARKET["usd_rub"])
+    assert usd is not None and market.check("Курс доллара достиг 95 рублей", usd)["mismatch"] is True  # type: ignore[index]

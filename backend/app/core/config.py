@@ -27,6 +27,17 @@ DEFAULT_LLM_MODEL_MAP: dict[str, str] = {
     "kimi-k2.6": "moonshotai/kimi-k2.6",
 }
 
+# The organisers' approximate tariffs, RUB per 1M input / output tokens (reasoning tokens are output); they
+# may change, so the daily limit keeps a margin (LLM_DAILY_BUDGET_RUB)
+DEFAULT_LLM_PRICES: dict[str, tuple[float, float]] = {
+    "gemma-4-26b-a4b": (4.48, 23.0),
+    "glm-5.3-flash": (5.10, 17.0),
+    "qwen3.6-35b-a3b": (5.33, 74.0),
+    "deepseek-v4.1-flash": (10.0, 21.0),
+    "qwen3-vl-30b-a3b-instruct": (14.30, 57.10),
+    "kimi-k2.6": (51.0, 270.0),
+}
+
 
 class Settings(BaseSettings):
     # empty variables (compose `${VAR:-}`) mean "use the default"
@@ -42,9 +53,9 @@ class Settings(BaseSettings):
     )
 
     # Storage
-    database_url: str = "postgresql+asyncpg://alfa:alfa@localhost:5432/alfa"
-    redis_url: str = "redis://localhost:6379/0"
-    s3_endpoint_url: str = "http://localhost:9000"
+    database_url: str = "postgresql+asyncpg://alfa:alfa@localhost:15432/alfa"  # host ports of the local stack
+    redis_url: str = "redis://localhost:16379/0"
+    s3_endpoint_url: str = "http://localhost:19000"
     s3_access_key: str = "minioadmin"
     s3_secret_key: SecretStr = SecretStr("minioadmin")
     s3_region: str = "us-east-1"
@@ -87,14 +98,15 @@ class Settings(BaseSettings):
     # alias -> provider model id; entries from the environment override the defaults one by one
     llm_model_map: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_LLM_MODEL_MAP))
     # alias -> [RUB per 1M input tokens, RUB per 1M output tokens]; models without a price use the default
-    llm_prices: dict[str, tuple[float, float]] = Field(default_factory=dict)
-    llm_default_price_rub_per_1m: tuple[float, float] = (100.0, 300.0)  # conservative until tariffs are known
+    llm_prices: dict[str, tuple[float, float]] = Field(default_factory=lambda: dict(DEFAULT_LLM_PRICES))
+    llm_default_price_rub_per_1m: tuple[float, float] = (100.0, 300.0)  # conservative, for unknown tariffs
     llm_daily_budget_rub: float = 450.0
     llm_daily_token_limit: int = 3_000_000
     # Questions (runs of kind qa) may spend at most this share of the daily budget: the rest stays for the
     # pre-generation of the feed (ADR-035)
     llm_chat_budget_share: float = Field(default=0.3, ge=0.0, le=1.0)
-    llm_budget_utc_offset_h: int = 3  # the "day" of the daily budget: Moscow time (UTC+3, no DST)
+    # the "day" of the daily budget: the provider resets it at 03:00 Moscow time = 00:00 UTC
+    llm_budget_utc_offset_h: int = 0
     llm_request_timeout_s: float = 60.0
     llm_max_retries: int = 1
     llm_default_max_tokens: int = 1024  # used for the budget reservation when max_tokens is not given
@@ -104,6 +116,8 @@ class Settings(BaseSettings):
     data_dir: str = "data/synthetic"
     eligible_client_types: list[str] = Field(default_factory=lambda: ["CLIENT"])
     news_fixtures_enabled: bool = False
+    # the demo feed leaves the feeds once live sources brought this many news in a day; 0 — keep it (ADR-049)
+    news_fixtures_hide_after_live: int = 30
     news_poll_interval_min: int = 15
     news_user_agent: str = "AlfaFutureBot/0.1 (+hackathon prototype; contact: see README)"
     fixture_news_path: str = "data/synthetic/news/fixture_news.json"
@@ -114,6 +128,11 @@ class Settings(BaseSettings):
     news_failures_to_down: int = 3
     news_public_hosts_only: bool = True  # SSRF guard of the collector (ADR-036)
 
+    # Bank of Russia market data: key rate and exchange rates for the agent and the widget (ADR-043)
+    market_data_enabled: bool = True  # false in e2e/offline: nothing is fetched, the tool answers 404
+    market_data_cron: str = "10 * * * *"
+    market_data_history_days: int = 400  # first load; afterwards only the last week is refreshed
+
     # Matching / generation
     match_min_score: float = 0.2
     match_max_per_company: int = 50
@@ -121,7 +140,7 @@ class Settings(BaseSettings):
     insight_ttl_days: int = 14
     tool_calls_per_run: int = 120
 
-    # Delivery (phase 6): notifications SSE, digests, questions to the analytics
+    # Delivery: notifications SSE, digests, questions to the analytics
     notifications_poll_s: float = 2.0
     notifications_stream_max_s: int = 300  # the client reconnects with Last-Event-ID
     notifications_retry_ms: int = 3000
@@ -130,6 +149,8 @@ class Settings(BaseSettings):
     metrics_daily_cron: str = "30 0 * * *"
     qa_history_messages: int = 6  # previous messages of the thread passed to the agent
     qa_timeout_s: float = 90.0
+    # Demo: any company of the client base can be opened by its id (ADR-048); false — only the bank's access
+    demo_company_picker: bool = True
     feed_topic_cap: int = 2  # cards per macro theme in the 'all' view; 0 — no cap (ADR-042)
 
     # Operational alerts (ADR-034): log, or a Telegram chat through a bot
@@ -151,6 +172,12 @@ class Settings(BaseSettings):
     def _model_map_over_defaults(cls, value: dict[str, str]) -> dict[str, str]:
         """An old `.env` with LLM_MODEL_MAP={} must not drop the provider ids."""
         return {**DEFAULT_LLM_MODEL_MAP, **value}
+
+    @field_validator("llm_prices")
+    @classmethod
+    def _prices_over_defaults(cls, value: dict[str, tuple[float, float]]) -> dict[str, tuple[float, float]]:
+        """LLM_PRICES only overrides the organisers' tariffs (LLM_PRICES={} keeps them)."""
+        return {**DEFAULT_LLM_PRICES, **value}
 
 
 # Development defaults of secrets (code and docker-compose/.env.example); refused in APP_ENV=prod.

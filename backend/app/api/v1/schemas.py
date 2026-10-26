@@ -1,5 +1,6 @@
 """Public API v1 request/response models (Pydantic v2). The full insight body is the contract model."""
 
+from datetime import date as date_type
 from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -49,6 +50,28 @@ class CompanyBrief(_Model):
     segment: str | None
     role: Role
     is_default: bool
+    added_by_user: bool = Field(False, description="Открыта пользователем по ID из всей базы (демо, ADR-048)")
+
+
+class CompanyFound(_Model):
+    company_id: str
+    title: str
+    okved_code: str | None
+    okved_name: str | None
+    region: str | None
+    segment: str | None
+    has_access: bool = Field(description="Уже есть в списке компаний пользователя")
+
+
+class CompanyAddIn(_Model):
+    company_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32)]
+    role: Role = Role.ceo
+
+
+class CompanyAddOut(_Model):
+    company: CompanyBrief
+    candidates_pending: int
+    regeneration: Literal["queued", "not_needed"]
 
 
 class MeOut(_Model):
@@ -338,3 +361,25 @@ class NewsOut(_Model):
     tags: dict[str, Any]
     flags: list[str]
     is_fixture: bool
+
+
+class MarketSourceOut(_Model):
+    title: str
+    url: str | None
+
+
+class MarketIndicatorOut(_Model):
+    indicator: str = Field(description="key_rate, usd_rub, eur_rub, cny_rub")
+    title: str
+    unit: str
+    value: float
+    date: date_type = Field(description="Дата значения (курс ЦБ устанавливается на следующий день)")
+    previous_value: float | None = Field(description="Предыдущее отличающееся значение")
+    previous_date: date_type | None
+    change: float | None
+    fetched_at: datetime
+    source: MarketSourceOut
+
+
+class MarketOut(_Model):
+    items: list[MarketIndicatorOut] = Field(description="Пусто, если данные ЦБ ещё не загружены")

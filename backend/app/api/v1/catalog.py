@@ -7,8 +7,9 @@ from fastapi import APIRouter
 
 from app.api.deps import Conn, User
 from app.api.v1.auth import ERR_401
-from app.api.v1.schemas import BankProductOut, NewsOut
+from app.api.v1.schemas import BankProductOut, MarketOut, NewsOut
 from app.core.errors import ProblemError
+from app.services import market
 from app.services.tools import bank_products
 
 router = APIRouter(tags=["catalog"])
@@ -19,6 +20,16 @@ router = APIRouter(tags=["catalog"])
 )
 async def list_products(user: User, conn: Conn) -> list[BankProductOut]:
     return [BankProductOut(**p) for p in await bank_products(conn, [])]
+
+
+@router.get(
+    "/market",
+    response_model=MarketOut,
+    responses=ERR_401,
+    summary="Ключевая ставка и официальные курсы Банка России",
+)
+async def market_indicators(user: User, conn: Conn) -> MarketOut:
+    return MarketOut.model_validate({"items": await market.latest(conn)})
 
 
 @router.get(

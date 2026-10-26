@@ -139,3 +139,74 @@ def test_manual_connector_keeps_absolute_dates_and_strips_html() -> None:
         and second.url == "https://bank.test/news/2"
         and second.publisher == "Ручной ввод"
     )
+
+
+LISTING = """<html><body><nav><a href="/press-center/news">Все новости министерства транспорта</a></nav>
+<div class="item"><a href="/press-center/news/2"><img src="x.jpg"></a>
+<span class="date">21 Октября 2026</span>
+<a href="/press-center/news/2" class="title"> Минтранс утвердил новые правила перевозки опасных грузов
+</a></div>
+<div class="item"><a href="/press-center/news/1"><img src="y.jpg"></a>
+<div class="time">20.10.2026 18:00</div>
+<a href="/press-center/news/1"> Ставки на грузовые перевозки по железной дороге проиндексируют </a></div>
+<div class="item"><a href="https://other.test/press-center/news/3">Чужой сайт с подходящим адресом ссылки</a>
+<a href="/press-center/news/4">Коротко</a>
+<a href="/press-center/news/5#comments">Новость без даты рядом, обсуждение на форуме</a></div>
+<script>var s = "<a href='/press-center/news/9'>Скрипт не новость, хотя длинный</a>";</script>
+</body></html>"""
+HTML_SRC = SourceInfo(
+    "mintrans",
+    "Минтранс",
+    "html",
+    "https://min.test/press-center/news",
+    {"link_pattern": r"^/press-center/news/\d+$"},
+)
+
+
+def test_html_listing_takes_titles_and_dates_next_to_links() -> None:
+    drafts = connector_for("html").parse(LISTING.encode(), HTML_SRC, NOW)
+    by_url = {d.url: d for d in drafts}
+    assert list(by_url) == [
+        "https://min.test/press-center/news/2",
+        "https://min.test/press-center/news/1",
+        "https://min.test/press-center/news/5",
+    ]  # other host, a short text, the nav link and the script are not news
+    first = by_url["https://min.test/press-center/news/2"]
+    assert first.title == "Минтранс утвердил новые правила перевозки опасных грузов"
+    assert first.published_at == datetime(2026, 10, 20, 21, tzinfo=UTC)  # 21 Oct, Moscow midnight
+    assert first.publisher == "Минтранс" and first.external_id == first.url
+    second = by_url["https://min.test/press-center/news/1"]
+    assert second.published_at == datetime(2026, 10, 20, 15, tzinfo=UTC)  # numeric format
+    assert by_url["https://min.test/press-center/news/5"].published_at == NOW  # no date: the fetch time
+
+
+def test_html_listing_respects_max_items() -> None:
+    src = SourceInfo("m", "M", "html", HTML_SRC.url, {**HTML_SRC.config, "max_items": 1})
+    assert len(connector_for("html").parse(LISTING.encode(), src, NOW)) == 1
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("23.10.2026 18:00", datetime(2026, 10, 23, 15, tzinfo=UTC)),
+        ("23 октября 2026 12:39", datetime(2026, 10, 23, 9, 39, tzinfo=UTC)),
+        ("1 мая 2026", datetime(2026, 4, 30, 21, tzinfo=UTC)),
+        ("5 марта 2026", datetime(2026, 3, 4, 21, tzinfo=UTC)),
+        ("31.02.2026", None),
+        ("Новости 2026 года", None),
+    ],
+)
+def test_russian_dates_of_listings(text: str, expected: datetime | None) -> None:
+    from app.integrations.news.connectors import parse_ru_date
+
+    parsed = parse_ru_date(text)
+    assert (parsed.astimezone(UTC) if parsed else None) == expected
+
+
+def test_html_listing_with_dates_after_titles() -> None:
+    page = """<li><a href="/press-center/news/7">Правительство продлило льготы для перевозчиков</a>
+    <time>19.10.2026</time></li>
+    <li><a href="/press-center/news/8">Новые требования к тахографам грузовиков</a>
+    <time>18.10.2026</time></li>"""
+    drafts = connector_for("html").parse(page.encode(), HTML_SRC, NOW)
+    assert [d.published_at.day for d in drafts] == [18, 17]  # Moscow midnight is the previous day in UTC

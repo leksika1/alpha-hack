@@ -278,7 +278,7 @@ async def store_news(
                 log.warning("news_blocked_compliance", source_id=source_id, url=d.url, reason=blocked)
                 continue
             tags = tag_news(d.title, d.body)
-            if "liveblog" in tags.flags:
+            if "liveblog" in tags.flags or "not_business" in tags.flags:
                 result.filtered += 1
                 continue
             summary = _summary(d)

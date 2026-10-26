@@ -16,7 +16,7 @@ from alfa_ml.agent.evidence import analytics_publisher, strip_injection
 from alfa_ml.agent.textutil import best_sentences, clip
 from alfa_ml.config import Settings, get_settings
 from alfa_ml.contracts import DISCLAIMER_NOT_ADVICE
-from alfa_ml.llm import LLMClient, LLMError
+from alfa_ml.llm import LLMClient, LLMError, pick_model
 from alfa_ml.log import get_logger
 from alfa_ml.profile import company_card
 from alfa_ml.tools_client import Tools
@@ -54,7 +54,11 @@ async def chat_stream(req: dict[str, Any], settings: Settings | None = None) -> 
         and (req.get("options") or {}).get("allow_llm", True)
     ):
         llm = LLMClient(
-            req["tools"]["llm_base_url"], req["tools"]["token"], req["tools"]["run_id"], s.ml_llm_timeout_s
+            req["tools"]["llm_base_url"],
+            req["tools"]["token"],
+            req["tools"]["run_id"],
+            s.ml_llm_timeout_s,
+            no_think=s.ml_llm_no_think,
         )
     question = clip(str(req["messages"][-1].get("content", "")), 1000)
     history = [m for m in req["messages"][:-1] if m.get("role") in {"user", "assistant"}][-6:]
@@ -181,12 +185,12 @@ async def chat_stream(req: dict[str, Any], settings: Settings | None = None) -> 
             user = _llm_message(question, history, insight, features, context, ctx, group, cps, intent)
             try:
                 answer = await llm.complete_json(
-                    alias=s.ml_model_chat,
+                    alias=pick_model(s.ml_model_chat, s.ml_model_fast),
                     purpose="chat",
                     system=prompts.system("chat", req.get("role")),
                     user=user,
-                    max_tokens=900,
-                    timeout_s=min(s.ml_llm_timeout_s, 40),
+                    max_tokens=2500,  # reasoning models spend ~300 tokens before the answer (organisers' advice)
+                    timeout_s=min(s.ml_llm_timeout_s, 50),
                 )
                 model_name = llm.last.get("model")
                 await tools.step(

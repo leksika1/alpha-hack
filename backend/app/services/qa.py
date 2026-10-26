@@ -20,7 +20,7 @@ import httpx
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.domain.chat_validator import check_chat_final
-from app.integrations.ml_client import HttpInsightGenerator, MlServiceError
+from app.integrations.ml_client import HttpInsightGenerator, MlProtocolError, MlServiceError
 from app.services.generation import add_step, new_run_id, tools_access
 from app.services.interactions import log_action
 
@@ -75,22 +75,24 @@ async def history(
 
 
 async def _parse_sse(lines: AsyncIterator[str]) -> AsyncIterator[tuple[str, Any]]:
+    def decode(parts: list[str]) -> Any:
+        try:
+            return json.loads("\n".join(parts))
+        except ValueError as exc:
+            raise MlProtocolError("Invalid JSON in the agent's SSE response") from exc
+
     event, data = "message", list[str]()
     async for line in lines:
         if line == "":
             if data:
-                raw = "\n".join(data)
-                try:
-                    yield event, json.loads(raw)
-                except json.JSONDecodeError:
-                    yield event, raw
+                yield event, decode(data)
             event, data = "message", []
         elif line.startswith("event:"):
             event = line[6:].strip()
         elif line.startswith("data:"):
             data.append(line[5:].lstrip())
     if data:
-        yield event, json.loads("\n".join(data))
+        yield event, decode(data)
 
 
 async def ask_stream(
@@ -141,7 +143,7 @@ async def ask_stream(
         "intent": intent,
         "messages": [{"role": m["role"], "content": m["content"]} for m in previous if m["status"] == "ok"]
         + [{"role": "user", "content": question}],
-        "tools": tools_access(settings, run_id, company_id),
+        "tools": tools_access(settings, run_id, company_id, timeout_s=settings.qa_timeout_s),
     }
     started = time.perf_counter()
     final: dict[str, Any] | None = None
@@ -149,7 +151,7 @@ async def ask_stream(
     tokens: list[str] = []
     try:
         async with asyncio.timeout(settings.qa_timeout_s):
-            async for event, data in _parse_sse(client.chat_stream(body)):
+            async for event, data in _parse_sse(client.chat_stream(body, timeout_s=settings.qa_timeout_s)):
                 if event == "done" and isinstance(data, dict):
                     final = data
                 elif event == "error":
@@ -164,6 +166,8 @@ async def ask_stream(
                     yield sse(event, data)
     except TimeoutError:
         error = problem("agent-timeout", 504, "The agent did not answer in time")
+    except MlProtocolError as exc:
+        error = problem("invalid-answer", 502, "The agent returned an invalid response", str(exc))
     except (MlServiceError, httpx.HTTPError) as exc:
         error = problem("ml-unavailable", 503, "Analytics assistant is unavailable", str(exc))
         log.warning("qa_ml_unavailable", run_id=run_id, error=str(exc)[:300])

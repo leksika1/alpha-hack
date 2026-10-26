@@ -6,6 +6,7 @@ The backend records its own steps (request, validation, persistence) in the same
 """
 
 import json
+import math
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -18,6 +19,7 @@ from app.core.security import issue_run_token
 from app.domain.contracts.insight import Insight, Role
 from app.domain.insight_validator import ValidationContext, ValidationResult, validate_insight
 from app.domain.ports import GenerationRequest, InsightGenerator, ScoreResult
+from app.integrations.ml_client import BACKOFF_S
 from app.services.llm_gateway import budget
 from app.services.notifications import notify_insight
 
@@ -49,9 +51,16 @@ def new_run_id() -> str:
     return "run_" + uuid.uuid4().hex[:20]
 
 
-def tools_access(settings: Settings, run_id: str, company_id: str) -> dict[str, Any]:
+def tools_access(
+    settings: Settings, run_id: str, company_id: str, *, timeout_s: float | None = None
+) -> dict[str, Any]:
     base = settings.internal_api_url.rstrip("/")
-    ttl = int(settings.ml_request_timeout_s) + RUN_TOKEN_GRACE_S
+    if timeout_s is None:
+        # All HTTP attempts reuse the same run token. The last attempt must still be able to call tools.
+        timeout_s = settings.ml_request_timeout_s * (settings.ml_max_retries + 1) + sum(
+            BACKOFF_S[min(attempt, len(BACKOFF_S) - 1)] for attempt in range(settings.ml_max_retries)
+        )
+    ttl = math.ceil(timeout_s) + RUN_TOKEN_GRACE_S
     return {
         "base_url": f"{base}/internal/tools",
         "llm_base_url": f"{base}/internal/llm",
@@ -193,7 +202,9 @@ async def generate_one(
     company_id: str = candidate["company_id"]
     event_id = str(candidate["event_id"])
     role = Role(candidate["role"])
-    request_id = f"gen:{company_id}:{event_id}:{role.value}:v{candidate['context_version']}"
+    # A new run is a new generation, including an admin retry/regeneration with unchanged company context.
+    # The HTTP client reuses this ID for transport retries, so those remain idempotent at the ML service.
+    request_id = f"gen:{company_id}:{event_id}:{role.value}:v{candidate['context_version']}:{run_id}"
     await conn.execute(
         """INSERT INTO core.agent_runs (id, kind, request_id, company_id, event_id, role, generator)
            VALUES ($1, 'insight', $2, $3, $4, $5, $6)""",
@@ -349,10 +360,15 @@ async def generate_pending(
     company_ids: list[str] | None = None,
     limit: int = 500,
 ) -> GenerationStats:
+    # companies take turns (the best candidate of each, then the second…): every feed fills at the same pace
     candidates = await conn.fetch(
-        """SELECT * FROM core.candidate_matches
-           WHERE status = 'pending' AND ($1::text[] IS NULL OR company_id = ANY($1::text[]))
-           ORDER BY urgent DESC, score DESC, id
+        """SELECT * FROM (
+               SELECT *,
+                      row_number() OVER (PARTITION BY company_id ORDER BY urgent DESC, score DESC, id) AS turn
+               FROM core.candidate_matches
+               WHERE status = 'pending' AND ($1::text[] IS NULL OR company_id = ANY($1::text[]))
+           ) c
+           ORDER BY turn, urgent DESC, score DESC, id
            LIMIT $2""",
         company_ids,
         limit,

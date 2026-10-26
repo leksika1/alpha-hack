@@ -20,12 +20,13 @@ from app.domain.ports import GenerationOutcome
 from app.domain.scoring import profile_from_context, score_candidate
 from app.integrations.generators import get_generator
 from app.integrations.llm import FakeLlmProvider
+from app.integrations.scorers import get_scorer
 from app.main import create_app
 from app.services.analytics_run import run_analytics_ingest
 from app.services.analytics_upload import process_upload
 from app.services.generation import GenerationStats, generate_one, generate_pending
 from app.services.ingest_companies import ingest_companies
-from app.services.matching import affected_companies, event_profile, load_profiles, match_events
+from app.services.matching import affected_companies, event_profile, load_profiles, match, match_events
 from app.services.metrics import snapshot_day
 from app.services.notifications import create_digests, notify_insight
 from app.services.seed import ADMIN_PASSWORD, DEMO_PASSWORD, seed_demo
@@ -759,6 +760,13 @@ async def test_admin_alerts_reflect_system_state(env: dict[str, Any]) -> None:
         keys = {a.key: a for a in await evaluate(conn, unreachable_ml)}
         assert keys["llm-errors"].severity == "critical" and "llm-timeout" in keys["llm-errors"].detail
         await conn.execute("DELETE FROM core.llm_usage WHERE purpose = 'planning' AND error = 'llm-timeout'")
+        await conn.executemany(  # no LLM_API_KEY: insights by rules, not a provider failure
+            """INSERT INTO core.llm_usage (day, caller, purpose, model, status, error)
+               VALUES (current_date, 'run', 'planning', 'gemma-4-26b-a4b', 'error', $1)""",
+            [("llm-not-configured",)] * 6,
+        )
+        assert "llm-errors" not in {a.key for a in await evaluate(conn, unreachable_ml)}
+        await conn.execute("DELETE FROM core.llm_usage WHERE error = 'llm-not-configured'")
         assert {"insights-rejected", "ml-unavailable", "llm-budget-exhausted"} <= set(keys)
         assert keys["ml-unavailable"].severity == "critical" and "sources-down" not in keys
         # most sources down: a network problem of the server
@@ -1224,3 +1232,228 @@ async def test_skipped_regeneration_retires_the_previous_card(env: dict[str, Any
         )
         status = await conn.fetchval("SELECT status FROM core.candidate_matches WHERE id = $1", cand["id"])
     assert stats.skipped == 1 and status == "skipped" and live == 0
+
+
+async def test_market_data_of_the_bank_of_russia_for_the_agent_and_the_widget(env: dict[str, Any]) -> None:
+    from datetime import date
+    from decimal import Decimal
+
+    from app.integrations.cbr import CbrError
+    from app.services.market import refresh
+
+    class Source:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, date]] = []
+
+        async def series(self, code: str, date_from: date, date_to: date) -> list[tuple[date, Decimal]]:
+            self.calls.append((code, date_from))
+            if code == "eur_rub":
+                raise CbrError("HTTP 503")
+            if code == "key_rate":
+                return [(date(2026, 9, 12), Decimal("14.50")), (date(2026, 10, 24), Decimal("14.00"))]
+            return [(date(2026, 10, 24), Decimal("82.1")), (date(2026, 10, 25), Decimal("81.9"))]
+
+    c = env["client"]
+    h = await login(c)
+    today = date(2026, 10, 25)
+    async with pg_connection(env["url"]) as conn:
+        assert (await c.get("/api/v1/market", headers=h)).json() == {"items": []}
+        source = Source()
+        result = await refresh(conn, source, 400, today=today)
+        assert result.errors == {"eur_rub": "HTTP 503"} and result.points["key_rate"] == 2
+        assert all(since == date(2025, 9, 20) for _, since in source.calls)  # empty table: full history
+        again = Source()
+        await refresh(conn, again, 400, today=today)  # idempotent; only the last week of known indicators
+        assert dict(again.calls)["key_rate"] == date(2026, 10, 18) and dict(again.calls)["eur_rub"] == date(
+            2025, 9, 20
+        )
+
+    items = {i["indicator"]: i for i in (await c.get("/api/v1/market", headers=h)).json()["items"]}
+    assert set(items) == {"key_rate", "usd_rub", "cny_rub"}
+    rate = items["key_rate"]
+    assert rate["value"] == 14.0 and rate["previous_value"] == 14.5 and rate["change"] == -0.5
+    assert rate["previous_date"] == "2026-09-12" and rate["source"]["title"] == "Банк России"
+    assert (await c.get("/api/v1/market")).status_code == 401
+
+    token = issue_run_token(env["settings"], "run_market", METALS, 60)
+    hdr = {"Authorization": f"Bearer {token}", "X-Run-Id": "run_market"}
+    tool = "/internal/tools/get_market_data"
+    resp = await c.post(tool, headers=hdr, json={"indicator": "key_rate", "date_from": "2026-09-01"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert [p["value"] for p in body["points"]] == [14.5, 14.0] and body["unit"] == "%"
+    assert body["source"]["url"].startswith("https://cbr.ru/")
+    missing = await c.post(tool, headers=hdr, json={"indicator": "brent"})
+    assert missing.status_code == 404 and missing.json()["type"].endswith("not-available")
+    assert (await c.post(tool, headers=hdr, json={"indicator": "eur_rub"})).status_code == 404
+    bad = await c.post(tool, headers=hdr, json={"indicator": "usd_rub", "date_from": "вчера"})
+    assert bad.status_code == 422
+
+
+async def test_prometheus_shows_the_pipeline_state_of_the_worker(env: dict[str, Any]) -> None:
+    resp = await env["client"].get("/metrics")
+    assert resp.status_code == 200
+    text = resp.text
+    async with pg_connection(env["url"]) as conn:
+        generated = await conn.fetchval(
+            "SELECT count(*) FROM core.candidate_matches WHERE status = 'generated'"
+        )
+        news = await conn.fetchval(
+            "SELECT count(*) FROM core.news_items WHERE fetched_at > now() - interval '1 day'"
+        )
+    assert f'generation_candidates{{status="generated"}} {float(generated)}' in text
+    assert f"news_items_last_24h {float(news)}" in text
+    assert 'news_sources{status="down"}' in text and "news_fetches_last_hour" in text
+
+
+async def test_remote_scoring_withdraws_old_card_and_can_restore_candidate(env: dict[str, Any]) -> None:
+    settings = env["settings"].model_copy(update={"scorer_provider": "remote", "ml_max_retries": 0})
+    score_by_role = {"ceo": 0.199, "cfo": 0.8}
+    scorer_name = "ml-ranker@1:recalibrated-baseline"
+
+    def handle(req: httpx.Request) -> httpx.Response:
+        body = json.loads(req.content)
+        return httpx.Response(
+            200,
+            json={
+                "request_id": body["request_id"],
+                "scorer": scorer_name,
+                "scores": [
+                    {
+                        "company_id": it["company_id"],
+                        "event_id": it["event_id"],
+                        "score": score_by_role[it["role"]],
+                        "breakdown": {"rate": score_by_role[it["role"]]},
+                    }
+                    for it in body["items"]
+                ],
+            },
+        )
+
+    scorer = get_scorer(settings, transport=httpx.MockTransport(handle))
+    async with pg_connection(env["url"]) as conn:
+        transaction = conn.transaction()
+        await transaction.start()
+        try:
+            card = await conn.fetchrow(
+                """SELECT i.id, i.event_id FROM core.insights i
+                   JOIN core.candidate_matches m ON m.company_id = i.company_id AND m.event_id = i.event_id
+                                                AND m.role = i.role_variant
+                   WHERE i.company_id = $1 AND i.role_variant = 'ceo'
+                     AND (i.expires_at IS NULL OR i.expires_at > now())
+                   ORDER BY m.score DESC LIMIT 1""",
+                METALS,
+            )
+            assert card is not None
+            event_ids = [str(card["event_id"])]
+            roles = {METALS: {"ceo", "cfo"}}
+            baseline = await match(conn, [METALS], roles, event_ids)
+            assert baseline.candidates == 2
+            stats = await match(conn, [METALS], roles, event_ids, scorer=scorer)
+            assert stats.candidates == 1
+            rows = await conn.fetch(
+                "SELECT * FROM core.candidate_matches WHERE company_id = $1 AND event_id = $2",
+                METALS,
+                card["event_id"],
+            )
+            by_role = {row["role"]: row for row in rows}
+            assert by_role["ceo"]["status"] == "skipped"
+            assert by_role["ceo"]["status_reason"] == "remote-not-relevant"
+            assert by_role["ceo"]["score"] == 0.199
+            assert by_role["cfo"]["status"] == "pending" and by_role["cfo"]["score"] == 0.8
+            assert all(row["scorer"] == scorer_name and row["matched_features"] for row in rows)
+            assert await conn.fetchval(
+                "SELECT expires_at <= now() FROM core.insights WHERE id = $1", card["id"]
+            )
+            # A threshold crossing smaller than the usual 0.05 score-change trigger still requeues the pair.
+            score_by_role["ceo"] = 0.201
+            restored = await match(conn, [METALS], roles, event_ids, scorer=scorer)
+            assert restored.candidates == 2 and restored.pending >= 1
+            assert await conn.fetchval(
+                """SELECT status = 'pending' FROM core.candidate_matches
+                   WHERE company_id = $1 AND event_id = $2 AND role = 'ceo'""",
+                METALS,
+                card["event_id"],
+            )
+        finally:
+            await transaction.rollback()
+
+
+async def test_any_company_of_the_client_base_can_be_opened_by_id(env: dict[str, Any]) -> None:
+    from app.core.config import get_settings
+
+    c = env["client"]
+    h = await login(c, "demo2")
+    found = (await c.get("/api/v1/companies/search", headers=h, params={"q": "u_700019"})).json()
+    assert found[0]["company_id"] == "U_700019" and found[0]["has_access"] is False
+    by_activity = (await c.get("/api/v1/companies/search", headers=h, params={"q": "46.72"})).json()
+    assert by_activity and all(f["okved_code"].startswith("46.72") for f in by_activity)
+    assert (await c.get("/api/v1/companies/search", headers=h, params={"q": "a"})).status_code == 422
+
+    resp = await c.post("/api/v1/me/companies", headers=h, json={"company_id": "U_700019", "role": "cfo"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["company"]["added_by_user"] is True and body["company"]["role"] == "cfo"
+    me = (await c.get("/api/v1/me", headers=h)).json()
+    assert "U_700019" in [x["company_id"] for x in me["companies"]]
+    assert (await c.get("/api/v1/companies/U_700019/profile", headers=h)).status_code == 200
+    assert (await c.get("/api/v1/feed", headers=h, params={"company_id": "U_700019"})).status_code == 200
+    again = await c.post("/api/v1/me/companies", headers=h, json={"company_id": "U_700019"})
+    assert again.status_code == 200 and again.json()["company"]["role"] == "cfo"  # idempotent
+    missing = await c.post("/api/v1/me/companies", headers=h, json={"company_id": "U_000000"})
+    assert missing.status_code == 404
+
+    assert (await c.delete(f"/api/v1/me/companies/{AGRO}", headers=h)).status_code == 404  # bank's access
+    assert (await c.delete("/api/v1/me/companies/U_700019", headers=h)).status_code == 204
+    assert (await c.get("/api/v1/companies/U_700019/profile", headers=h)).status_code == 403
+
+    off = get_settings().model_copy(update={"demo_company_picker": False})
+    env["app"].dependency_overrides[get_settings] = lambda: off
+    try:
+        assert (await c.get("/api/v1/companies/search", headers=h, params={"q": "U_7"})).status_code == 403
+        blocked = await c.post("/api/v1/me/companies", headers=h, json={"company_id": "U_700019"})
+        assert blocked.status_code == 403
+    finally:
+        env["app"].dependency_overrides.pop(get_settings)
+
+
+async def test_demo_feed_leaves_the_feed_once_live_news_arrive(env: dict[str, Any]) -> None:
+    from app.services.feed_cleanup import retire_demo_feed
+
+    c = env["client"]
+    h = await login(c)
+
+    async with pg_connection(env["url"]) as conn:
+        demo_events = await conn.fetchval(
+            """SELECT count(DISTINCT en.event_id) FROM core.event_news en
+               JOIN core.news_items n ON n.id = en.news_id WHERE n.source_id = 'fixture'"""
+        )
+        assert demo_events > 0
+        assert await retire_demo_feed(conn, min_live_news=10**6) == 0  # live sources have not delivered yet
+        active = """SELECT count(DISTINCT i.id) FROM core.insights i
+                    JOIN core.event_news en ON en.event_id = i.event_id
+                    JOIN core.news_items n ON n.id = en.news_id
+                    WHERE n.source_id = 'fixture' AND (i.expires_at IS NULL OR i.expires_at > now())"""
+        before = await conn.fetchval(active)
+        # live news arrived, but the companies have no real cards yet: demo cards stay, no new demo candidates
+        await retire_demo_feed(conn, min_live_news=0, min_real_cards=10**6)
+        assert await conn.fetchval(active) == before > 0
+        assert (
+            await conn.fetchval(
+                """SELECT count(*) FROM core.candidate_matches c
+               JOIN core.event_news en ON en.event_id = c.event_id JOIN core.news_items n ON n.id = en.news_id
+               WHERE n.source_id = 'fixture' AND c.status = 'pending'"""
+            )
+            == 0
+        )
+        assert await retire_demo_feed(conn, min_live_news=0, min_real_cards=0) >= before
+        assert await retire_demo_feed(conn, min_live_news=0, min_real_cards=0) == 0  # idempotent
+        visible = await conn.fetchval(
+            """SELECT count(*) FROM core.insights i JOIN core.event_news en ON en.event_id = i.event_id
+               JOIN core.news_items n ON n.id = en.news_id
+               WHERE n.source_id = 'fixture' AND (i.expires_at IS NULL OR i.expires_at > now())"""
+        )
+        assert visible == 0
+    for company in (METALS, RETAIL, LOGISTICS):
+        items = (await feed(c, h, company, limit=50))["items"]
+        assert all(i["insight_id"] for i in items)

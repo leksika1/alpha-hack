@@ -92,12 +92,12 @@
 
 | Требование | Где |
 |---|---|
-| GitHub + история + тег версии; доступ `alfa-hack-2026` | git, `CHANGELOG.md`, тег `v1.0.0` |
+| GitHub + история + однозначный commit hash или тег на момент дедлайна; доступ `alfa-hack-2026` для приватного репозитория | git, `CHANGELOG.md`, `docs/SUBMISSION.md`; финальный полный SHA нужно приложить к сдаче, старый `v1.0.0` не содержит последние исправления |
 | README (назначение, архитектура, окружение, запуск, env, компоненты, сценарий проверки) | `README.md` |
 | Docker + единый способ запуска | `docker-compose.yml`, `make up` |
-| Lock-файлы | `uv.lock`, `.python-version` |
-| THIRD_PARTY_NOTICES | `THIRD_PARTY_NOTICES.md` (`make notices`) |
-| Синтетические данные и тестовые учётки | `data/synthetic/`, README «Демо-учётки» |
+| Lock-файлы | `backend/uv.lock`, `ml/uv.lock`, `frontend/package-lock.json` |
+| THIRD_PARTY_NOTICES | `THIRD_PARTY_NOTICES.md` (`make notices`), `ml/THIRD_PARTY_NOTICES.md`, `frontend/THIRD_PARTY_NOTICES.md` |
+| Синтетические данные и тестовые учётки | `backend/data/synthetic/`, README «Демо-учётки» |
 | Схема, API, OpenAPI, модель данных, тестовые сценарии | `docs/ARCHITECTURE.md`, `docs/openapi.json`, `docs/DATA_MODEL.md`, `docs/TESTING.md` |
 
 ---
@@ -145,7 +145,7 @@
 - **FR-N3** Нормализация: заголовок, лид, текст (очистка HTML), дата публикации (UTC), язык, канонический URL.
 - **FR-N4** Дедуп: канонический URL → хэш нормализованного текста → near-duplicate по косинусу эмбеддинга (порог `NEWS_NEAR_DUP_THRESHOLD`).
 - **FR-N5** Кластеризация в события: новые новости присоединяются к событию при сходстве ≥ порога в окне 72 ч, иначе создают новое.
-- **FR-N6** Baseline-тегирование (ADR-007): ОКВЭД-секции/отраслевые теги, страны, регионы, сущности по словарям, тип события
+- **FR-N6** Baseline-тегирование (ADR-007): ОКВЭД-секции/отраслевые теги, страны, регионы (все 89 субъектов, ADR-045), сущности по словарям, тип события
   (monetary_policy, fx, commodities, sanctions, regulation_tax, trade_logistics, industry, company, macro_stat, labor, other), числа (ставка, %, курс).
 - **FR-N7** Срочность по правилам: решение ЦБ по ставке, санкции/ограничения, ЧС, резкие движения курса/сырья, события по компаниям из графа.
 - **FR-N8** Health-check источников (успех, латентность, новые статьи), статус `healthy/degraded/down`; при `down` основного — опрос резервного (`sources.fallback_for`).

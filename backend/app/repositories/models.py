@@ -349,7 +349,7 @@ class CompanyContext(Base):
     computed_at: Mapped[datetime] = _now()
 
 
-# ---------------------------------------------------------------- core: users and access (phase 2)
+# ---------------------------------------------------------------- core: users and access
 
 
 class User(Base):
@@ -377,6 +377,8 @@ class UserCompanyAccess(Base):
     company_id: Mapped[str] = mapped_column(ForeignKey("core.companies.id"), primary_key=True, index=True)
     role: Mapped[str] = mapped_column(String(32))  # owner | ceo | cfo | chief_accountant | treasurer | other
     is_default: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    # opened by the user from the whole client base (demo company picker, ADR-048), not granted by the bank
+    added_by_user: Mapped[bool] = mapped_column(Boolean, server_default="false")
     updated_at: Mapped[datetime] = _now()
 
 
@@ -543,7 +545,7 @@ class CandidateMatch(Base):
     context_version: Mapped[int] = mapped_column(Integer, server_default="1")
     status: Mapped[str] = mapped_column(String(16), server_default="pending", index=True)
     status_reason: Mapped[str | None] = mapped_column(Text)
-    scorer: Mapped[str] = mapped_column(String(32), server_default="baseline@1")
+    scorer: Mapped[str] = mapped_column(String(255), server_default="baseline@1")
     updated_at: Mapped[datetime] = _now()
 
 
@@ -870,7 +872,19 @@ class MetricsDaily(Base):
     computed_at: Mapped[datetime] = _now()
 
 
-# ---------------------------------------------------------------- core: bank analytics (phase 4)
+class MarketRate(Base):
+    """Official market indicators of the Bank of Russia: key rate and exchange rates (ADR-043)."""
+
+    __tablename__ = "market_rates"
+    __table_args__ = {"schema": "core"}
+
+    indicator: Mapped[str] = mapped_column(String(32), primary_key=True)  # key_rate | usd_rub | ...
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    value: Mapped[Decimal] = mapped_column(Numeric(20, 4))
+    fetched_at: Mapped[datetime] = _now()
+
+
+# ---------------------------------------------------------------- core: bank analytics
 
 
 class AnalyticsDocument(Base):

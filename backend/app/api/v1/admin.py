@@ -538,3 +538,72 @@ async def news_cleanup(
     if stats["companies_to_regenerate"]:
         await request.app.state.enqueue(stats["companies_to_regenerate"])
     return FeedCleanupOut(**stats)
+
+
+class MarketRefreshOut(BaseModel):
+    points: dict[str, int] = Field(description="Сколько значений получено по каждому индикатору")
+    errors: dict[str, str] = Field(description="Индикаторы, которые не удалось обновить, и причина")
+
+
+@router.post(
+    "/market/refresh",
+    response_model=MarketRefreshOut,
+    responses=ADMIN_ERRS,
+    summary="Обновить ключевую ставку и курсы Банка России сейчас (иначе — по расписанию, ADR-043)",
+)
+async def market_refresh(admin: Admin, conn: Conn, settings: SettingsDep) -> MarketRefreshOut:
+    from app.integrations.cbr import CbrClient
+    from app.services.market import refresh
+
+    client = CbrClient(settings.news_user_agent)
+    try:
+        result = await refresh(conn, client, settings.market_data_history_days)
+    finally:
+        await client.aclose()
+    return MarketRefreshOut(points=result.points, errors=result.errors)
+
+
+class LlmProviderKeyOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["ok", "error", "not-supported"]
+    spend: float | None = Field(None, description="Потрачено по ключу команды за текущий период провайдера")
+    max_budget: float | None = Field(None, description="Лимит ключа у провайдера")
+    remaining: float | None = None
+    budget_duration: str | None = None
+    budget_reset_at: str | None = Field(None, description="Когда провайдер обнулит расход (03:00 МСК)")
+    error: str | None = None
+
+
+@router.get(
+    "/llm-provider",
+    response_model=LlmProviderKeyOut,
+    responses=ADMIN_ERRS,
+    summary="Остаток лимита ключа команды у провайдера LLM (его /key/info); ключ в ответ не попадает",
+)
+async def llm_provider_key(admin: Admin, settings: SettingsDep) -> LlmProviderKeyOut:
+    from app.integrations.llm import LlmProviderError, get_llm_provider
+
+    provider = get_llm_provider(settings)
+    key_info = getattr(provider, "key_info", None)
+    if key_info is None:
+        return LlmProviderKeyOut(status="not-supported")
+    try:
+        data = await key_info()
+    except LlmProviderError as exc:
+        return LlmProviderKeyOut(status="error", error=f"{exc.code}: {exc}")
+    info = data.get("info") if isinstance(data.get("info"), dict) else data
+
+    def num(key: str) -> float | None:
+        value = info.get(key)
+        return float(value) if isinstance(value, int | float) else None
+
+    spend, limit = num("spend"), num("max_budget")
+    return LlmProviderKeyOut(
+        status="ok",
+        spend=spend,
+        max_budget=limit,
+        remaining=round(limit - spend, 2) if spend is not None and limit is not None else None,
+        budget_duration=str(info["budget_duration"]) if info.get("budget_duration") else None,
+        budget_reset_at=str(info["budget_reset_at"]) if info.get("budget_reset_at") else None,
+    )

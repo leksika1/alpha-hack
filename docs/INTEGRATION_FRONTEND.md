@@ -17,6 +17,8 @@
 | Экран / элемент | Эндпоинты |
 |---|---|
 | Виджет на главной «Альфа-Бизнес» (постоянная точка входа, CJM 01) | `GET /feed/summary` (непрочитанные, срочные, топ-1 с `why_for_you`) + `GET /notifications/stream`; показ и клик — `POST /events` (`widget_shown`, `widget_click`) |
+| Ставка и курсы на главной | `GET /market` — ключевая ставка и курсы ЦБ: `value`, `date`, `change` к `previous_value` — предыдущему **отличающемуся** значению (у ставки это уровень до последнего изменения, показывать вместе с `previous_date`), `source` |
+| «Открыть компанию по ID» (демо, ADR-048) | поле поиска → `GET /companies/search?q=` (ID, ОКВЭД, регион; `has_access`) → `POST /me/companies {company_id, role}` → компания в списке `GET /me` с `added_by_user=true`, карточки появляются в течение минуты (`regeneration=queued`); убрать — `DELETE /me/companies/{id}` |
 | Выбор компании и роли | `GET /me`, `GET /companies`, `PUT /me/companies/{id}/role` |
 | Лента (CJM 03) | `GET /feed?company_id&role&filter=all|urgent|risks|opportunities|saved|hidden&period`; в карточке `why_for_you` («почему это для вас»), `priority_reasons` («почему выше»), `state.updated` («обновлено»); в фильтре `all` одной макротемы (ставка ЦБ, курс) — не больше `FEED_TOPIC_CAP` карточек, `more_in_topic` > 0 — «ещё N по теме» (полный список — в фильтрах) |
 | Карточка инсайта | `GET /insights/{id}?via=feed&position=N` (via/position — для метрик воронки) — блоки: «Что произошло», «Почему важно вам», «Последствия», «Что можно сделать», «Позиция банка», «На чём основано» |

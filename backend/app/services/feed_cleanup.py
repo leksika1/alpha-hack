@@ -20,6 +20,7 @@ from typing import Any
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.domain.tagging import tag_news
+from app.integrations.scorers import get_scorer
 from app.services.matching import match_events
 from app.services.news_store import CLUSTER_WINDOW, EVENT_IS_FIXTURE_SQL, merge_numbers
 
@@ -196,7 +197,8 @@ async def cleanup(
         live = [
             e
             for e, news in by_event.items()
-            if e not in retired and all("liveblog" in n["flags"] for n in news)
+            if e not in retired
+            and all("liveblog" in n["flags"] or "not_business" in n["flags"] for n in news)
         ]
         live_retired = await _retire(conn, live, "liveblog")
         cbr = await conn.fetch(
@@ -233,6 +235,7 @@ async def cleanup(
             settings.eligible_client_types,
             min_score=settings.match_min_score,
             max_per_company=settings.match_max_per_company,
+            scorer=get_scorer(settings),
         )
         pending = await conn.fetch(
             "SELECT DISTINCT company_id FROM core.candidate_matches WHERE event_id = ANY($1::uuid[]) "
@@ -252,3 +255,38 @@ async def cleanup(
     }
     log.info("feed_cleanup_done", **{k: v for k, v in stats.items() if k != "companies_to_regenerate"})
     return stats
+
+
+async def retire_demo_feed(conn: Any, min_live_news: int, min_real_cards: int = 5) -> int:
+    """The demo feed is for offline runs (NEWS_FIXTURES_ENABLED). Once the live sources have brought at
+    least `min_live_news` news in a day, demo events get no new candidates, and a company's demo cards leave
+    its feed as soon as it has `min_real_cards` real ones — the feed never goes empty while real cards are
+    generated (ADR-049). Returns the number of demo cards and candidates taken out; repeated runs return 0."""
+    live = await conn.fetchval(
+        """SELECT count(*) FROM core.news_items n JOIN core.sources s ON s.id = n.source_id
+           WHERE s.kind IN ('rss', 'html') AND NOT s.is_fixture AND n.fetched_at > now() - interval '1 day'"""
+    )
+    if live < min_live_news:
+        return 0
+    demo = f"SELECT id FROM core.events e WHERE {EVENT_IS_FIXTURE_SQL}"  # noqa: S608 - a constant fragment
+    skipped = await conn.fetch(
+        f"""UPDATE core.candidate_matches SET status = 'skipped', status_reason = 'demo_replaced_by_live',
+               updated_at = now()
+           WHERE status = 'pending' AND event_id IN ({demo}) RETURNING id"""  # noqa: S608
+    )
+    await conn.execute(
+        f"""UPDATE core.events SET private_company_ids = '{{}}'
+           WHERE id IN ({demo}) AND (private_company_ids IS NULL OR cardinality(private_company_ids) > 0)"""  # noqa: S608
+    )
+    expired = await conn.fetch(
+        f"""UPDATE core.insights i SET expires_at = now()
+           WHERE i.event_id IN ({demo}) AND (i.expires_at IS NULL OR i.expires_at > now())
+             AND (SELECT count(*) FROM core.insights r
+                  WHERE r.company_id = i.company_id AND r.event_id NOT IN ({demo})
+                    AND (r.expires_at IS NULL OR r.expires_at > now())) >= $1
+           RETURNING i.id""",  # noqa: S608
+        min_real_cards,
+    )
+    if skipped or expired:
+        log.info("demo_feed_retired", cards=len(expired), candidates=len(skipped), live_news=live)
+    return len(skipped) + len(expired)

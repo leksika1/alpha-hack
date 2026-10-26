@@ -4,7 +4,7 @@ Baseline without embeddings: word-stem overlap of title and lead combined with s
 tagger (same event type, same direction, overlapping countries / commodities / industries / numbers).
 Different reports of one fact share few exact words but the same type and numbers ("ЦБ оставил ставку 14%"
 vs "Банк России сохранил ключевую ставку на уровне 14%"), which the structured part captures.
-An embedding similarity (phase 4, EmbeddingProvider) can be blended into ``text_similarity`` later.
+An embedding similarity (EmbeddingProvider) can be blended into ``text_similarity`` (docs/ROADMAP.md).
 """
 
 import re

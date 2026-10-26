@@ -1,0 +1,33 @@
+# Used after the backend test overlay and ml/docker-compose.yml by `make e2e-ml`.
+# Exercise the actual ML application over HTTP, without external models or paid provider calls.
+services:
+  api:
+    environment:
+      INSIGHT_GENERATOR: remote
+      ML_SERVICE_URL: http://ml:8200
+      SCORER_PROVIDER: remote
+  worker:
+    environment:
+      INSIGHT_GENERATOR: remote
+      ML_SERVICE_URL: http://ml:8200
+      SCORER_PROVIDER: remote
+    depends_on:
+      ml: { condition: service_healthy }
+  seed:
+    environment:
+      ML_SERVICE_URL: http://ml:8200
+      SCORER_PROVIDER: remote
+    depends_on:
+      ml: { condition: service_healthy }
+  ml:
+    build:
+      args:
+        SKIP_MODELS: "1"
+    environment:
+      ML_LLM_ENABLED: "false"
+  e2e-runner:
+    environment:
+      E2E_ML_URL: http://ml:8200
+    depends_on:
+      ml: { condition: service_healthy }
+    command: ["pytest", "tests/e2e_ml", "-m", "e2e", "-q", "-p", "no:cacheprovider"]

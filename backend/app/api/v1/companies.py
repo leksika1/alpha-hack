@@ -6,7 +6,14 @@ from fastapi import APIRouter, Query, Request
 
 from app.api.deps import Conn, SettingsDep, User, company_access
 from app.api.v1.auth import ERR_401, ERR_403, Responses
-from app.api.v1.schemas import CompanyBrief, GraphOut, ProfileOut, ProfileUpdateIn, ProfileUpdateOut
+from app.api.v1.schemas import (
+    CompanyBrief,
+    CompanyFound,
+    GraphOut,
+    ProfileOut,
+    ProfileUpdateIn,
+    ProfileUpdateOut,
+)
 from app.core.errors import ProblemError
 from app.services import companies as svc
 from app.services import users
@@ -24,6 +31,25 @@ async def list_companies(user: User, conn: Conn, settings: SettingsDep) -> list[
     return [
         CompanyBrief(**c) for c in await users.user_companies(conn, user.id, settings.eligible_client_types)
     ]
+
+
+@router.get(
+    "/search",
+    response_model=list[CompanyFound],
+    responses={**ERR_401, 403: {"description": "Выбор компаний выключен"}},
+    summary="Демо: поиск по всей клиентской базе — ID, код или вид деятельности (ОКВЭД), регион (ADR-048)",
+)
+async def search_companies(
+    user: User,
+    conn: Conn,
+    settings: SettingsDep,
+    q: Annotated[str, Query(min_length=2, max_length=100, description="U_700001, 46.72, металл, Казань…")],
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> list[CompanyFound]:
+    if not settings.demo_company_picker:
+        raise ProblemError(403, "forbidden", "Company picker is off", "DEMO_COMPANY_PICKER=false")
+    found = await users.search_companies(conn, user.id, q, settings.eligible_client_types, limit)
+    return [CompanyFound(**c) for c in found]
 
 
 @router.get(
