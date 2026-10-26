@@ -166,6 +166,19 @@ function MetricsTab() {
 
 const num = (v: unknown) => (typeof v === 'number' ? formatNumber(v) : String(v ?? '—'));
 
+// Суммы провайдера — дробные (центы), округление до десятых их искажает.
+const AMOUNT = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
+const amount = (v: number | null | undefined) => (v == null ? '—' : AMOUNT.format(v));
+
+// Период лимита у провайдера в формате LiteLLM: «30s», «1h», «1d», «1mo».
+const PERIOD_UNITS: Record<string, string> = { s: 'с', m: 'мин', h: 'ч', d: 'дн.', mo: 'мес.' };
+function budgetPeriod(raw: string): string {
+  const m = /^(\d+)\s*(mo|s|m|h|d)$/.exec(raw.trim());
+  if (!m) return raw;
+  if (m[1] === '1') return { s: 'секунда', m: 'минута', h: 'час', d: 'сутки', mo: 'месяц' }[m[2]] ?? raw;
+  return `${m[1]} ${PERIOD_UNITS[m[2]]}`;
+}
+
 function LlmTab() {
   const llm = useQuery({ queryKey: ['admin-llm'], queryFn: () => get<{ budget: Record<string, number | boolean | string> }>('/admin/llm-usage') });
   const key = useQuery({ queryKey: ['admin-llm-provider'], queryFn: () => get<LlmProviderKey>('/admin/llm-provider') });
@@ -186,7 +199,7 @@ function LlmTab() {
         {k?.status === 'error' && <Note tone="warning">Провайдер не ответил: {k.error}</Note>}
         {k?.status === 'ok' && (
           <>
-            <div className="text-[34px] leading-tight font-bold tabular-nums">{k.remaining != null ? formatNumber(k.remaining) : '—'}</div>
+            <div className="text-[34px] leading-tight font-bold tabular-nums">{amount(k.remaining)}</div>
             <div className="mb-3 text-[13px] text-ink-2">осталось в единицах провайдера</div>
             {used != null && (
               <div
@@ -204,14 +217,14 @@ function LlmTab() {
             )}
             <KV>
               <span>
-                Потрачено: <b>{num(k.spend)}</b>
+                Потрачено: <b>{amount(k.spend)}</b>
               </span>
               <span>
-                Лимит: <b>{num(k.max_budget)}</b>
+                Лимит: <b>{amount(k.max_budget)}</b>
               </span>
               {k.budget_duration && (
                 <span>
-                  Период: <b>{k.budget_duration}</b>
+                  Период: <b>{budgetPeriod(k.budget_duration)}</b>
                 </span>
               )}
               {k.budget_reset_at && (
