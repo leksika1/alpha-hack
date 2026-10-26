@@ -1,11 +1,14 @@
 // Лента инсайтов (CJM 03): ранжирование по значимости для компании и роли, период.
 // Над лентой — счётчики за период (бывший дайджест): каждая плитка работает как фильтр ленты.
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Button } from '@alfalab/core-components/button';
 import { Tag } from '@alfalab/core-components/tag';
 import { useFeedAll } from '../../api/hooks';
 import type { FeedFilter, InsightCard } from '../../api/types';
 import { useSession } from '../../auth/session';
 import { InsightCardView } from '../../components/InsightCardView';
+import { SubmitNewsModal } from '../../components/SubmitNewsModal';
 import { CardSkeleton, EmptyState, ErrorBox, Select, SortToggle, sortInsights, type SortMode } from '../../components/ui';
 import { cn } from '../../lib/cn';
 import { useCountUp } from '../../lib/useCountUp';
@@ -56,6 +59,7 @@ export function FeedPage() {
   const filter: string = tile || list ? raw : 'all';
   const period = params.get('period') || 'all';
   const sort = (params.get('sort') as SortMode) || 'importance';
+  const [submitOpen, setSubmitOpen] = useState(false);
 
   const all = useFeedAll(company?.company_id, period);
   const listFeed = useFeedAll(company?.company_id, period, list?.key ?? 'all');
@@ -100,7 +104,7 @@ export function FeedPage() {
         })}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2" role="group" aria-label="Подборки">
           {LISTS.map((l) => (
             <Tag
@@ -115,7 +119,10 @@ export function FeedPage() {
             </Tag>
           ))}
         </div>
-        <div className="flex items-center gap-3 [&>div]:mb-0">
+        <div className="flex flex-wrap items-center gap-3 [&>div]:mb-0">
+          <Button view="secondary" size={32} onClick={() => setSubmitOpen(true)}>
+            Прислать новость
+          </Button>
           <SortToggle value={sort} onChange={(v) => set('sort', v)} />
           <Select className="bg-white" value={period} onChange={(e) => set('period', e.target.value)} aria-label="Период">
             {PERIODS.map((p) => (
@@ -127,7 +134,7 @@ export function FeedPage() {
         </div>
       </div>
 
-
+      {company && <SubmitNewsModal companyId={company.company_id} open={submitOpen} onClose={() => setSubmitOpen(false)} />}
 
       {feed.isLoading && [0, 1, 2].map((i) => <CardSkeleton key={i} />)}
       {feed.isError && <ErrorBox error={feed.error} onRetry={() => feed.refetch()} />}

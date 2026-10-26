@@ -5,6 +5,7 @@ import type {
   AnalyticsDocument,
   BankProduct,
   CrmRequest,
+  Digest,
   Feed,
   FeedbackIn,
   FeedFilter,
@@ -13,7 +14,10 @@ import type {
   InsightOut,
   ManualNewsItem,
   ManualNewsOut,
+  Market,
   Me,
+  NewsSubmitIn,
+  NewsSubmitOut,
   Notifications,
   Profile,
   ProfileUpdate,
@@ -36,6 +40,8 @@ export const keys = {
   askHistory: (companyId: string) => ['ask-history', companyId] as const,
   profile: (companyId: string) => ['profile', companyId] as const,
   graph: (companyId: string) => ['graph', companyId] as const,
+  digest: (companyId: string, period: string) => ['digest', companyId, period] as const,
+  market: ['market'] as const,
   notifications: ['notifications'] as const,
   requests: ['requests'] as const,
   products: ['bank-products'] as const,
@@ -115,6 +121,19 @@ export function useGraph(companyId: string | undefined) {
   });
 }
 
+export function useDigest(companyId: string | undefined, period: 'day' | 'week') {
+  return useQuery({
+    queryKey: keys.digest(companyId ?? '', period),
+    queryFn: () => get<Digest>(`/digest${qs({ company_id: companyId, period })}`),
+    enabled: !!companyId,
+  });
+}
+
+// Ставка и курсы Банка России меняются раз в день — часто не перезапрашиваем.
+export function useMarket() {
+  return useQuery({ queryKey: keys.market, queryFn: () => get<Market>('/market'), staleTime: 10 * 60_000 });
+}
+
 export function useNotifications(enabled = true) {
   return useQuery({ queryKey: keys.notifications, queryFn: () => get<Notifications>('/notifications?limit=30'), enabled });
 }
@@ -141,6 +160,7 @@ export function useSetRole() {
       qc.invalidateQueries({ queryKey: keys.me });
       qc.invalidateQueries({ queryKey: keys.feedAll });
       qc.invalidateQueries({ queryKey: keys.summary });
+      qc.invalidateQueries({ queryKey: ['digest'] });
     },
   });
 }
@@ -153,6 +173,7 @@ export function useInsightState(insightId: string) {
       qc.invalidateQueries({ queryKey: keys.insight(insightId) });
       qc.invalidateQueries({ queryKey: keys.feedAll });
       qc.invalidateQueries({ queryKey: keys.summary });
+      qc.invalidateQueries({ queryKey: ['digest'] });
       qc.invalidateQueries({ queryKey: keys.notifications });
     },
   });
@@ -239,6 +260,18 @@ export function useReadNotification() {
 
 export function useManualNews() {
   return useMutation({ mutationFn: (items: ManualNewsItem[]) => post<ManualNewsOut>('/admin/news', { items }) });
+}
+
+// Своя новость (ссылка или текст) идёт тем же конвейером; готовый инсайт придёт в ленту и уведомлением.
+export function useSubmitNews() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: NewsSubmitIn) => post<NewsSubmitOut>('/news/submit', body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.feedAll });
+      qc.invalidateQueries({ queryKey: keys.summary });
+    },
+  });
 }
 
 // События интерфейса для воронки CJM; ошибки не мешают пользователю.

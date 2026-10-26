@@ -13,6 +13,7 @@ import { cn } from '../../lib/cn';
 
 const TABS = [
   { to: '/analytics', label: 'Лента инсайтов', end: true },
+  { to: '/analytics/digest', label: 'Дайджест' },
   { to: '/analytics/ask', label: 'Вопрос аналитику' },
   { to: '/analytics/profile', label: 'Профиль компании' },
   { to: '/analytics/materials', label: 'Материалы банка' },

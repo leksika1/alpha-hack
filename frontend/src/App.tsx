@@ -8,6 +8,7 @@ import { AdminPage } from './pages/AdminPage';
 import { AnalyticsLayout } from './pages/analytics/AnalyticsLayout';
 import { FeedPage } from './pages/analytics/FeedPage';
 import { InsightPage } from './pages/analytics/InsightPage';
+import { DigestPage } from './pages/analytics/DigestPage';
 import { AskPage } from './pages/analytics/AskPage';
 import { ProfilePage } from './pages/analytics/ProfilePage';
 import { MaterialsPage } from './pages/analytics/MaterialsPage';
@@ -35,7 +36,7 @@ export function App() {
         <Route path="admin" element={<AdminPage />} />
         <Route path="analytics" element={<AnalyticsLayout />}>
           <Route index element={<FeedPage />} />
-          <Route path="digest" element={<Navigate to="/analytics" replace />} />
+          <Route path="digest" element={<DigestPage />} />
           <Route path="ask" element={<AskPage />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="materials" element={<MaterialsPage />} />

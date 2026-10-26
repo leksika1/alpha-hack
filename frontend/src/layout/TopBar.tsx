@@ -146,7 +146,7 @@ function NotificationsBell() {
                   if (n.company_id) setCompanyId(n.company_id);
                   if (n.insight_id) navigate(`/analytics/insight/${n.insight_id}?via=notification`);
                   else if (n.kind === 'request_update') navigate('/analytics/requests');
-                  else if (n.kind === 'digest') navigate('/analytics');
+                  else if (n.kind === 'digest') navigate('/analytics/digest');
                 }}
               >
                 <span className={cn('mt-[7px] size-2 shrink-0 rounded-full', KIND_DOT[n.kind] ?? 'bg-ink-3')} />

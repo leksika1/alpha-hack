@@ -84,6 +84,12 @@ export function InsightCardView({ item, position, via = 'feed' }: { item: Insigh
           <span>{EVENT_TYPES[item.event_type] ?? item.event_type}</span>
           <span>{formatRelative(item.published_at)}</span>
           {item.state.updated && <span className="font-medium text-att">Обновлено</span>}
+          {/* Лента показывает не больше нескольких карточек одной макротемы — остальные свёрнуты (ADR-042). */}
+          {item.more_in_topic > 0 && (
+            <span className="rounded-md bg-muted-2 px-1.5 text-xs font-medium" title="Похожие события этой темы свёрнуты, чтобы не заполнять ленту">
+              ещё {item.more_in_topic} по теме
+            </span>
+          )}
         </div>
         <h3 className="flex items-start gap-2 text-[17px] leading-snug">
           {!item.state.opened && <span className="mt-2 size-2 shrink-0 rounded-full bg-info" title="Не прочитано" />}

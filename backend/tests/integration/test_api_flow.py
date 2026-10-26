@@ -1457,3 +1457,24 @@ async def test_demo_feed_leaves_the_feed_once_live_news_arrive(env: dict[str, An
     for company in (METALS, RETAIL, LOGISTICS):
         items = (await feed(c, h, company, limit=50))["items"]
         assert all(i["insight_id"] for i in items)
+
+
+async def test_provider_budget_with_a_placeholder_key_is_an_error_status(env: dict[str, Any]) -> None:
+    from pydantic import SecretStr
+
+    from app.core.config import get_settings
+
+    c = env["client"]
+    ha = await admin_headers(c)
+    placeholder = get_settings().model_copy(
+        update={"llm_provider": "openai", "llm_api_key": SecretStr("ваш_ключ")}
+    )
+    env["app"].dependency_overrides[get_settings] = lambda: placeholder
+    try:
+        resp = await c.get("/api/v1/admin/llm-provider", headers=ha)
+    finally:
+        env["app"].dependency_overrides.pop(get_settings)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "error" and body["error"].startswith("llm-not-configured")
+    assert "ваш_ключ" not in resp.text

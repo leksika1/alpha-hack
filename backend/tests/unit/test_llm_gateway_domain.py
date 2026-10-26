@@ -198,3 +198,23 @@ def test_organisers_tariffs_are_the_default_prices() -> None:
     assert settings.llm_prices["kimi-k2.6"] == (1.0, 2.0)
     assert settings.llm_prices["qwen3.6-35b-a3b"] == (5.33, 74.0)
     assert settings.llm_budget_utc_offset_h == 0  # the provider resets the budget at 03:00 Moscow time
+
+
+@pytest.mark.parametrize("key", ["ваш_ключ", "sk-team key", "sk-\tteam"])
+async def test_a_placeholder_key_is_a_configuration_error_not_a_crash(key: str) -> None:
+    from app.integrations.llm import LlmProviderError, OpenAICompatibleProvider
+
+    provider = OpenAICompatibleProvider("https://gw.test/v1", key, 5, 0)
+    for call in (provider.key_info(), provider.complete({"model": "m", "messages": []})):
+        with pytest.raises(LlmProviderError) as err:
+            await call
+        assert err.value.code == "llm-not-configured" and key not in str(err.value)
+
+
+async def test_an_invalid_proxy_url_is_a_configuration_error() -> None:
+    from app.integrations.llm import LlmProviderError, OpenAICompatibleProvider
+
+    provider = OpenAICompatibleProvider("https://gw.test/v1", "sk-team", 5, 0, proxy="ftp://proxy:8080")
+    with pytest.raises(LlmProviderError) as err:
+        await provider.key_info()
+    assert err.value.code == "llm-not-configured"
