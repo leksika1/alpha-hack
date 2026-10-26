@@ -191,7 +191,7 @@ async def test_llm_draft_is_sanitised(backend, backend_validator, llm_script: LL
     assert "nonexistent.path" not in all_features and "made.up.feature" not in all_features
     assert all(a["product_id"] in (None, "loan_refinancing") for a in ins["actions"])
     names = {(m["name"], m["purpose"]) for m in ins["models_used"]}
-    assert ("Qwen3.6 35B A3B", "generation") in names and ("Gemma 4 26B A4B", "planning") in names
+    assert ("Gemma 4 26B A4B", "generation") in names and ("Gemma 4 26B A4B", "planning") in names
     assert [c["purpose"] for c in llm_script.calls] == ["planning", "generation", "self_check"]
     assert ins["impact"]["quantitative"]  # numbers come from the deterministic calculation
 

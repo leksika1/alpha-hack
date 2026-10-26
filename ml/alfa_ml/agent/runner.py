@@ -6,6 +6,7 @@ rule-based analyst, so the user always gets a grounded insight or an explicit `s
 """
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -20,7 +21,7 @@ from alfa_ml.agent.plan import Plan, merge_llm_plan, rule_plan
 from alfa_ml.agent.prompting import analyst_message, critic_message, planner_message, revision_message
 from alfa_ml.agent.rules import rule_draft
 from alfa_ml.config import Settings, get_settings
-from alfa_ml.llm import BudgetExhausted, LLMClient, LLMError
+from alfa_ml.llm import BudgetExhausted, LLMClient, LLMError, pick_model
 from alfa_ml.log import get_logger
 from alfa_ml.profile import compute_exposure, normalize_event
 from alfa_ml.ranker import RANKER_NAME, score_exposure
@@ -45,6 +46,13 @@ def _known_score(gold: int, prob: float) -> float:
         return 0.0
     floor = ranker2.threshold() if gold == 1 else 0.95
     return round(max(prob, floor), 4)
+
+
+# the analyst sometimes writes a "card" whose point is that nothing happens to the company
+_NO_EFFECT = re.compile(
+    r"не (затрагива|влия|повлия|отразит|касает|скажет)|без (прямого |заметного )?(влияния|последствий) для компании",
+    re.IGNORECASE,
+)
 
 
 class Agent:
@@ -92,6 +100,7 @@ class Agent:
         self, purpose: str, prompt: str, alias: str, user: str, max_tokens: int, name: str
     ) -> dict[str, Any] | None:
         assert self.llm is not None
+        alias = pick_model(alias, self.s.ml_model_fast)  # a model that reasons too long -> the fast one
         timeout = max(5.0, min(self.s.ml_llm_timeout_s, self.left() - 3))
         try:
             answer = await self.llm.complete_json(
@@ -398,8 +407,9 @@ class Agent:
                     llm_draft = parse_llm_draft(
                         answer, author=self.llm.last.get("model", "llm") if self.llm else "llm"
                     )
-                    if not llm_draft.relevant and (
-                        exposure.strongest is None or exposure.strongest.weight < 0.5
+                    says_no_effect = bool(_NO_EFFECT.search(f"{llm_draft.title} {llm_draft.summary}"))
+                    if (not llm_draft.relevant or says_no_effect) and (
+                        exposure.strongest is None or exposure.strongest.weight < 0.8
                     ):
                         await self.step(
                             "final",
@@ -410,7 +420,14 @@ class Agent:
                         return RunResult(
                             "skipped", skip_reason="not_relevant", usage=self.usage(), trace=self.trace
                         )
-                    draft = self.merge_with_rules(llm_draft, rules)
+                    if says_no_effect:
+                        # a card whose headline says "does not affect the company" is not shown as an insight;
+                        # with a strong rule link the deterministic draft stays
+                        await self.step(
+                            "self_check", "llm_says_no_effect", "error", output_preview=llm_draft.title[:300]
+                        )
+                    else:
+                        draft = self.merge_with_rules(llm_draft, rules)
             insight, checks = await self.build(draft, ev, "draft")
 
             iteration = 0
