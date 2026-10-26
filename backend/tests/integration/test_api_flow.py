@@ -1478,3 +1478,33 @@ async def test_provider_budget_with_a_placeholder_key_is_an_error_status(env: di
     body = resp.json()
     assert body["status"] == "error" and body["error"].startswith("llm-not-configured")
     assert "ваш_ключ" not in resp.text
+
+
+async def test_a_candidate_of_an_event_retired_meanwhile_is_skipped_not_failed(env: dict[str, Any]) -> None:
+    async with pg_connection(env["url"]) as conn:
+        cand = await conn.fetchrow(
+            """SELECT c.id, c.event_id FROM core.candidate_matches c JOIN core.events e ON e.id = c.event_id
+               WHERE c.company_id = $1 AND e.private_company_ids IS NULL LIMIT 1""",
+            METALS,
+        )
+        assert cand is not None
+        runs_before = await conn.fetchval(
+            "SELECT count(*) FROM core.agent_runs WHERE event_id = $1 AND company_id = $2",
+            cand["event_id"],
+            METALS,
+        )
+        await conn.execute("UPDATE core.candidate_matches SET status = 'pending' WHERE id = $1", cand["id"])
+        retire = "UPDATE core.events SET private_company_ids = '{}' WHERE id = $1"
+        await conn.execute(retire, cand["event_id"])
+    await env["app"].state.enqueue([METALS])
+    async with pg_connection(env["url"]) as conn:
+        row = await conn.fetchrow(
+            "SELECT status, status_reason FROM core.candidate_matches WHERE id = $1", cand["id"]
+        )
+        assert (row["status"], row["status_reason"]) == ("skipped", "event_retired")
+        runs_after = await conn.fetchval(
+            "SELECT count(*) FROM core.agent_runs WHERE event_id = $1 AND company_id = $2",
+            cand["event_id"],
+            METALS,
+        )
+        assert runs_after == runs_before  # the agent was not asked about a hidden event

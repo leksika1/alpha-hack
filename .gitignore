@@ -37,9 +37,6 @@ models_cache/
 .DS_Store
 Thumbs.db
 
-# --- Claude Code локальные настройки ---
-.claude/settings.local.json
-
 # --- Материалы организаторов (кейс, FAQ) — не распространяем ---
 materials/
 ml/eval/out/

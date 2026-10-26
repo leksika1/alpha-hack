@@ -27,10 +27,11 @@
 | Проверка | Результат |
 |---|---|
 | Lint, типы (ruff, mypy strict для domain и services) | зелёные |
-| Unit | 484 (проверка 26.10, `docs/VERIFICATION.md`) |
-| Integration (Postgres + pgvector, Redis, MinIO) | 84 + отдельно OCR с настоящим Tesseract в Docker |
+| Unit | 495 (повторная проверка релиза 26.10, `docs/VERIFICATION.md`) |
+| Integration (Postgres + pgvector, Redis, MinIO) | 89 + отдельно OCR с настоящим Tesseract в Docker |
 | E2E | 23 с заглушкой + 3 с настоящим ML в режиме правил |
 | CI GitHub Actions | lint, типы, unit, integration, e2e, тесты ML, сборка фронтенда; деплой только после зелёных |
+| Чистый запуск как у эксперта | свежий клон тега `v1.1.1`, `cp .env.example .env`, `docker compose up -d --build`: все сервисы готовы за ~2,5 мин, реальные новости и данные ЦБ — сразу после старта |
 | Автоматизированный сценарий демонстрации | `scripts/demo_check.py`, 14 шагов; сквозной API-сценарий проверен в изолированном compose |
 | Удалённый стенд (26.10) | вход demo, 3 компании, разные ленты двух компаний, источники и персонализация в карточках проверены по API; платная LLM и полный браузерный сценарий в этот аудит не входят |
 

@@ -375,6 +375,24 @@ async def generate_pending(
     )
     stats = GenerationStats()
     for cand in candidates:
+        # the batch is read up front: meanwhile another worker may have generated the candidate or a cleanup
+        # may have retired its event (demo feed, live blogs); the agent would then fail on a hidden event
+        current = await conn.fetchrow(
+            """SELECT c.status, e.private_company_ids FROM core.candidate_matches c
+               JOIN core.events e ON e.id = c.event_id WHERE c.id = $1""",
+            cand["id"],
+        )
+        if current is None or current["status"] != "pending":
+            continue
+        hidden = current["private_company_ids"]
+        if hidden is not None and cand["company_id"] not in hidden:
+            stats.skipped += 1
+            await conn.execute(
+                """UPDATE core.candidate_matches SET status = 'skipped', status_reason = 'event_retired',
+                       updated_at = now() WHERE id = $1""",
+                cand["id"],
+            )
+            continue
         try:
             await generate_one(conn, settings, generator, cand, stats)
         except Exception as exc:  # one broken candidate must not stop the batch

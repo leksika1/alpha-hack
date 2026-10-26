@@ -14,5 +14,4 @@ frontend/
 ml/.venv/
 ml/reports/
 ml/eval/out/
-.claude/
 .github/
