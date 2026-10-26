@@ -106,6 +106,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/companies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Демо: открыть любую компанию клиентской базы по ID (ADR-048); инсайты генерируются сразу */
+        post: operations["add_company_api_v1_me_companies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/companies/{company_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Убрать компанию, открытую по ID (доступ от банка не убирается) */
+        delete: operations["remove_company_api_v1_me_companies__company_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/companies": {
         parameters: {
             query?: never;
@@ -115,6 +149,23 @@ export interface paths {
         };
         /** Компании, доступные пользователю */
         get: operations["list_companies_api_v1_companies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/companies/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Демо: поиск по всей клиентской базе — ID, код или вид деятельности (ОКВЭД), регион (ADR-048) */
+        get: operations["search_companies_api_v1_companies_search_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -311,6 +362,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/market": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ключевая ставка и официальные курсы Банка России */
+        get: operations["market_indicators_api_v1_market_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/news/{news_id}": {
         parameters: {
             query?: never;
@@ -322,6 +390,23 @@ export interface paths {
         get: operations["get_news_api_v1_news__news_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/news/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Прислать ссылку или текст новости: обработка тем же конвейером, инсайт — для своей компании */
+        post: operations["submit_api_v1_news_submit_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -352,8 +437,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Временная ссылка на PDF (presigned S3), с переходом к странице `#page=N` */
+        /** Временная ссылка на PDF (15 минут), с переходом к странице `#page=N` */
         get: operations["download_api_v1_analytics_documents__document_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/documents/{document_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** PDF по ссылке из `download` и `source-click`: токен в адресе, без заголовка Authorization */
+        get: operations["file_api_v1_analytics_documents__document_id__file_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -685,6 +787,196 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Все материалы аналитики со статусом обработки и ошибкой (пользователям видны только готовые) */
+        get: operations["list_analytics_api_v1_admin_analytics_get"];
+        put?: never;
+        /** Загрузить PDF аналитики (тело — файл, `Content-Type: application/pdf`): сразу виден со статусом processing, воркер извлекает текст или распознаёт сканы, режет на фрагменты и индексирует */
+        post: operations["upload_analytics_api_v1_admin_analytics_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/generation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Монитор генерации: очередь, кандидаты по статусам, запуски агента за сутки (p50/p95), зависшие запуски, последние ошибки, доступность ML-сервиса */
+        get: operations["generation_overview_api_v1_admin_generation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/generation/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Повторить генерацию: закрыть зависшие запуски, вернуть упавших кандидатов в очередь и запустить */
+        post: operations["generation_retry_api_v1_admin_generation_retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Активные проблемы сейчас: упавшие источники, бюджет LLM, доля отклонённых инсайтов, зависшие запуски, недоступный ML. Те же условия раз в 5 минут уходят в Telegram (ALERTS_PROVIDER=telegram) или в лог */
+        get: operations["alerts_api_v1_admin_alerts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/news/cleanup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Привести накопленные новости и события к текущим правилам (ADR-040): перетегировать, снять онлайн-трансляции, склеить события об одном решении ЦБ, перегенерировать их инсайты */
+        post: operations["news_cleanup_api_v1_admin_news_cleanup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/market/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Обновить ключевую ставку и курсы Банка России сейчас (иначе — по расписанию, ADR-043) */
+        post: operations["market_refresh_api_v1_admin_market_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/llm-provider": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Остаток лимита ключа команды у провайдера LLM (его /key/info); ключ в ответ не попадает */
+        get: operations["llm_provider_key_api_v1_admin_llm_provider_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Все источники новостей */
+        get: operations["list_sources_api_v1_admin_sources_get"];
+        put?: never;
+        /** Добавить источник: ссылка на ленту или на сайт (лента найдётся сама); сначала проверка, затем опрос */
+        post: operations["create_api_v1_admin_sources_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/sources/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Проверить ленту, ничего не сохраняя: доступность, robots.txt, публичный адрес, разбор RSS/Atom и последние новости */
+        post: operations["check_api_v1_admin_sources_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/sources/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Найти ленты сайта по названию (справочник известных сайтов) или по ссылке на сайт; каждая проверена */
+        post: operations["discover_api_v1_admin_sources_discover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/sources/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить источник, добавленный админом (пока по нему нет новостей) */
+        delete: operations["delete_api_v1_admin_sources__source_id__delete"];
+        options?: never;
+        head?: never;
+        /** Включить или выключить источник; у добавленных админом — ещё название, приоритет, резерв, темы */
+        patch: operations["update_api_v1_admin_sources__source_id__patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -736,6 +1028,56 @@ export interface components {
              */
             created_at: string;
         };
+        /** AdminAnalyticsDocumentOut */
+        AdminAnalyticsDocumentOut: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** Title */
+            title: string;
+            /** File Name */
+            file_name: string;
+            /** Origin */
+            origin: string;
+            /**
+             * Status
+             * @description processing | ready | failed
+             */
+            status: string;
+            /** Error */
+            error: string | null;
+            /** Pages */
+            pages: number;
+            /** Chunks */
+            chunks: number;
+            /** Extraction */
+            extraction: string | null;
+            /** Ocr Confidence */
+            ocr_confidence: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Processed At */
+            processed_at: string | null;
+        };
+        /** AlertOut */
+        AlertOut: {
+            /** Key */
+            key: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "warning" | "critical";
+            /** Title */
+            title: string;
+            /** Detail */
+            detail: string;
+        };
         /** AnalyticsDocumentOut */
         AnalyticsDocumentOut: {
             /**
@@ -762,6 +1104,32 @@ export interface components {
             /** Origin */
             origin: string;
         };
+        /** AnalyticsUploadOut */
+        AnalyticsUploadOut: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** File Name */
+            file_name: string;
+            /** Title */
+            title: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "processing" | "ready";
+            /**
+             * Queued
+             * @description Поставлен в очередь на обработку (false — такой файл уже загружен)
+             */
+            queued: boolean;
+            /** Duplicate */
+            duplicate: boolean;
+            /** Task Id */
+            task_id: string | null;
+        };
         /** BankProductOut */
         BankProductOut: {
             /** Product Id */
@@ -776,6 +1144,45 @@ export interface components {
             url: string | null;
             /** Source */
             source: string;
+        };
+        /** CandidateFailureOut */
+        CandidateFailureOut: {
+            /** Company Id */
+            company_id: string;
+            /**
+             * Event Id
+             * Format: uuid
+             */
+            event_id: string;
+            /** Role */
+            role: string;
+            /** Status */
+            status: string;
+            /** Status Reason */
+            status_reason: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** CompanyAddIn */
+        CompanyAddIn: {
+            /** Company Id */
+            company_id: string;
+            /** @default ceo */
+            role: components["schemas"]["Role"];
+        };
+        /** CompanyAddOut */
+        CompanyAddOut: {
+            company: components["schemas"]["CompanyBrief"];
+            /** Candidates Pending */
+            candidates_pending: number;
+            /**
+             * Regeneration
+             * @enum {string}
+             */
+            regeneration: "queued" | "not_needed";
         };
         /** CompanyBrief */
         CompanyBrief: {
@@ -797,6 +1204,32 @@ export interface components {
             role: components["schemas"]["Role"];
             /** Is Default */
             is_default: boolean;
+            /**
+             * Added By User
+             * @description Открыта пользователем по ID из всей базы (демо, ADR-048)
+             * @default false
+             */
+            added_by_user: boolean;
+        };
+        /** CompanyFound */
+        CompanyFound: {
+            /** Company Id */
+            company_id: string;
+            /** Title */
+            title: string;
+            /** Okved Code */
+            okved_code: string | null;
+            /** Okved Name */
+            okved_name: string | null;
+            /** Region */
+            region: string | null;
+            /** Segment */
+            segment: string | null;
+            /**
+             * Has Access
+             * @description Уже есть в списке компаний пользователя
+             */
+            has_access: boolean;
         };
         /** CompanyQuestionIn */
         CompanyQuestionIn: {
@@ -899,6 +1332,33 @@ export interface components {
              */
             next_steps: components["schemas"]["DigestNextStep"][];
         };
+        /** DiscoverIn */
+        DiscoverIn: {
+            /**
+             * Query
+             * @example BBC
+             * @example vedomosti.ru
+             * @example https://www.cnbc.com
+             */
+            query: string;
+        };
+        /** DiscoverOut */
+        DiscoverOut: {
+            /** Query */
+            query: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "name" | "site";
+            /**
+             * Blocked
+             * @description Сайт из реестра (ADR-037): не добавляется
+             */
+            blocked: string | null;
+            /** Candidates */
+            candidates: components["schemas"]["FeedCandidate"][];
+        };
         /** DownloadOut */
         DownloadOut: {
             /**
@@ -929,6 +1389,102 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** FeedCandidate */
+        FeedCandidate: {
+            /** Ok */
+            ok: boolean;
+            /** Url */
+            url: string;
+            /**
+             * Outcome
+             * @description ok | empty (не лента) | http_error | network_error (в т.ч. непубличный адрес) | robots_disallowed | too_large
+             */
+            outcome: string;
+            /** Status Code */
+            status_code: number | null;
+            /** Items */
+            items: number;
+            /**
+             * Sample
+             * @description До 5 последних новостей ленты
+             */
+            sample: components["schemas"]["FeedSampleItem"][];
+            /** Error */
+            error: string | null;
+            /** Title */
+            title: string;
+            /**
+             * Name
+             * @description Название сайта из справочника
+             */
+            name: string | null;
+            /**
+             * Found By
+             * @description directory — справочник; page — объявлена на странице; link — сама ссылка; guess — типовой путь (/rss, /feed)
+             */
+            found_by: string;
+            /** Already Added */
+            already_added: boolean;
+        };
+        /** FeedCheckIn */
+        FeedCheckIn: {
+            /**
+             * Url
+             * @example https://feeds.bbci.co.uk/news/business/rss.xml
+             */
+            url: string;
+        };
+        /** FeedCheckOut */
+        FeedCheckOut: {
+            /** Ok */
+            ok: boolean;
+            /** Url */
+            url: string;
+            /**
+             * Outcome
+             * @description ok | empty (не лента) | http_error | network_error (в т.ч. непубличный адрес) | robots_disallowed | too_large
+             */
+            outcome: string;
+            /** Status Code */
+            status_code: number | null;
+            /** Items */
+            items: number;
+            /**
+             * Sample
+             * @description До 5 последних новостей ленты
+             */
+            sample: components["schemas"]["FeedSampleItem"][];
+            /** Error */
+            error: string | null;
+        };
+        /** FeedCleanupOut */
+        FeedCleanupOut: {
+            /**
+             * Mixed Events Split
+             * @description События, где демо-лента смешалась с реальными новостями
+             */
+            mixed_events_split: number;
+            /** News Retagged */
+            news_retagged: number;
+            /** Events Checked */
+            events_checked: number;
+            /**
+             * Liveblog Events Retired
+             * @description События из онлайн-трансляций сняты с ленты
+             */
+            liveblog_events_retired: number;
+            /**
+             * Cbr Events Merged
+             * @description Дубли событий о ключевой ставке ЦБ, склеенные в одно
+             */
+            cbr_events_merged: number;
+            /** Cbr Events Kept */
+            cbr_events_kept: number;
+            /** Events Repaired */
+            events_repaired: number;
+            /** Companies To Regenerate */
+            companies_to_regenerate: string[];
+        };
         /** FeedOut */
         FeedOut: {
             /** Company Id */
@@ -938,6 +1494,18 @@ export interface components {
             items: components["schemas"]["InsightCard"][];
             /** Next Cursor */
             next_cursor: string | null;
+        };
+        /** FeedSampleItem */
+        FeedSampleItem: {
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
         };
         /** FeedSummaryOut */
         FeedSummaryOut: {
@@ -984,6 +1552,84 @@ export interface components {
              * @description Что сервис сделал с отзывом — показать пользователю
              */
             applied?: string[];
+        };
+        /** GenerationOverviewOut */
+        GenerationOverviewOut: {
+            /**
+             * Generator
+             * @description remote (ML-сервис) | stub | fake
+             */
+            generator: string;
+            /**
+             * Ml Service
+             * @description ok | unavailable | http-NNN | not-used
+             */
+            ml_service: string;
+            /**
+             * Queue Length
+             * @description Задач в очереди воркера (null — Redis недоступен)
+             */
+            queue_length: number | null;
+            /**
+             * Candidates
+             * @description Кандидаты (компания × событие × роль) по статусам
+             */
+            candidates: {
+                [key: string]: number;
+            };
+            /** Runs 24H */
+            runs_24h: components["schemas"]["GenerationRunsRow"][];
+            /** Stuck After S */
+            stuck_after_s: number;
+            /**
+             * Stuck Runs
+             * @description Запуски без результата дольше stuck_after_s
+             */
+            stuck_runs: components["schemas"]["StuckRunOut"][];
+            /** Recent Failures */
+            recent_failures: components["schemas"]["CandidateFailureOut"][];
+        };
+        /** GenerationRetryIn */
+        GenerationRetryIn: {
+            /**
+             * Company Ids
+             * @description null — все компании
+             */
+            company_ids?: string[] | null;
+            /**
+             * Include Rejected
+             * @description Вернуть в очередь и отклонённые валидатором
+             * @default false
+             */
+            include_rejected: boolean;
+        };
+        /** GenerationRetryOut */
+        GenerationRetryOut: {
+            /** Stuck Closed */
+            stuck_closed: number;
+            /** Requeued */
+            requeued: number;
+            /** Companies */
+            companies: string[];
+        };
+        /** GenerationRunsRow */
+        GenerationRunsRow: {
+            /**
+             * Kind
+             * @description insight | qa
+             */
+            kind: string;
+            /**
+             * Outcome
+             * @description completed, rejected, skipped, failed, answered… или running
+             */
+            outcome: string;
+            /** Count */
+            count: number;
+            /** P50 S */
+            p50_s: number | null;
+            /** P95 S */
+            p95_s: number | null;
         };
         /** GraphCounterparty */
         GraphCounterparty: {
@@ -1133,6 +1779,12 @@ export interface components {
              * @description Почему выше в ленте: главные компоненты релевантности, по-русски
              */
             priority_reasons?: string[];
+            /**
+             * More In Topic
+             * @description Ещё столько карточек на эту макротему (ставка, курс) свёрнуто в виде «Все»; в фильтрах «Срочные», «Риски», «Возможности», «Отслеживаемые» видны все (ADR-042)
+             * @default 0
+             */
+            more_in_topic: number;
             state: components["schemas"]["InsightState"];
         };
         /** InsightOut */
@@ -1205,6 +1857,42 @@ export interface components {
             tokens_out: number;
             /** Exhausted */
             exhausted: boolean;
+            /**
+             * Chat Limit Rub
+             * @description Предел вопросов к аналитике за день (LLM_CHAT_BUDGET_SHARE)
+             */
+            chat_limit_rub: number;
+            /** Chat Spent Rub */
+            chat_spent_rub: number;
+        };
+        /** LlmProviderKeyOut */
+        LlmProviderKeyOut: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "error" | "not-supported";
+            /**
+             * Spend
+             * @description Потрачено по ключу команды за текущий период провайдера
+             */
+            spend?: number | null;
+            /**
+             * Max Budget
+             * @description Лимит ключа у провайдера
+             */
+            max_budget?: number | null;
+            /** Remaining */
+            remaining?: number | null;
+            /** Budget Duration */
+            budget_duration?: string | null;
+            /**
+             * Budget Reset At
+             * @description Когда провайдер обнулит расход (03:00 МСК)
+             */
+            budget_reset_at?: string | null;
+            /** Error */
+            error?: string | null;
         };
         /** LlmUsageOut */
         LlmUsageOut: {
@@ -1222,6 +1910,11 @@ export interface components {
             purpose: string;
             /** Status */
             status: string;
+            /**
+             * Error
+             * @description Код ошибки вызова: llm-not-configured (нет LLM_API_KEY), llm-upstream-error, llm-timeout, llm-unavailable, cancelled (агент не дождался), abandoned (резерв без результата) …
+             */
+            error: string | null;
             /** Calls */
             calls: number;
             /** Tokens In */
@@ -1281,6 +1974,73 @@ export interface components {
             /** Companies Queued */
             companies_queued: string[];
         };
+        /** MarketIndicatorOut */
+        MarketIndicatorOut: {
+            /**
+             * Indicator
+             * @description key_rate, usd_rub, eur_rub, cny_rub
+             */
+            indicator: string;
+            /** Title */
+            title: string;
+            /** Unit */
+            unit: string;
+            /** Value */
+            value: number;
+            /**
+             * Date
+             * Format: date
+             * @description Дата значения (курс ЦБ устанавливается на следующий день)
+             */
+            date: string;
+            /**
+             * Previous Value
+             * @description Предыдущее отличающееся значение
+             */
+            previous_value: number | null;
+            /** Previous Date */
+            previous_date: string | null;
+            /** Change */
+            change: number | null;
+            /**
+             * Fetched At
+             * Format: date-time
+             */
+            fetched_at: string;
+            source: components["schemas"]["MarketSourceOut"];
+        };
+        /** MarketOut */
+        MarketOut: {
+            /**
+             * Items
+             * @description Пусто, если данные ЦБ ещё не загружены
+             */
+            items: components["schemas"]["MarketIndicatorOut"][];
+        };
+        /** MarketRefreshOut */
+        MarketRefreshOut: {
+            /**
+             * Points
+             * @description Сколько значений получено по каждому индикатору
+             */
+            points: {
+                [key: string]: number;
+            };
+            /**
+             * Errors
+             * @description Индикаторы, которые не удалось обновить, и причина
+             */
+            errors: {
+                [key: string]: string;
+            };
+        };
+        /** MarketSourceOut */
+        MarketSourceOut: {
+            /** Title */
+            title: string;
+            /** Url */
+            url: string | null;
+        };
         /** MeOut */
         MeOut: {
             /**
@@ -1334,6 +2094,60 @@ export interface components {
             flags: string[];
             /** Is Fixture */
             is_fixture: boolean;
+        };
+        /** NewsSubmitIn */
+        NewsSubmitIn: {
+            /** Company Id */
+            company_id: string;
+            /**
+             * Url
+             * @description Ссылка на новость
+             */
+            url?: string | null;
+            /**
+             * Title
+             * @description Или заголовок и текст
+             */
+            title?: string | null;
+            /** Text */
+            text?: string | null;
+        };
+        /** NewsSubmitOut */
+        NewsSubmitOut: {
+            /**
+             * Status
+             * @description processed — обработана; duplicate — уже известна; unavailable — ресурс недоступен для просмотра; blocked — нарушает законодательство РФ или из реестра; not_article — не статья
+             * @enum {string}
+             */
+            status: "processed" | "duplicate" | "unavailable" | "blocked" | "not_article";
+            /**
+             * Message
+             * @description Что показать пользователю
+             */
+            message: string;
+            /**
+             * Reason
+             * @description Подробность: почему недоступна или заблокирована
+             */
+            reason: string | null;
+            /** News Id */
+            news_id: string | null;
+            /** Event Id */
+            event_id: string | null;
+            /** Title */
+            title: string | null;
+            /** Url */
+            url: string | null;
+            /**
+             * Relevant
+             * @description Событие значимо для компании
+             */
+            relevant: boolean;
+            /**
+             * Generation Queued
+             * @description Инсайт готовится — придёт в ленту и уведомлением
+             */
+            generation_queued: boolean;
         };
         /** NotificationOut */
         NotificationOut: {
@@ -1592,6 +2406,99 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** SourceCreatedOut */
+        SourceCreatedOut: {
+            source: components["schemas"]["SourceOut"];
+            check: components["schemas"]["FeedCheckOut"];
+            /**
+             * Task Id
+             * @description Опрос нового источника поставлен в очередь
+             */
+            task_id: string | null;
+        };
+        /** SourceIn */
+        SourceIn: {
+            /**
+             * Url
+             * @example https://feeds.bbci.co.uk/news/business/rss.xml
+             */
+            url: string;
+            /** Name */
+            name: string;
+            /** Topics */
+            topics?: string[];
+            /**
+             * Priority
+             * @default 100
+             */
+            priority: number;
+            /** Fallback For */
+            fallback_for?: string | null;
+        };
+        /** SourceOut */
+        SourceOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @description rss | fixture
+             */
+            kind: string;
+            /** Url */
+            url: string | null;
+            /**
+             * Origin
+             * @description catalog — из news_sources.json (можно только включить или выключить); admin — добавлен админом
+             * @enum {string}
+             */
+            origin: "catalog" | "admin";
+            /**
+             * Enabled
+             * @description Опрашивается сейчас
+             */
+            enabled: boolean;
+            /** Disabled By Admin */
+            disabled_by_admin: boolean;
+            /** Is Fixture */
+            is_fixture: boolean;
+            /** Priority */
+            priority: number;
+            /**
+             * Fallback For
+             * @description Резерв для источника: опрашивается, когда тот down
+             */
+            fallback_for: string | null;
+            /** Topics */
+            topics: string[];
+            /**
+             * Health Status
+             * @description healthy | degraded | down | unknown
+             */
+            health_status: string;
+            /** Last Error */
+            last_error: string | null;
+            /** Last Checked At */
+            last_checked_at: string | null;
+            /** Last Success At */
+            last_success_at: string | null;
+            /** Items 24H */
+            items_24h: number;
+        };
+        /** SourcePatchIn */
+        SourcePatchIn: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Name */
+            name?: string | null;
+            /** Priority */
+            priority?: number | null;
+            /** Fallback For */
+            fallback_for?: string | null;
+            /** Topics */
+            topics?: string[] | null;
+        };
         /** StateIn */
         StateIn: {
             /**
@@ -1600,6 +2507,24 @@ export interface components {
              * @enum {string}
              */
             action: "open" | "hide" | "unhide" | "save" | "unsave" | "watch";
+        };
+        /** StuckRunOut */
+        StuckRunOut: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Company Id */
+            company_id: string;
+            /** Event Id */
+            event_id: string | null;
+            /** Generator */
+            generator: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
         };
         /** TokenOut */
         TokenOut: {
@@ -1911,6 +2836,103 @@ export interface operations {
             };
         };
     };
+    add_company_api_v1_me_companies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyAddIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyAddOut"];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Выбор компаний выключен */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет такой компании */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_company_api_v1_me_companies__company_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                company_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Компания не открыта пользователем */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_companies_api_v1_companies_get: {
         parameters: {
             query?: never;
@@ -1935,6 +2957,53 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    search_companies_api_v1_companies_search_get: {
+        parameters: {
+            query: {
+                /** @description U_700001, 46.72, металл, Казань… */
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyFound"][];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Выбор компаний выключен */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
@@ -2533,6 +3602,33 @@ export interface operations {
             };
         };
     };
+    market_indicators_api_v1_market_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketOut"];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_news_api_v1_news__news_id__get: {
         parameters: {
             query?: never;
@@ -2575,6 +3671,58 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    submit_api_v1_news_submit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewsSubmitIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsSubmitOut"];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет доступа к компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна ссылка или заголовок с текстом; неверная ссылка */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Не больше 30 новостей в сутки */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -2647,6 +3795,53 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    file_api_v1_analytics_documents__document_id__file_get: {
+        parameters: {
+            query: {
+                token: string;
+            };
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description PDF */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description Ссылка недействительна или устарела */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Документ не найден */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
@@ -3477,6 +4672,620 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    list_analytics_api_v1_admin_analytics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAnalyticsDocumentOut"][];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна роль admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    upload_analytics_api_v1_admin_analytics_post: {
+        parameters: {
+            query: {
+                file_name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/pdf": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsUploadOut"];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна роль admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Файл больше ANALYTICS_MAX_BYTES */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Тело запроса — не application/pdf */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Не PDF или неверное имя файла */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    generation_overview_api_v1_admin_generation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationOverviewOut"];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна роль admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    generation_retry_api_v1_admin_generation_retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerationRetryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationRetryOut"];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна роль admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    alerts_api_v1_admin_alerts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertOut"][];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна роль admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    news_cleanup_api_v1_admin_news_cleanup_post: {
+        parameters: {
+            query?: {
+                /** @description За сколько последних дней */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedCleanupOut"];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна роль admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    market_refresh_api_v1_admin_market_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketRefreshOut"];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна роль admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    llm_provider_key_api_v1_admin_llm_provider_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmProviderKeyOut"];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна роль admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_sources_api_v1_admin_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceOut"][];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна роль admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_api_v1_admin_sources_post: {
+        parameters: {
+            query?: {
+                /** @description Сразу поставить опрос в очередь */
+                poll_now?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceCreatedOut"];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна роль admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Такая лента уже есть */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Неверный URL, лента не прошла проверку или неизвестный fallback_for */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    check_api_v1_admin_sources_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedCheckIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedCheckOut"];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна роль admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Неверный URL */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    discover_api_v1_admin_sources_discover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscoverIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoverOut"];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна роль admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Неверная ссылка */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_api_v1_admin_sources__source_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна роль admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Источник не найден */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Источник из каталога или по нему уже есть новости — выключите его */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_api_v1_admin_sources__source_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourcePatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceOut"];
+                };
+            };
+            /** @description Неверные учётные данные или токен (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна роль admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Источник не найден */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Источник из каталога: можно только enabled; неизвестный fallback_for */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
