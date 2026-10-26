@@ -123,13 +123,13 @@ def products_of(features: dict[str, Any]) -> list[str]:
 
 
 _RUB_STRONGER = re.compile(
-    r"рубл\w*\s+(\w+\s+){0,3}(вырос|укрепил|подорожал|обновил максимум)|"
-    r"(юан|доллар|евро|валют)\w*\s+(\w+\s+){0,3}(снизил|упал|подешевел|опустил|просел)",
+    r"рубл\w*\s+(\w+\s+){0,3}(вырос|укрепил|подорожал|обновил максимум|подраст|растет|растёт|укрепляет|дорожает)|"
+    r"(юан|доллар|евро|валют)\w*\s+(\w+\s+){0,3}(снизил|упал|подешевел|опустил|просел|дешевеет|снижается|падает)",
     re.IGNORECASE,
 )
 _RUB_WEAKER = re.compile(
-    r"рубл\w*\s+(\w+\s+){0,3}(ослаб|упал|подешевел|снизил|обновил минимум)|"
-    r"(юан|доллар|евро|валют)\w*\s+(\w+\s+){0,3}(вырос|подорожал|укрепил)",
+    r"рубл\w*\s+(\w+\s+){0,3}(ослаб|упал|подешевел|снизил|обновил минимум|дешевеет|слабеет|снижается|падает)|"
+    r"(юан|доллар|евро|валют)\w*\s+(\w+\s+){0,3}(вырос|подорожал|укрепил|дорожает|растет|растёт|подраст)",
     re.IGNORECASE,
 )
 _MORTGAGE = re.compile(r"ипотек", re.IGNORECASE)
@@ -296,7 +296,7 @@ def normalize_event(event: dict[str, Any]) -> dict[str, Any]:
     ):
         ev["event_type"] = "other"  # the tagger's "sanctions" without the word: a trade or energy story
     head = str(ev.get("title") or "")
-    if ev.get("event_type") in {"other", "macro_stat", "commodities"} and (
+    if ev.get("event_type") in {"other", "macro_stat", "commodities", "regulation_tax", "industry"} and (
         _RUB_STRONGER.search(head) or _RUB_WEAKER.search(head)
     ):
         ev["event_type"] = "fx"  # "Рубль вырос… в паре с юанем" is an FX move whatever the tagger said

@@ -70,6 +70,31 @@ MAX_TOKENS_CAP = 6000
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.S | re.I)
 
 
+# Process-wide memory of models that reason too long for an interactive deadline (the organisers' provider ignores
+# the thinking switch: Qwen3.6 spent 3 091 of 3 762 tokens and 54 s on reasoning). Such a model is replaced by the
+# fast one (ML_MODEL_FAST) for SLOW_FOR_S; then it is tried again.
+SLOW_REASONING_TOKENS = 1200
+SLOW_LATENCY_MS = 35000
+SLOW_FOR_S = 1800.0
+_SLOW: dict[str, float] = {}
+
+
+def mark_slow(alias: str, why: str) -> None:
+    fam = family_of(alias) or alias
+    if not is_slow(alias):
+        log.warning("llm_model_slow", model=alias, reason=why, fallback_for_s=SLOW_FOR_S)
+    _SLOW[fam] = time.monotonic() + SLOW_FOR_S
+
+
+def is_slow(alias: str) -> bool:
+    return time.monotonic() < _SLOW.get(family_of(alias) or alias, 0.0)
+
+
+def pick_model(alias: str, fast: str) -> str:
+    """The configured model, or the fast one while the configured model is known to reason too long."""
+    return fast if fast and alias != fast and is_slow(alias) else alias
+
+
 def strip_reasoning(text: str) -> str:
     text = _THINK_BLOCK.sub("", text or "")
     if "</think>" in text:  # an opening tag swallowed by the server's template
@@ -222,6 +247,7 @@ class LLMClient:
             except httpx.TimeoutException as exc:
                 last = LLMUnavailable(f"timeout: {exc}")
                 transport_failed = True
+                mark_slow(alias, "timeout")
                 break  # a timeout already consumed the time budget; do not retry
             except httpx.HTTPError as exc:
                 last = LLMUnavailable(str(exc))
@@ -265,6 +291,8 @@ class LLMClient:
                 "latency_ms": int((time.perf_counter() - started) * 1000),
                 "cache": resp.headers.get("X-Cache"),
             }
+            if reasoning >= SLOW_REASONING_TOKENS or self.last["latency_ms"] >= SLOW_LATENCY_MS:
+                mark_slow(alias, f"reasoning {reasoning} tokens, {self.last['latency_ms']} ms")
             if not content and choice.get("finish_reason") == "length" and not grown:
                 # the whole budget went into reasoning: one more try with room for the answer
                 grown = True

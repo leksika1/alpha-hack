@@ -79,3 +79,17 @@ async def test_a_provider_without_the_thinking_switch_gets_the_request_without_i
 def test_reasoning_blocks_are_removed() -> None:
     assert llm_mod.strip_reasoning("<think>x</think>\n{}") == "{}"
     assert llm_mod.strip_reasoning("reasoning…</think>{}") == "{}"
+
+
+async def test_a_model_that_reasons_too_long_is_replaced_by_the_fast_one() -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/models"):
+            return MODELS
+        return _answer('{"ok": 1}', reasoning=3091)
+
+    llm_mod._SLOW.clear()
+    c = _client(handler)
+    assert llm_mod.pick_model("qwen3.6-35b-a3b", "gemma-4-26b-a4b") == "qwen3.6-35b-a3b"
+    await c.complete_json(alias="qwen3.6-35b-a3b", purpose="generation", system="s", user="u")
+    assert llm_mod.pick_model("qwen3.6-35b-a3b", "gemma-4-26b-a4b") == "gemma-4-26b-a4b"
+    llm_mod._SLOW.clear()
