@@ -1,13 +1,19 @@
-// Панель администратора: north star и метрики этапов CJM, бюджет LLM, источники, ручная новость через общий конвейер.
+// Панель администратора: метрики CJM, проблемы, монитор генерации, источники, аналитика банка (PDF), бюджет и лимит LLM.
 import { useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@alfalab/core-components/button';
+import { Skeleton } from '@alfalab/core-components/skeleton';
 import { get } from '../api/client';
 import { useManualNews } from '../api/hooks';
-import type { ManualNewsOut } from '../api/types';
+import type { LlmProviderKey, ManualNewsOut } from '../api/types';
 import { CardSkeleton, ErrorBox, H3, Note } from '../components/ui';
-import { formatPercent, formatRelative } from '../lib/format';
+import { formatDate, formatDuration, formatNumber, formatPercent } from '../lib/format';
 import { cn } from '../lib/cn';
+import { AlertsPanel, useAlerts } from './admin/AlertsPanel';
+import { GenerationPanel } from './admin/GenerationPanel';
+import { DiscoverSource, SourcesHealth } from './admin/SourcesPanel';
+import { AnalyticsPanel } from './admin/AnalyticsPanel';
 
 type Metric = { metric?: string; value?: number | null; [k: string]: unknown };
 interface Metrics {
@@ -23,19 +29,6 @@ interface Metrics {
   generation: Record<string, unknown>;
 }
 
-interface SourceHealth {
-  id: string;
-  name: string;
-  kind: string;
-  enabled: boolean;
-  is_fixture: boolean;
-  fallback_for: string | null;
-  health_status: string;
-  last_success_at: string | null;
-  last_error: string | null;
-  items_24h: number;
-}
-
 const STAGES: Record<string, string> = {
   '01_notice': '01 Заметить сервис',
   '02_context': '02 Подтвердить контекст',
@@ -47,110 +40,210 @@ const STAGES: Record<string, string> = {
   '08_return': '08 Оценить и вернуться',
 };
 
-const HEALTH_DOT: Record<string, string> = { healthy: 'bg-pos-dot', degraded: 'bg-att-dot', down: 'bg-accent' };
+const TABS = [
+  { key: 'metrics', label: 'Метрики' },
+  { key: 'alerts', label: 'Проблемы' },
+  { key: 'generation', label: 'Генерация' },
+  { key: 'sources', label: 'Источники' },
+  { key: 'analytics', label: 'Аналитика банка' },
+  { key: 'llm', label: 'LLM' },
+] as const;
+
+type TabKey = (typeof TABS)[number]['key'];
 
 const fmt = (v: number | null | undefined) => (v == null ? '—' : formatPercent(v));
 
 const KV = ({ children }: { children: ReactNode }) => <div className="mb-3 flex flex-wrap gap-x-5 gap-y-2 text-sm">{children}</div>;
 
 export function AdminPage() {
-  const metrics = useQuery({ queryKey: ['admin-metrics'], queryFn: () => get<Metrics>('/admin/metrics?days=7'), refetchInterval: 30_000 });
-  const llm = useQuery({ queryKey: ['admin-llm'], queryFn: () => get<{ budget: Record<string, number | boolean | string> }>('/admin/llm-usage') });
-  const sources = useQuery({ queryKey: ['admin-sources'], queryFn: () => get<SourceHealth[]>('/admin/sources/health') });
+  const [params, setParams] = useSearchParams();
+  const raw = params.get('tab');
+  const tab: TabKey = TABS.some((t) => t.key === raw) ? (raw as TabKey) : 'metrics';
+  const alerts = useAlerts();
+  const problems = alerts.data?.length ?? 0;
 
   return (
     <div>
-      <h1 className="mt-2 mb-5 text-[28px]">Метрики сервиса «Альфа-Аналитика»</h1>
-      {metrics.isLoading && <CardSkeleton rows={4} />}
-      {metrics.isError && <ErrorBox error={metrics.error} onRetry={() => metrics.refetch()} />}
-      {metrics.data && (
-        <>
-          <section className="rounded-card bg-night p-6 text-white">
-            <div className="text-xs font-bold tracking-[0.06em] text-lime uppercase">North star, 7 дней</div>
-            <div className="text-[44px] font-bold">{fmt(metrics.data.north_star.value)}</div>
-            <div className="mb-1.5 text-base">{metrics.data.north_star.metric}</div>
-            <div className="text-[13px] text-white/60">
-              Сессий: {metrics.data.sessions}, пользователей: {metrics.data.users}, медиана до первого полезного инсайта:{' '}
-              {metrics.data.speed.median_s_to_first_useful != null ? `${metrics.data.speed.median_s_to_first_useful} с` : '—'}
-            </div>
-          </section>
-          <div className="my-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {Object.entries(metrics.data.cjm).map(([k, m]) => (
-              <div key={k} className="card p-6">
-                <div className="text-[13px] font-bold">{STAGES[k] ?? k}</div>
-                <div className="my-1 text-[28px] font-bold">{fmt(m.value as number | null)}</div>
-                <div className="text-[13px] text-ink-2">{m.metric}</div>
-              </div>
-            ))}
-          </div>
-          <section className="card p-6">
-            <H3>Генерация инсайтов</H3>
-            <KV>
-              {Object.entries(metrics.data.generation)
-                .filter(([, v]) => typeof v !== 'object')
-                .map(([k, v]) => (
-                  <span key={k}>
-                    {k}: <b>{k.endsWith('share') ? fmt(v as number) : String(v)}</b>
-                  </span>
-                ))}
-            </KV>
-            <H3>Качество</H3>
-            <KV>
-              <span>
-                Доля полезных: <b>{fmt(metrics.data.quality.useful_share)}</b>
+      <h1 className="mt-2 mb-4 text-[28px]">Администрирование «Альфа-Аналитики»</h1>
+      <nav className="mb-5 flex gap-1 overflow-x-auto border-b border-line" aria-label="Разделы администрирования">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            aria-current={tab === t.key ? 'page' : undefined}
+            onClick={() => setParams(t.key === 'metrics' ? {} : { tab: t.key }, { replace: true })}
+            className={cn(
+              '-mb-px flex items-center gap-1.5 border-b-2 px-3.5 py-2.5 font-semibold whitespace-nowrap transition-colors duration-200 hover:text-ink',
+              tab === t.key ? 'border-accent text-ink' : 'border-transparent text-ink-2',
+            )}
+          >
+            {t.label}
+            {t.key === 'alerts' && problems > 0 && (
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-[10px] bg-accent px-1.5 text-xs font-medium text-white">
+                {problems}
               </span>
-              <span>
-                Полезных в топ-k: <b>{fmt(metrics.data.quality.top_k_useful_share)}</b>
-              </span>
-              <span>
-                Ключевые выводы с источником: <b>{fmt(metrics.data.quality.key_statements_sourced)}</b>
-              </span>
-              <span>
-                Отзывов: <b>{metrics.data.quality.feedback ?? 0}</b>
-              </span>
-            </KV>
-          </section>
-        </>
-      )}
+            )}
+          </button>
+        ))}
+      </nav>
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <ManualNews onDone={() => metrics.refetch()} />
-        <section className="card p-6">
-          <H3>Бюджет LLM на сегодня</H3>
-          {llm.data && (
+      <div key={tab} className="motion-safe:animate-fade-in">
+        {tab === 'metrics' && <MetricsTab />}
+        {tab === 'alerts' && <AlertsPanel />}
+        {tab === 'generation' && <GenerationPanel />}
+        {tab === 'sources' && (
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="flex flex-col gap-4">
+              <DiscoverSource />
+              <ManualNews />
+            </div>
+            <section className="card self-start p-6">
+              <SourcesHealth />
+            </section>
+          </div>
+        )}
+        {tab === 'analytics' && <AnalyticsPanel />}
+        {tab === 'llm' && <LlmTab />}
+      </div>
+    </div>
+  );
+}
+
+function MetricsTab() {
+  const metrics = useQuery({ queryKey: ['admin-metrics'], queryFn: () => get<Metrics>('/admin/metrics?days=7'), refetchInterval: 30_000 });
+  if (metrics.isLoading) return <CardSkeleton rows={4} />;
+  if (metrics.isError) return <ErrorBox error={metrics.error} onRetry={() => metrics.refetch()} />;
+  const m = metrics.data!;
+  return (
+    <>
+      <section className="rounded-card bg-night p-6 text-white">
+        <div className="text-xs font-bold tracking-[0.06em] text-lime uppercase">North star, 7 дней</div>
+        <div className="text-[44px] font-bold">{fmt(m.north_star.value)}</div>
+        <div className="mb-1.5 text-base">{m.north_star.metric}</div>
+        <div className="text-[13px] text-white/60">
+          Сессий: {m.sessions}, пользователей: {m.users}, медиана до первого полезного инсайта: {formatDuration(m.speed.median_s_to_first_useful)}
+        </div>
+      </section>
+      <div className="my-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {Object.entries(m.cjm).map(([k, c]) => (
+          <div key={k} className="card p-6">
+            <div className="text-[13px] font-bold">{STAGES[k] ?? k}</div>
+            <div className="my-1 text-[28px] font-bold">{fmt(c.value as number | null)}</div>
+            <div className="text-[13px] text-ink-2">{c.metric}</div>
+          </div>
+        ))}
+      </div>
+      <section className="card p-6">
+        <H3>Генерация инсайтов</H3>
+        <KV>
+          {Object.entries(m.generation)
+            .filter(([, v]) => typeof v !== 'object')
+            .map(([k, v]) => (
+              <span key={k}>
+                {k}: <b>{k.endsWith('share') ? fmt(v as number) : String(v)}</b>
+              </span>
+            ))}
+        </KV>
+        <H3>Качество</H3>
+        <KV>
+          <span>
+            Доля полезных: <b>{fmt(m.quality.useful_share)}</b>
+          </span>
+          <span>
+            Полезных в топ-k: <b>{fmt(m.quality.top_k_useful_share)}</b>
+          </span>
+          <span>
+            Ключевые выводы с источником: <b>{fmt(m.quality.key_statements_sourced)}</b>
+          </span>
+          <span>
+            Отзывов: <b>{m.quality.feedback ?? 0}</b>
+          </span>
+        </KV>
+      </section>
+    </>
+  );
+}
+
+const num = (v: unknown) => (typeof v === 'number' ? formatNumber(v) : String(v ?? '—'));
+
+function LlmTab() {
+  const llm = useQuery({ queryKey: ['admin-llm'], queryFn: () => get<{ budget: Record<string, number | boolean | string> }>('/admin/llm-usage') });
+  const key = useQuery({ queryKey: ['admin-llm-provider'], queryFn: () => get<LlmProviderKey>('/admin/llm-provider') });
+  const k = key.data;
+  const used = k?.spend != null && k.max_budget ? Math.min(1, k.spend / k.max_budget) : null;
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <section className="card p-6">
+        <H3>Остаток лимита у провайдера</H3>
+        {key.isLoading && (
+          <Skeleton visible animate>
+            <div style={{ height: 64 }} />
+          </Skeleton>
+        )}
+        {key.isError && <ErrorBox error={key.error} onRetry={() => key.refetch()} />}
+        {k?.status === 'not-supported' && <p className="text-ink-2">Провайдер не сообщает остаток лимита ключа.</p>}
+        {k?.status === 'error' && <Note tone="warning">Провайдер не ответил: {k.error}</Note>}
+        {k?.status === 'ok' && (
+          <>
+            <div className="text-[34px] leading-tight font-bold tabular-nums">{k.remaining != null ? formatNumber(k.remaining) : '—'}</div>
+            <div className="mb-3 text-[13px] text-ink-2">осталось в единицах провайдера</div>
+            {used != null && (
+              <div
+                className="mb-3 h-2 overflow-hidden rounded-full bg-muted-2"
+                role="meter"
+                aria-valuenow={Math.round(used * 100)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  className={cn('h-full rounded-full', used > 0.9 ? 'bg-accent' : used > 0.7 ? 'bg-att-dot' : 'bg-pos-dot')}
+                  style={{ width: `${used * 100}%` }}
+                />
+              </div>
+            )}
             <KV>
               <span>
-                Лимит: <b>{String(llm.data.budget.limit_rub)} ₽</b>
+                Потрачено: <b>{num(k.spend)}</b>
               </span>
               <span>
-                Потрачено: <b>{String(llm.data.budget.spent_rub)} ₽</b>
+                Лимит: <b>{num(k.max_budget)}</b>
               </span>
-              <span>
-                Токены:{' '}
-                <b>
-                  {String(llm.data.budget.tokens_in)} / {String(llm.data.budget.tokens_out)}
-                </b>
-              </span>
-              <span>{llm.data.budget.exhausted ? 'Бюджет исчерпан — генерация без LLM' : 'Бюджет доступен'}</span>
-            </KV>
-          )}
-          <H3>Источники новостей</H3>
-          <div>
-            {sources.data?.map((s) => (
-              <div key={s.id} className="grid grid-cols-[12px_1fr_auto] items-center gap-2.5 border-b border-line py-1.5 text-sm">
-                <span className={cn('size-2.5 rounded-full', HEALTH_DOT[s.health_status] ?? 'bg-ink-3')} />
+              {k.budget_duration && (
                 <span>
-                  {s.name}
-                  {s.fallback_for && <span className="ml-1.5 text-[13px] text-ink-2">резерв для {s.fallback_for}</span>}
+                  Период: <b>{k.budget_duration}</b>
                 </span>
-                <span className="text-[13px] text-ink-2">
-                  {s.items_24h} за 24 ч{s.last_success_at ? `, ${formatRelative(s.last_success_at)}` : ''}
+              )}
+              {k.budget_reset_at && (
+                <span>
+                  Сброс: <b>{formatDate(k.budget_reset_at, true)}</b>
                 </span>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
+              )}
+            </KV>
+          </>
+        )}
+      </section>
+      <section className="card p-6">
+        <H3>Бюджет LLM на сегодня</H3>
+        {llm.isError && <ErrorBox error={llm.error} onRetry={() => llm.refetch()} />}
+        {llm.data && (
+          <KV>
+            <span>
+              Лимит: <b>{num(llm.data.budget.limit_rub)} ₽</b>
+            </span>
+            <span>
+              Потрачено: <b>{num(llm.data.budget.spent_rub)} ₽</b>
+            </span>
+            <span>
+              Токены (вход / выход):{' '}
+              <b>
+                {num(llm.data.budget.tokens_in)} / {num(llm.data.budget.tokens_out)}
+              </b>
+            </span>
+            <span>{llm.data.budget.exhausted ? 'Бюджет исчерпан — генерация без LLM' : 'Бюджет доступен'}</span>
+          </KV>
+        )}
+      </section>
     </div>
   );
 }
@@ -164,7 +257,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function ManualNews({ onDone }: { onDone: () => void }) {
+function ManualNews() {
   const send = useManualNews();
   const [title, setTitle] = useState('Банк России неожиданно повысил ключевую ставку до 16% годовых');
   const [body, setBody] = useState(
@@ -195,10 +288,7 @@ function ManualNews({ onDone }: { onDone: () => void }) {
         loading={send.isPending}
         onClick={() =>
           send.mutate([{ title, body, publisher, url: null, published_at: new Date().toISOString() }], {
-            onSuccess: (r) => {
-              setResult(r);
-              onDone();
-            },
+            onSuccess: setResult,
           })
         }
       >

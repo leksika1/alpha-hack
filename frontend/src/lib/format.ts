@@ -278,6 +278,18 @@ export function formatMoney(n: number): string {
   return `${numberFmt.format(n)} ₽`;
 }
 
+// Длительность в секундах словами: 7272.4 → «2 ч 1 мин», 95 → «1 мин 35 с», 4.2 → «4,2 с».
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return '—';
+  if (seconds < 60) return `${numberFmt.format(seconds)} с`;
+  const total = Math.round(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return m > 0 ? `${h} ч ${m} мин` : `${h} ч`;
+  return s > 0 ? `${m} мин ${s} с` : `${m} мин`;
+}
+
 export function formatPercent(share: number): string {
   return `${numberFmt.format(share * 100)}%`;
 }
