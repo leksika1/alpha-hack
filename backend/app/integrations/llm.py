@@ -143,14 +143,24 @@ class OpenAICompatibleProvider:
     def _client(self) -> httpx.AsyncClient:
         if not self.base_url or not self.api_key:
             raise LlmProviderError(502, "llm-not-configured", "LLM_BASE_URL and LLM_API_KEY are required")
+        # a placeholder left in .env ("ваш_ключ") cannot go into an HTTP header; the key is never echoed
+        if not self.api_key.isascii() or not self.api_key.isprintable() or " " in self.api_key:
+            raise LlmProviderError(
+                502, "llm-not-configured", "LLM_API_KEY must be the provider key: ASCII without spaces"
+            )
         headers = {"Authorization": f"Bearer {self.api_key}"}
-        return httpx.AsyncClient(
-            base_url=self.base_url,
-            headers=headers,
-            timeout=self.timeout_s,
-            transport=self.transport,
-            proxy=None if self.transport else self.proxy,
-        )
+        try:
+            return httpx.AsyncClient(
+                base_url=self.base_url,
+                headers=headers,
+                timeout=self.timeout_s,
+                transport=self.transport,
+                proxy=None if self.transport else self.proxy,
+            )
+        except (ValueError, httpx.InvalidURL) as exc:  # UnicodeError is a ValueError
+            raise LlmProviderError(
+                502, "llm-not-configured", f"Invalid LLM_BASE_URL or LLM_PROXY_URL: {type(exc).__name__}"
+            ) from exc
 
     async def key_info(self) -> dict[str, Any]:
         """The key's budget at the provider (`/key/info` next to `/v1`): spend, limit, reset time."""
