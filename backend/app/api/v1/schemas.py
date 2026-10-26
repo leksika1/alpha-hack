@@ -50,6 +50,28 @@ class CompanyBrief(_Model):
     segment: str | None
     role: Role
     is_default: bool
+    added_by_user: bool = Field(False, description="Открыта пользователем по ID из всей базы (демо, ADR-048)")
+
+
+class CompanyFound(_Model):
+    company_id: str
+    title: str
+    okved_code: str | None
+    okved_name: str | None
+    region: str | None
+    segment: str | None
+    has_access: bool = Field(description="Уже есть в списке компаний пользователя")
+
+
+class CompanyAddIn(_Model):
+    company_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32)]
+    role: Role = Role.ceo
+
+
+class CompanyAddOut(_Model):
+    company: CompanyBrief
+    candidates_pending: int
+    regeneration: Literal["queued", "not_needed"]
 
 
 class MeOut(_Model):

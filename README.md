@@ -36,7 +36,10 @@ docker compose up -d --build        # или: make up
 
 Первая сборка образов — 5–10 минут; при первом старте бэкенд скачивает модель эмбеддингов (~0,5 ГБ, кэшируется в
 томе). Дальше стенд поднимается примерно за минуту, первые инсайты появляются через 30–60 секунд после старта.
-На Windows, если `make` нет, команды из `Makefile` запускаются как есть.
+На Windows, если `make` нет, команды из `Makefile` запускаются как есть. Сразу после старта собираются реальные
+новости и данные ЦБ (1–2 минуты); до этого и без интернета лента — демо (синтетика, помечена).
+Postgres, Redis и MinIO слушают только `127.0.0.1` на портах 15432, 16379, 19000; если 3000 или 8000 заняты —
+`FRONTEND_PORT` / `API_PORT` в `.env`.
 
 **LLM.** В `.env` достаточно `LLM_API_KEY` (ключ команды): адрес шлюза организаторов
 `https://api.alfahack-gateway26.ru/v1` и ID всех 6 моделей заданы по умолчанию. Если провайдер недоступен из сети
@@ -50,7 +53,7 @@ docker compose up -d --build        # или: make up
 | Swagger | http://localhost:8000/docs |
 | ML-сервис (health) | http://localhost:8200/health |
 | Готовность | http://localhost:8000/ready |
-| Консоль MinIO | http://localhost:9001 (`minioadmin` / `minioadmin`) |
+| Консоль MinIO | http://localhost:19001 (`minioadmin` / `minioadmin`) |
 
 Порты меняются в `.env`: `API_PORT`, `FRONTEND_PORT`, `ML_PORT`, `POSTGRES_PORT` и т.д. Деплой на сервер (Dokploy:
 бэкенд, ML и фронтенд — отдельные сервисы, автодеплой из CI) — [`docs/RUNBOOK.md`](docs/RUNBOOK.md), «Деплой».
@@ -80,6 +83,10 @@ docker compose exec api python scripts/demo_check.py
 | — | Админ (`admin` / `admin12345`) | `POST /api/v1/admin/news`, `GET /api/v1/admin/metrics` | Новость проходит конвейер и приходит уведомлением; north star и метрики этапов CJM |
 | — | Админ: источники | `POST /api/v1/admin/sources/discover` `{"query":"BBC"}`, `POST /api/v1/admin/sources` | Поиск издания по названию или ссылке, проверка ленты, добавление без деплоя |
 | — | Админ: эксплуатация | `GET /api/v1/admin/generation`, `GET /api/v1/admin/alerts`, `POST /api/v1/admin/analytics` | Монитор генерации, активные проблемы, загрузка PDF аналитики |
+
+**Любая компания выборки:** `GET /api/v1/companies/search?q=46.72` (ID, ОКВЭД или регион) и
+`POST /api/v1/me/companies` `{"company_id":"U_700019","role":"cfo"}` — компания появится в списке, карточки
+сгенерируются в течение минуты (ADR-048).
 
 Смена роли меняет вариант инсайта и порядок ленты: `PUT /api/v1/me/companies/U_700001/role` `{"role":"cfo"}`.
 Дополнение профиля (`PATCH /companies/{id}/profile`, например `{"currencies":["CNY"]}`) меняет релевантность.
@@ -111,7 +118,7 @@ docker compose exec api python scripts/demo_check.py
 Бэкенд: FastAPI (`api`), Taskiq (`worker`, `scheduler`), PostgreSQL 16 + pgvector, Redis, MinIO (S3), `ml-stub`.
 ML-сервис (`ml`) и фронтенд (nginx, `frontend`) — свои compose-файлы в своих папках, корневой `docker-compose.yml`
 подключает все три. Подробно — [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), решения —
-[`docs/DECISIONS.md`](docs/DECISIONS.md) (ADR-001…047).
+[`docs/DECISIONS.md`](docs/DECISIONS.md) (ADR-001…049).
 
 ```mermaid
 flowchart LR
@@ -151,6 +158,8 @@ flowchart LR
 | `FEED_TOPIC_CAP` | сколько карточек одной макротемы (ставка, курс) показывать в ленте «Все» |
 | `ALERTS_PROVIDER`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | алерты в Telegram (по умолчанию — в лог) |
 | `MARKET_DATA_ENABLED` | ставка и курсы ЦБ раз в час (офлайн — `false`) |
+| `DEMO_COMPANY_PICKER` | открыть любую компанию базы по ID (по умолчанию да) |
+| `NEWS_FIXTURES_HIDE_AFTER_LIVE` | демо-лента уходит, когда реальные источники дали столько новостей за сутки (30) |
 | `BACKUP_INTERVAL_H`, `BACKUP_KEEP` | резервные копии Postgres и S3 в том `backups` (24 ч, 7 копий; `0` — выкл.) |
 | `JWT_SECRET`, `SERVICE_TOKEN`, `ML_SERVICE_TOKEN` | секреты; с `APP_ENV=prod` dev-значения запрещены |
 

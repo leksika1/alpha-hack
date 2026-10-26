@@ -360,10 +360,15 @@ async def generate_pending(
     company_ids: list[str] | None = None,
     limit: int = 500,
 ) -> GenerationStats:
+    # companies take turns (the best candidate of each, then the second…): every feed fills at the same pace
     candidates = await conn.fetch(
-        """SELECT * FROM core.candidate_matches
-           WHERE status = 'pending' AND ($1::text[] IS NULL OR company_id = ANY($1::text[]))
-           ORDER BY urgent DESC, score DESC, id
+        """SELECT * FROM (
+               SELECT *,
+                      row_number() OVER (PARTITION BY company_id ORDER BY urgent DESC, score DESC, id) AS turn
+               FROM core.candidate_matches
+               WHERE status = 'pending' AND ($1::text[] IS NULL OR company_id = ANY($1::text[]))
+           ) c
+           ORDER BY turn, urgent DESC, score DESC, id
            LIMIT $2""",
         company_ids,
         limit,

@@ -760,6 +760,13 @@ async def test_admin_alerts_reflect_system_state(env: dict[str, Any]) -> None:
         keys = {a.key: a for a in await evaluate(conn, unreachable_ml)}
         assert keys["llm-errors"].severity == "critical" and "llm-timeout" in keys["llm-errors"].detail
         await conn.execute("DELETE FROM core.llm_usage WHERE purpose = 'planning' AND error = 'llm-timeout'")
+        await conn.executemany(  # no LLM_API_KEY: insights by rules, not a provider failure
+            """INSERT INTO core.llm_usage (day, caller, purpose, model, status, error)
+               VALUES (current_date, 'run', 'planning', 'gemma-4-26b-a4b', 'error', $1)""",
+            [("llm-not-configured",)] * 6,
+        )
+        assert "llm-errors" not in {a.key for a in await evaluate(conn, unreachable_ml)}
+        await conn.execute("DELETE FROM core.llm_usage WHERE error = 'llm-not-configured'")
         assert {"insights-rejected", "ml-unavailable", "llm-budget-exhausted"} <= set(keys)
         assert keys["ml-unavailable"].severity == "critical" and "sources-down" not in keys
         # most sources down: a network problem of the server
@@ -1370,3 +1377,83 @@ async def test_remote_scoring_withdraws_old_card_and_can_restore_candidate(env: 
             )
         finally:
             await transaction.rollback()
+
+
+async def test_any_company_of_the_client_base_can_be_opened_by_id(env: dict[str, Any]) -> None:
+    from app.core.config import get_settings
+
+    c = env["client"]
+    h = await login(c, "demo2")
+    found = (await c.get("/api/v1/companies/search", headers=h, params={"q": "u_700019"})).json()
+    assert found[0]["company_id"] == "U_700019" and found[0]["has_access"] is False
+    by_activity = (await c.get("/api/v1/companies/search", headers=h, params={"q": "46.72"})).json()
+    assert by_activity and all(f["okved_code"].startswith("46.72") for f in by_activity)
+    assert (await c.get("/api/v1/companies/search", headers=h, params={"q": "a"})).status_code == 422
+
+    resp = await c.post("/api/v1/me/companies", headers=h, json={"company_id": "U_700019", "role": "cfo"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["company"]["added_by_user"] is True and body["company"]["role"] == "cfo"
+    me = (await c.get("/api/v1/me", headers=h)).json()
+    assert "U_700019" in [x["company_id"] for x in me["companies"]]
+    assert (await c.get("/api/v1/companies/U_700019/profile", headers=h)).status_code == 200
+    assert (await c.get("/api/v1/feed", headers=h, params={"company_id": "U_700019"})).status_code == 200
+    again = await c.post("/api/v1/me/companies", headers=h, json={"company_id": "U_700019"})
+    assert again.status_code == 200 and again.json()["company"]["role"] == "cfo"  # idempotent
+    missing = await c.post("/api/v1/me/companies", headers=h, json={"company_id": "U_000000"})
+    assert missing.status_code == 404
+
+    assert (await c.delete(f"/api/v1/me/companies/{AGRO}", headers=h)).status_code == 404  # bank's access
+    assert (await c.delete("/api/v1/me/companies/U_700019", headers=h)).status_code == 204
+    assert (await c.get("/api/v1/companies/U_700019/profile", headers=h)).status_code == 403
+
+    off = get_settings().model_copy(update={"demo_company_picker": False})
+    env["app"].dependency_overrides[get_settings] = lambda: off
+    try:
+        assert (await c.get("/api/v1/companies/search", headers=h, params={"q": "U_7"})).status_code == 403
+        blocked = await c.post("/api/v1/me/companies", headers=h, json={"company_id": "U_700019"})
+        assert blocked.status_code == 403
+    finally:
+        env["app"].dependency_overrides.pop(get_settings)
+
+
+async def test_demo_feed_leaves_the_feed_once_live_news_arrive(env: dict[str, Any]) -> None:
+    from app.services.feed_cleanup import retire_demo_feed
+
+    c = env["client"]
+    h = await login(c)
+
+    async with pg_connection(env["url"]) as conn:
+        demo_events = await conn.fetchval(
+            """SELECT count(DISTINCT en.event_id) FROM core.event_news en
+               JOIN core.news_items n ON n.id = en.news_id WHERE n.source_id = 'fixture'"""
+        )
+        assert demo_events > 0
+        assert await retire_demo_feed(conn, min_live_news=10**6) == 0  # live sources have not delivered yet
+        active = """SELECT count(DISTINCT i.id) FROM core.insights i
+                    JOIN core.event_news en ON en.event_id = i.event_id
+                    JOIN core.news_items n ON n.id = en.news_id
+                    WHERE n.source_id = 'fixture' AND (i.expires_at IS NULL OR i.expires_at > now())"""
+        before = await conn.fetchval(active)
+        # live news arrived, but the companies have no real cards yet: demo cards stay, no new demo candidates
+        await retire_demo_feed(conn, min_live_news=0, min_real_cards=10**6)
+        assert await conn.fetchval(active) == before > 0
+        assert (
+            await conn.fetchval(
+                """SELECT count(*) FROM core.candidate_matches c
+               JOIN core.event_news en ON en.event_id = c.event_id JOIN core.news_items n ON n.id = en.news_id
+               WHERE n.source_id = 'fixture' AND c.status = 'pending'"""
+            )
+            == 0
+        )
+        assert await retire_demo_feed(conn, min_live_news=0, min_real_cards=0) >= before
+        assert await retire_demo_feed(conn, min_live_news=0, min_real_cards=0) == 0  # idempotent
+        visible = await conn.fetchval(
+            """SELECT count(*) FROM core.insights i JOIN core.event_news en ON en.event_id = i.event_id
+               JOIN core.news_items n ON n.id = en.news_id
+               WHERE n.source_id = 'fixture' AND (i.expires_at IS NULL OR i.expires_at > now())"""
+        )
+        assert visible == 0
+    for company in (METALS, RETAIL, LOGISTICS):
+        items = (await feed(c, h, company, limit=50))["items"]
+        assert all(i["insight_id"] for i in items)

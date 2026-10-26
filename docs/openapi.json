@@ -238,6 +238,107 @@
         }
       }
     },
+    "/api/v1/me/companies": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Демо: открыть любую компанию клиентской базы по ID (ADR-048); инсайты генерируются сразу",
+        "operationId": "add_company_api_v1_me_companies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanyAddIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyAddOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Выбор компаний выключен"
+          },
+          "404": {
+            "description": "Нет такой компании"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/companies/{company_id}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Убрать компанию, открытую по ID (доступ от банка не убирается)",
+        "operationId": "remove_company_api_v1_me_companies__company_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "404": {
+            "description": "Компания не открыта пользователем"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/companies": {
       "get": {
         "tags": [
@@ -269,6 +370,79 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/companies/search": {
+      "get": {
+        "tags": [
+          "companies"
+        ],
+        "summary": "Демо: поиск по всей клиентской базе — ID, код или вид деятельности (ОКВЭД), регион (ADR-048)",
+        "operationId": "search_companies_api_v1_companies_search_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 100,
+              "description": "U_700001, 46.72, металл, Казань…",
+              "title": "Q"
+            },
+            "description": "U_700001, 46.72, металл, Казань…"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CompanyFound"
+                  },
+                  "title": "Response Search Companies Api V1 Companies Search Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учётные данные или токен (problem+json)"
+          },
+          "403": {
+            "description": "Выбор компаний выключен"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/companies/{company_id}/profile": {
@@ -3508,6 +3682,53 @@
         ],
         "title": "CandidateFailureOut"
       },
+      "CompanyAddIn": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Company Id"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role",
+            "default": "ceo"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "company_id"
+        ],
+        "title": "CompanyAddIn"
+      },
+      "CompanyAddOut": {
+        "properties": {
+          "company": {
+            "$ref": "#/components/schemas/CompanyBrief"
+          },
+          "candidates_pending": {
+            "type": "integer",
+            "title": "Candidates Pending"
+          },
+          "regeneration": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "not_needed"
+            ],
+            "title": "Regeneration"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "company",
+          "candidates_pending",
+          "regeneration"
+        ],
+        "title": "CompanyAddOut"
+      },
       "CompanyBrief": {
         "properties": {
           "company_id": {
@@ -3569,6 +3790,12 @@
           "is_default": {
             "type": "boolean",
             "title": "Is Default"
+          },
+          "added_by_user": {
+            "type": "boolean",
+            "title": "Added By User",
+            "description": "Открыта пользователем по ID из всей базы (демо, ADR-048)",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -3584,6 +3811,79 @@
           "is_default"
         ],
         "title": "CompanyBrief"
+      },
+      "CompanyFound": {
+        "properties": {
+          "company_id": {
+            "type": "string",
+            "title": "Company Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "okved_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Okved Code"
+          },
+          "okved_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Okved Name"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "segment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment"
+          },
+          "has_access": {
+            "type": "boolean",
+            "title": "Has Access",
+            "description": "Уже есть в списке компаний пользователя"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "company_id",
+          "title",
+          "okved_code",
+          "okved_name",
+          "region",
+          "segment",
+          "has_access"
+        ],
+        "title": "CompanyFound"
       },
       "CompanyQuestionIn": {
         "properties": {
@@ -5784,7 +6084,7 @@
               {
                 "type": "string",
                 "maxLength": 20000,
-                "minLength": 100
+                "minLength": 40
               },
               {
                 "type": "null"

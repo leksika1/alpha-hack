@@ -64,8 +64,9 @@ async def evaluate(conn: Any, settings: Settings) -> list[Alert]:
         )
 
     llm = await conn.fetchrow(
-        """SELECT count(*) FILTER (WHERE status = 'error'
-                                    AND coalesce(error, '') NOT IN ('cancelled', 'abandoned')) AS failed,
+        # no LLM_API_KEY is a mode (insights by rules), not a failure of the provider
+        """SELECT count(*) FILTER (WHERE status = 'error' AND coalesce(error, '')
+                                    NOT IN ('cancelled', 'abandoned', 'llm-not-configured')) AS failed,
                   count(*) FILTER (WHERE status IN ('ok', 'error')) AS total,
                   mode() WITHIN GROUP (ORDER BY error) FILTER (WHERE status = 'error') AS top_error
            FROM core.llm_usage WHERE created_at > now() - interval '1 hour'"""

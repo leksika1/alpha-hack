@@ -94,3 +94,17 @@ def test_event_keeps_the_decision_rate_over_a_generic_percent() -> None:
     assert merge_numbers(percent, rate) == rate
     assert merge_numbers(rate, percent) == rate
     assert merge_numbers([], percent) == percent
+
+
+@pytest.mark.parametrize(
+    ("title", "flagged"),
+    [
+        ("Мирожский монастырь: монета Банка России (06.10.2026)", True),
+        ("Банк России выпустил в обращение памятные монеты из драгоценных металлов", True),
+        ("Спрос на инвестиционные монеты вырос", True),
+        ("Банк России сохранил ключевую ставку на уровне 14%", False),
+        ("Маркетплейсы ускорили монетизацию рекламы", False),
+    ],
+)
+def test_coin_press_releases_are_not_business_news(title: str, flagged: bool) -> None:
+    assert ("not_business" in tag_news(title, "").flags) is flagged

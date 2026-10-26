@@ -8,6 +8,7 @@ from typing import Any
 from app.core.config import Settings
 from app.core.s3 import get_s3_client
 from app.integrations.news.http import PoliteFetcher
+from app.services.feed_cleanup import retire_demo_feed
 from app.services.news_ingest import PollResult, S3ObjectStore, poll, sync_sources
 from app.services.pipeline import match_new_events
 
@@ -18,9 +19,14 @@ BASE_DIR = Path(__file__).resolve().parents[2]  # backend/ (or /app in the image
 class NewsRunResult:
     poll: PollResult
     companies_to_generate: list[str]
+    demo_events_retired: int = 0
 
     def as_dict(self) -> dict[str, Any]:
-        return {**self.poll.as_dict(), "companies_to_generate": self.companies_to_generate}
+        return {
+            **self.poll.as_dict(),
+            "companies_to_generate": self.companies_to_generate,
+            "demo_events_retired": self.demo_events_retired,
+        }
 
 
 def _path(value: str) -> Path:
@@ -61,4 +67,7 @@ async def run_news_collection(
         if own_fetcher:
             await fetcher.close()
     companies = await match_new_events(conn, settings, result.event_ids)
-    return NewsRunResult(result, companies)
+    retired = 0
+    if settings.news_fixtures_hide_after_live > 0:
+        retired = await retire_demo_feed(conn, settings.news_fixtures_hide_after_live)
+    return NewsRunResult(result, companies, retired)

@@ -377,6 +377,8 @@ class UserCompanyAccess(Base):
     company_id: Mapped[str] = mapped_column(ForeignKey("core.companies.id"), primary_key=True, index=True)
     role: Mapped[str] = mapped_column(String(32))  # owner | ceo | cfo | chief_accountant | treasurer | other
     is_default: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    # opened by the user from the whole client base (demo company picker, ADR-048), not granted by the bank
+    added_by_user: Mapped[bool] = mapped_column(Boolean, server_default="false")
     updated_at: Mapped[datetime] = _now()
 
 

@@ -461,6 +461,17 @@ def is_liveblog(title: str) -> bool:
     return bool(_LIVEBLOG.search(normalize_text(title).strip()))
 
 
+# Press releases with no business consequence: commemorative and investment coins of the Bank of Russia
+_NOT_BUSINESS = re.compile(
+    r"монет[аы]? банка россии|памятн\w* монет|инвестиционн\w* монет|монет\w* из драгоценн"
+    r"|commemorative coins?"
+)
+
+
+def is_not_business(title: str) -> bool:
+    return bool(_NOT_BUSINESS.search(normalize_text(title)))
+
+
 _CYRILLIC = re.compile(r"[а-я]")
 _LATIN = re.compile(r"[a-z]")
 
@@ -540,7 +551,8 @@ def tag_news(title: str, body: str) -> NewsTags:
         numbers=numbers,
         urgency_reasons=sorted(set(reasons)),
         flags=(["suspected_prompt_injection"] if detect_injection(raw) else [])
-        + (["liveblog"] if is_liveblog(title) else []),
+        + (["liveblog"] if is_liveblog(title) else [])
+        + (["not_business"] if is_not_business(title) else []),
         language=detect_language(text),
         subjects=subjects,
     )

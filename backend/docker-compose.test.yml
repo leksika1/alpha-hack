@@ -6,6 +6,7 @@ x-test-env: &test-env
   APP_ENV: test
   DATA_DIR: data/synthetic
   NEWS_FIXTURES_ENABLED: "true"
+  NEWS_FIXTURES_HIDE_AFTER_LIVE: "0"   # the e2e scenarios are written against the demo feed
   NEWS_LIVE_SOURCES_ENABLED: "true"   # only the e2e catalog above: nothing leaves the stack
   INSIGHT_GENERATOR: stub
   ML_SERVICE_URL: http://ml-stub:8100  # e2e scenarios are written against the deterministic stub

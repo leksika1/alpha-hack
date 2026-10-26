@@ -53,9 +53,9 @@ class Settings(BaseSettings):
     )
 
     # Storage
-    database_url: str = "postgresql+asyncpg://alfa:alfa@localhost:5432/alfa"
-    redis_url: str = "redis://localhost:6379/0"
-    s3_endpoint_url: str = "http://localhost:9000"
+    database_url: str = "postgresql+asyncpg://alfa:alfa@localhost:15432/alfa"  # host ports of the local stack
+    redis_url: str = "redis://localhost:16379/0"
+    s3_endpoint_url: str = "http://localhost:19000"
     s3_access_key: str = "minioadmin"
     s3_secret_key: SecretStr = SecretStr("minioadmin")
     s3_region: str = "us-east-1"
@@ -116,6 +116,8 @@ class Settings(BaseSettings):
     data_dir: str = "data/synthetic"
     eligible_client_types: list[str] = Field(default_factory=lambda: ["CLIENT"])
     news_fixtures_enabled: bool = False
+    # the demo feed leaves the feeds once live sources brought this many news in a day; 0 — keep it (ADR-049)
+    news_fixtures_hide_after_live: int = 30
     news_poll_interval_min: int = 15
     news_user_agent: str = "AlfaFutureBot/0.1 (+hackathon prototype; contact: see README)"
     fixture_news_path: str = "data/synthetic/news/fixture_news.json"
@@ -147,6 +149,8 @@ class Settings(BaseSettings):
     metrics_daily_cron: str = "30 0 * * *"
     qa_history_messages: int = 6  # previous messages of the thread passed to the agent
     qa_timeout_s: float = 90.0
+    # Demo: any company of the client base can be opened by its id (ADR-048); false — only the bank's access
+    demo_company_picker: bool = True
     feed_topic_cap: int = 2  # cards per macro theme in the 'all' view; 0 — no cap (ADR-042)
 
     # Operational alerts (ADR-034): log, or a Telegram chat through a bot

@@ -15,6 +15,7 @@ from app.services.alerts import evaluate as evaluate_alerts
 from app.services.alerts import notify as notify_alerts
 from app.services.analytics_run import run_analytics_ingest
 from app.services.analytics_upload import process_upload
+from app.services.feed_cleanup import retire_demo_feed
 from app.services.generation import generate_pending
 from app.services.market import refresh as refresh_market
 from app.services.metrics import snapshot_day
@@ -57,6 +58,8 @@ async def generate_pending_task(company_ids: list[str] | None = None) -> dict[st
     )
     async with pg_connection() as conn:
         stats = await generate_pending(conn, settings, get_generator(settings), company_ids)
+        if settings.news_fixtures_hide_after_live > 0:  # real cards are ready: demo ones may leave (ADR-049)
+            await retire_demo_feed(conn, settings.news_fixtures_hide_after_live)
     return stats.as_dict()
 
 

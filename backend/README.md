@@ -83,8 +83,8 @@ uv run uvicorn app.main:app --reload --port 8000
 `Settings` читает переменные процесса и `.env` из текущей рабочей папки. Поэтому локальный `uv` из
 `backend/` читает `backend/.env`, а Compose с `--env-file ../.env` — корневой файл. Они не подхватывают
 настройки друг друга автоматически. Локальный Python должен использовать адреса опубликованных портов:
-`DATABASE_URL=postgresql+asyncpg://alfa:alfa@localhost:5432/alfa`, `REDIS_URL=redis://localhost:6379/0`,
-`S3_ENDPOINT_URL=http://localhost:9000`; пароль и порты должны соответствовать вашему стенду.
+`DATABASE_URL=postgresql+asyncpg://alfa:alfa@localhost:15432/alfa`, `REDIS_URL=redis://localhost:16379/0`,
+`S3_ENDPOINT_URL=http://localhost:19000`; пароль и порты должны соответствовать вашему стенду.
 
 Токены `ML_SERVICE_TOKEN`, `SERVICE_TOKEN` и `JWT_SECRET` также согласуются с вызывающими сервисами.
 Если локальный API вызывает ML в контейнере, задайте `INTERNAL_API_URL`, по которому контейнер сможет
