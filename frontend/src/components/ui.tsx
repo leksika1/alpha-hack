@@ -103,7 +103,12 @@ export function ImpactMeter({ level, score, compact = false }: { level: ImpactLe
       {!compact && (
         <span className="font-semibold">
           {info.label}
-          {score !== undefined && <span className="ml-1.5 font-normal text-ink-2">{score}/100</span>}
+          {score !== undefined && (
+            <>
+              {' '}
+              <span className="ml-1 font-normal text-ink-2">{score}/100</span>
+            </>
+          )}
         </span>
       )}
     </span>

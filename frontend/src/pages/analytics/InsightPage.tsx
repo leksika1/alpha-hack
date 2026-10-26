@@ -300,7 +300,7 @@ export function InsightPage() {
                     <div key={i} className="min-w-[220px] flex-1 rounded-xl border border-line px-3.5 py-3">
                       <div className="text-[22px] font-bold">
                         {q.unit.includes('₽') ? formatMoney(q.value) : formatNumber(q.value)}
-                        <span className="ml-1.5 text-[13px] font-normal text-ink-2">{q.unit.replace(/^₽/, '').trim()}</span>
+                        {' '}<span className="ml-1 text-[13px] font-normal text-ink-2">{q.unit.replace(/^₽/, '').trim()}</span>
                       </div>
                       <div className="text-[13px] text-ink-2">{q.period}</div>
                       <div className="text-[13px] text-ink-2">{q.basis}</div>

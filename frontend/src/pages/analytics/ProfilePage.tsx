@@ -119,8 +119,8 @@ function FeatureRow({ f }: { f: Feature }) {
     <>
       <dt className="text-ink-2">{featureLabel(f.path)}</dt>
       <dd>
-        <span className={cn(f.value === false && 'text-ink-2')}>{featureValue(f.path, f.value)}</span>
-        <span className={cn('ml-1.5 rounded-md px-1.5 py-px text-[11px] whitespace-nowrap', SRC_TAG[f.source] ?? 'bg-muted text-ink-2')} title={f.note ?? undefined}>
+        <span className={cn(f.value === false && 'text-ink-2')}>{featureValue(f.path, f.value)}</span>{' '}
+        <span className={cn('ml-1 rounded-md px-1.5 py-px text-[11px] whitespace-nowrap', SRC_TAG[f.source] ?? 'bg-muted text-ink-2')} title={f.note ?? undefined}>
           {FEATURE_SOURCE[f.source] ?? f.source}
         </span>
         {f.note && <div className="text-xs text-ink-3">{f.note}</div>}
@@ -308,7 +308,7 @@ function GraphView({ edges, group, unknown }: { edges: GraphEdge[]; group: Recor
               </div>
               <div className="text-sm">
                 {String(cp?.okved_name ?? 'Контрагент вне базы')}
-                <span className="ml-1.5 text-[13px] text-ink-2">{String(cp?.region ?? '')}</span>
+                {' '}<span className="ml-1 text-[13px] text-ink-2">{String(cp?.region ?? '')}</span>
               </div>
               <div className="text-[13px] text-ink-2">
                 {e.amount_rub ? `${formatMoney(e.amount_rub)}` : ''}

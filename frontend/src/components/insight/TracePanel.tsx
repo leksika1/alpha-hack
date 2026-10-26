@@ -54,8 +54,8 @@ export function FeatureChip({ path, f }: { path: string; f?: FeatureValue }) {
       {featureLabel(path)}
       {f && (
         <>
-          : <b>{featureValue(path, f.value)}</b>
-          <span className="ml-1.5 text-[11px] text-ink-3">{FEATURE_SOURCE[f.source] ?? f.source}</span>
+          : <b>{featureValue(path, f.value)}</b>{' '}
+          <span className="ml-1 text-[11px] text-ink-3">{FEATURE_SOURCE[f.source] ?? f.source}</span>
         </>
       )}
     </span>
@@ -159,7 +159,12 @@ export function TracePanel({ trace }: { trace: Trace }) {
                 <span className="rounded-md bg-muted px-1.5 py-px text-[11px] font-bold">{STEP_TYPES[s.step_type] ?? s.step_type}</span>
                 <span className="font-mono">
                   {s.name}
-                  {s.attempt > 1 && <span className="ml-1.5 text-att">попытка {s.attempt}</span>}
+                  {s.attempt > 1 && (
+                    <>
+                      {' '}
+                      <span className="ml-1 text-att">попытка {s.attempt}</span>
+                    </>
+                  )}
                 </span>
                 {s.latency_ms != null && <span className="ml-auto text-ink-3">{s.latency_ms} мс</span>}
                 {s.output_preview && <span className="basis-full break-words text-ink-2">→ {s.output_preview}</span>}
